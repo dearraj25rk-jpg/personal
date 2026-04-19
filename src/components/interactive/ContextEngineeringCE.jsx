@@ -1014,7 +1014,7 @@ export default function ContextEngineeringClaudeCode() {
       <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",padding:"12px 0",borderBottom:`0.5px solid ${C.border}`,position:"sticky",top:"var(--sl-nav-height)",background:C.bg3,zIndex:20}}>
         <div style={{display:"flex",flexWrap:"nowrap",gap:3}}>
           {TABS.map((tab,i)=>(
-            <button key={i} onClick={()=>setActive(i)} style={{padding:"5px 10px",fontSize:12,fontWeight:400,fontFamily:"inherit",lineHeight:"1.4",borderRadius:6,border:`0.5px solid ${i===active?C.borderMd:C.border}`,cursor:"pointer",color:C.text1,opacity:i===active?1:0.5,background:i===active?C.bg2:"transparent",transition:"all .12s",whiteSpace:"nowrap",flexShrink:0,boxSizing:"border-box",WebkitAppearance:"none",appearance:"none"}}>
+            <button key={i} onClick={()=>setActive(i)} style={{padding:"5px 10px 3px",fontSize:12,fontWeight:400,fontFamily:"inherit",lineHeight:"1.4",borderRadius:0,border:"none",borderBottom:`2px solid ${i===active?C.okT:"transparent"}`,cursor:"pointer",color:i===active?C.text1:C.text2,background:"transparent",transition:"all .12s",whiteSpace:"nowrap",flexShrink:0,boxSizing:"border-box",WebkitAppearance:"none",appearance:"none"}}>
               {tab}{i===8?" ⚙":""}
             </button>
           ))}
