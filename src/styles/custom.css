@@ -380,12 +380,19 @@
 }
 
 /* Reset heading styles inside interactive tools — prevents the global
-   .sl-markdown-content h2 border-left rule from shifting component headings */
+   .sl-markdown-content h2 border-left rule from shifting component headings.
+   Also force color to the component's text color so dark-on-dark h2 is never invisible. */
 .interactive-tool h2,
 .interactive-tool h3 {
   border-left: none !important;
   padding-left: 0 !important;
   margin-left: 0 !important;
+}
+
+/* Ensure interactive tool h2 uses the component's own dark-theme text color,
+   not Starlight's page-level heading color (which can be near-black in both themes). */
+.interactive-tool h2 {
+  color: #e6e4de !important;
 }
 
 /* Remove content max-width constraint for interactive tool pages */
