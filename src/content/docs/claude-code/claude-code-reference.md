@@ -1,5 +1,5 @@
 ---
-title: Claude Code CLI — Technical Reference
+title: Claude Code CLI — Complete Technical Reference
 description: >
   Authoritative, comprehensive reference covering every officially documented feature of
   Claude Code from its initial launch (February 2025) through v2.1.126 (May 1, 2026).
@@ -8,8 +8,8 @@ description: >
   Sessions, Sandbox security, Permission system, Models, Pricing, OpenTelemetry, IDE
   integrations, GitHub Actions, the Agent SDK, and the full version release timeline.
 sidebar:
-  order: 2
-  label: CLI Reference
+  order: 1
+  label: Complete Reference
 head:
   - tag: meta
     attrs:
@@ -24,6 +24,7 @@ lastUpdated: 2026-05-02
 ---
 
 > **Document scope:** All officially documented Claude Code features from February 2025 through **v2.1.126 (May 1, 2026)**. Sources: `code.claude.com/docs`, `github.com/anthropics/claude-code` (CHANGELOG.md), official Anthropic news posts, and the Agent SDK repos. Every version number cited maps to a real entry in the public CHANGELOG. Where official documentation is sparse, that is explicitly flagged.
+
 ---
 
 ## 1. Overview & Product History
@@ -52,7 +53,7 @@ All surfaces share the same underlying engine and load `CLAUDE.md`, skills, agen
 | Terminal CLI | The canonical experience. macOS / Linux / Windows, native binary or npm. |
 | VS Code extension | Inline panel, native diff, terminal handoff, voice dictation. Also works in Cursor and Windsurf. |
 | JetBrains plugin | IntelliJ IDEA, PyCharm, WebStorm, GoLand, RubyMine, PHPStorm, CLion, Rider, AppCode. |
-| Claude Desktop | macOS / Windows desktop app; `/desktop` slash command. |
+| Claude Desktop | macOS / Windows desktop app; `/desktop` slash command; **Computer Use** (control mouse, keyboard, screen — research preview, Week 17 of 2026). |
 | claude.ai/code (Web) | Cloud sandboxed sessions, GitHub repo linking, mobile-friendly. |
 | iOS / Android apps | Mobile via **Remote Control** to a local CLI session, or via cloud sessions. |
 | Slack | Direct @claude integration in channels. |
@@ -361,7 +362,7 @@ Type `/` in any session to fuzzy-search all commands and skills. There are 60+ b
 |---------|---------|
 | `/add-dir <path> [--remember]` | Add a directory to the session |
 | `/diff` | Show pending diff |
-| `/copy` | Copy last response with table-aligned markdown |
+| `/copy [N]` | Copy last response (or the Nth-latest with `/copy N`) with table-aligned markdown for GitHub/Notion/Slack; `w` to write selection to file |
 | `/env` | Manage session environment variables |
 
 ### 5.4 Agents, Skills, Plugins & MCP
@@ -405,8 +406,8 @@ Type `/` in any session to fuzzy-search all commands and skills. There are 60+ b
 | `/insights` | Personal usage analytics | |
 | `/setup-bedrock` | Guided Bedrock configuration | v2.1.92 |
 | `/setup-vertex` | Guided Vertex AI configuration | v2.1.98 |
-| `/powerup` | Enable additional Claude Code capabilities | v2.1.90 |
-| `/desktop` | Surface-specific command for the Claude Desktop app; opens desktop-context workflows | Desktop app only |
+| `/advisor` | Configure an Advisor model to consult mid-generation (experimental); prompts for advisor model selection | Experimental; v2.1.117+ |
+| `/powerup` | Interactive lessons teaching Claude Code features with animated in-terminal demos (v2.1.90) | |
 
 ### 5.6 Custom Slash Commands / Skills
 
@@ -658,7 +659,13 @@ The `managed-settings.d/` drop-in directory is supported for separate teams to d
     "type": "command",
     "command": "git branch --show-current 2>/dev/null",
     "refreshInterval": 5000
+    // rate_limits is injected automatically when command runs inside Claude Code:
+    // { "rate_limits": { "5h": { "used_percentage": 42, "resets_at": "2026-05-02T18:00:00Z" },
+    //                   "7d": { "used_percentage": 11, "resets_at": "2026-05-08T00:00:00Z" } } }
   },
+
+  // ── Plan mode ──────────────────────────────────────────────────
+  "showClearContextOnPlanAccept": false,  // Plan mode hides "clear context" by default; set true to restore
 
   // ── Miscellaneous ──────────────────────────────────────────────
   "includeBuiltinGitWorkflow": true,
@@ -685,7 +692,7 @@ The complete set exceeds 175 variables. The most important ones are grouped belo
 `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`, `DISABLE_BUG_COMMAND`, `DISABLE_AUTOUPDATER`, `DISABLE_UPDATES`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, `CLAUDE_CODE_ENABLE_TELEMETRY`, `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`, `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_RAW_API_BODIES` (v2.1.111: `=1` inline 60KB; `=file:<dir>` writes to disk), `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_TRACES_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` (controls transport: `grpc` or `http/protobuf`; relevant for self-hosted collectors), `OTEL_METRIC_EXPORT_INTERVAL`.
 
 **Sandbox & Security:**
-`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, `CLAUDE_CODE_SCRIPT_CAPS`, `CLAUDE_CODE_PERFORCE_MODE`, `CLAUDE_CODE_USE_POWERSHELL_TOOL`, `CLAUDE_CODE_NO_FLICKER`.
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, `CLAUDE_CODE_SCRIPT_CAPS`, `CLAUDE_CODE_PERFORCE_MODE` (when set to `1`, switches the VCS integration from Git to Perforce: the built-in Git workflow is disabled, read-only Perforce operations are auto-allowed, and `p4` commands requiring write access prompt for permission — useful for codebases hosted in Perforce rather than Git), `CLAUDE_CODE_USE_POWERSHELL_TOOL`, `CLAUDE_CODE_NO_FLICKER`.
 
 **Behaviour Toggles:**
 `CLAUDE_CODE_SIMPLE`, `CLAUDE_CODE_DISABLE_CRON`, `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`, `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR`, `CLAUDE_CODE_ENABLE_AWAY_SUMMARY`, `CLAUDE_CODE_FORK_SUBAGENT` (v2.1.117), `CLAUDE_CODE_HIDE_CWD` (v2.1.119), `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`, `CLAUDE_CODE_NEW_INIT`, `AI_AGENT` (v2.1.120).
@@ -694,7 +701,7 @@ The complete set exceeds 175 variables. The most important ones are grouped belo
 `SLASH_COMMAND_TOOL_CHAR_BUDGET` (override the ~8,000-char fallback), `CLAUDE_ENV_FILE` (path SessionStart hooks write env to), `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`.
 
 **Plugins & MCP:**
-`CLAUDE_CODE_PLUGIN_SEED_DIR` (v2.1.92+: colon-separated on Unix, semicolon on Windows), `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`, `ENABLE_CLAUDEAI_MCP_SERVERS`, `ENABLE_TOOL_SEARCH`.
+`CLAUDE_CODE_PLUGIN_SEED_DIR` (v2.1.92+: colon-separated on Unix, semicolon on Windows), `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`, `ENABLE_CLAUDEAI_MCP_SERVERS`, `ENABLE_TOOL_SEARCH`, `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE` (when set, keeps the existing marketplace cache if a git pull fails — useful for air-gapped or offline deployments that should never fall back to an empty plugin list).
 
 **Tracing:**
 `TRACEPARENT`, `TRACESTATE` (SDK/headless reads from env for distributed tracing, v2.1.110; also injected into Bash subprocesses when OTEL is on, v2.1.97).
@@ -802,6 +809,7 @@ disable-model-invocation: false               # true = only manual /name invocat
 context: fork                                 # run in a new fork/subagent context
 agent: general-purpose                        # which agent profile to use
 model: claude-opus-4-7                        # model override for this skill
+effort: high                                  # effort level override (low|medium|high|xhigh|max) when this skill runs
 mode: default                                 # execution mode
 disabled: false                               # set true to temporarily disable
 keep-coding-instructions: false               # retain main-session coding instructions
@@ -924,6 +932,19 @@ Hooks are deterministic processes — shell commands, LLM prompts, subagents, MC
         { "type": "mcp_tool",
           "server": "audit-server",
           "tool": "log_file_write" }
+      ]
+    }],
+
+    // Conditional if hooks — fire only when a condition is true (research preview, Week 17)
+    // The "if" field is a shell command; the hook fires only if it exits 0
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "if": "git rev-parse --is-inside-work-tree 2>/dev/null",
+          "command": "echo 'Running inside a git repo — safety checks active'"
+        }
       ]
     }],
 
@@ -1138,6 +1159,39 @@ claude plugin marketplace list|add|remove|refresh
 
 Marketplace state lives in `~/.claude/plugins/known_marketplaces.json`. Use `CLAUDE_CODE_PLUGIN_SEED_DIR` to pre-bake plugins into container images; multiple paths are separated by `:` (Unix) or `;` (Windows) since v2.1.92.
 
+You can also declare plugin entries **inline in `settings.json`** without a separate marketplace, using `source: 'settings'` in the `extraKnownMarketplaces` block. This is useful for enterprise deployments where plugins are distributed through managed settings rather than a hosted git repository:
+
+```jsonc
+// settings.json — declare a plugin inline, no external marketplace required:
+{
+  "extraKnownMarketplaces": {
+    "internal-tools": {
+      "source": "settings",
+      "plugins": [
+        { "name": "deploy-toolkit", "version": "2.1.0",
+          "path": "/opt/claude-plugins/deploy-toolkit" }
+      ]
+    }
+  }
+}
+```
+
+You can also declare plugin entries **inline in `settings.json`** using `source: 'settings'` as the marketplace source — useful for managed deployments where you want a plugin present without pointing to an external marketplace URL:
+
+```jsonc
+{
+  "extraKnownMarketplaces": {
+    "internal-tools": {
+      "source": "settings",
+      "plugins": [
+        { "name": "deploy-toolkit", "version": "1.0.0",
+          "path": "/opt/company-plugins/deploy-toolkit" }
+      ]
+    }
+  }
+}
+```
+
 ### 12.4 Enterprise Controls
 
 `blockedMarketplaces` (with `hostPattern`/`pathPattern` enforcement fixed v2.1.119) and `strictKnownMarketplaces` prevent installs from non-approved sources. Both are enforced on install, update, refresh, and auto-update (v2.1.117). `enabledPlugins` in managed-settings forces plugins on for the whole organisation. Plugins force-enabled via managed settings can run hooks even when `allowManagedHooksOnly: true`.
@@ -1266,6 +1320,8 @@ Remote Control creates a secure bridge between your local CLI session and claude
 ```bash
 # Start remote control from within a session:
 /remote-control
+# or with a custom session name visible in claude.ai/code:
+/remote-control my-macbook-session
 # or:
 /rc
 
@@ -1318,6 +1374,14 @@ This is the most efficient pattern for large, complex tasks:
 `/ultraplan` (v2.1.101+) auto-creates a default cloud environment when invoked. You can also pull a cloud session back into your terminal with `claude --teleport`.
 
 **Rollout status (May 2026):** GA for web/desktop/iOS on Pro/Max/Team/Enterprise. Cowork (the sibling knowledge-work agent product) is research preview on macOS/Windows Desktop for Max plans, expanded to enterprise in February 2026.
+
+### 17.2 Computer Use in the Desktop App (Research Preview)
+
+The Claude Desktop app introduced **Computer Use** capability in Week 17 of 2026 (approximately v2.1.114–v2.1.119 timeframe). When Computer Use is enabled, Claude Code can control your local desktop — moving the mouse, clicking UI elements, typing into applications, and capturing screenshots to observe the results — in addition to its usual file and shell access.
+
+This is a research preview, not GA. It is available in the Claude Desktop app (macOS and Windows) for Max and eligible Team/Enterprise subscribers. The capability allows Claude to interact with GUI applications, web browsers, and desktop tools that have no CLI or API surface — for example, testing a UI by clicking through it, filling forms in an internal web app that requires SSO, or reading data from a legacy desktop application.
+
+Computer Use in Claude Code is separate from the broader Anthropic Computer Use API. The integration is tightly scoped: Claude can only operate within the desktop session in which Claude Code is running, cannot access other user accounts, and all actions are subject to the same permission system and sandbox controls as other tools.
 
 ---
 
@@ -1455,6 +1519,8 @@ The 1M context beta on Sonnet 4 / 4.5 was retired **April 30, 2026**. All 1M mod
 
 **Claude Mythos Preview (Project Glasswing):** A cybersecurity-focused research preview model available invitation-only on Google Vertex AI. It is not available via the standard API or claude.ai subscription tiers. If you have been granted access, it is accessed through `CLAUDE_CODE_USE_VERTEX=1` with a specific model string provided in your invitation. This model is not listed in `/model` unless you have been granted access and the model string is explicitly configured.
 
+**Token output limits (updated):** The default maximum output tokens for Claude Opus 4.6 was increased to **64K tokens**, and the upper bound for both Opus 4.6 and Sonnet 4.6 was raised to **128K tokens**. These increases apply to API, Bedrock, Vertex, and Foundry; Claude Code automatically benefits when the model supports it.
+
 ### 20.2 Switching Models
 
 ```bash
@@ -1495,6 +1561,131 @@ export DISABLE_INTERLEAVED_THINKING=1    # disable entirely
 ### 20.5 Model Environment Variables
 
 `ANTHROPIC_DEFAULT_OPUS_MODEL_NAME`, `ANTHROPIC_DEFAULT_SONNET_MODEL_NAME`, `ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME` override model aliases. `ANTHROPIC_BASE_URL` gateway support added v2.1.118; `/model` now lists models from the `/v1/models` endpoint of a custom gateway (v2.1.126).
+
+---
+
+### 20.6 Advisor Tool (Experimental)
+
+The Advisor Tool is one of the most architecturally significant features in Claude Code. It implements what Anthropic calls the **advisor strategy**: pair a fast, lower-cost **executor model** (e.g., Sonnet 4.6 or Haiku 4.5) with a higher-intelligence **advisor model** (e.g., Opus 4.7 or Opus 4.6) inside a single conversation. The executor runs the task end-to-end, calling tools and iterating toward a solution. When it reaches a decision it cannot reasonably solve — a complex architectural choice, a subtle bug, an ambiguous tradeoff — it calls the advisor. The advisor reads the full conversation transcript, produces a plan or course correction (typically 400–700 text tokens, 1,400–1,800 tokens total including thinking), and the executor resumes with that guidance.
+
+#### 20.6.1 Architectural Constraints (Hard Boundaries)
+
+The advisor model has **read-only access to the conversation history only**. It cannot call any tools, access the filesystem, run shell commands, fetch URLs, or interact with MCP servers. This is a hard architectural boundary enforced server-side — not a permission setting you can relax. The advisor exists purely as a reasoning layer over shared context.
+
+Once the advisor responds, its guidance persists in the session context. Subsequent advisor calls see earlier advice, enabling a coherent advisory thread across a long task. If empirical results contradict what the advisor recommended, Claude Code surfaces the conflict explicitly rather than silently overriding it — you get a moment like *"the advisor said X, but the test output shows Y — should we consult again?"*
+
+#### 20.6.2 Performance and Cost Data (Anthropic Benchmarks)
+
+| Configuration | Benchmark | Score | vs. Baseline |
+|---|---|---|---|
+| Sonnet 4.6 alone | SWE-bench Multilingual | 72.1% | baseline |
+| Sonnet 4.6 + Opus advisor | SWE-bench Multilingual | 74.8% | +2.7pp quality; 11.9% lower cost than Opus solo |
+| Haiku 4.5 alone | BrowseComp | 19.7% | baseline |
+| Haiku 4.5 + Opus advisor | BrowseComp | 41.2% | +21.5pp (>2×); 85% lower cost than Sonnet solo |
+
+The cost advantage comes from the advisor generating only ~400–700 tokens per call, while the executor handles the bulk of generation at Sonnet/Haiku rates.
+
+#### 20.6.3 Enabling in Claude Code
+
+The `/advisor` slash command opens a configuration dialog where you select the advisor model. Once set, the advisor is automatically invoked by the executor model when needed — you do not manually trigger it per-turn.
+
+```bash
+/advisor         # opens advisor model selection dialog
+                 # then select: e.g., "Opus 4.7" as the advisor
+```
+
+The dialog carries an **"experimental"** label with a learn-more link. A startup notification appears whenever the advisor is enabled for the current session (v2.1.117+). The UI validates supported pairings — if your main model does not support the advisor, Claude Code displays "The current main model does not support the advisor."
+
+#### 20.6.4 Supported Model Pairings
+
+| Executor (main model) | Supported Advisor models |
+|---|---|
+| `claude-sonnet-4-6` | `claude-opus-4-7`, `claude-opus-4-6` |
+| `claude-haiku-4-5` | `claude-opus-4-7`, `claude-opus-4-6` |
+| `claude-opus-4-7` | `claude-opus-4-7`, `claude-opus-4-6`, `claude-sonnet-4-6` |
+
+> **Note:** The CLI's internal validation may be stricter than the raw API. Issue #46148 documents a case where Haiku 4.5 as executor was rejected by the CLI even though the API supports it. The API always accepts any pair that the `advisor-tool-2026-03-01` beta endpoint documents.
+
+**Recommended pairing:** Sonnet 4.6 executor + Opus 4.6 or 4.7 advisor. This delivers near-Opus intelligence for the complex moments while paying Sonnet rates for the mechanical majority of turns. In typical agentic coding sessions, the advisor is called on 5–15% of turns.
+
+#### 20.6.5 How It Works Under the Hood
+
+At the API level, the Advisor Tool is a special beta tool type included in the `tools` array of a `/v1/messages` request. It requires the beta header `anthropic-beta: advisor-tool-2026-03-01`.
+
+```python
+import anthropic
+
+client = anthropic.Anthropic()
+response = client.beta.messages.create(
+    model="claude-sonnet-4-6",        # executor model
+    max_tokens=4096,
+    betas=["advisor-tool-2026-03-01"],
+    tools=[
+        {
+            "type": "advisor_20260301",
+            "name": "advisor",
+            "model": "claude-opus-4-7",   # advisor model
+            # "max_uses": 3,              # optional cap on advisor calls per request
+        }
+    ],
+    messages=[
+        {"role": "user", "content": "Build a concurrent worker pool in Go with graceful shutdown."}
+    ],
+)
+```
+
+```typescript
+// TypeScript equivalent:
+const response = await client.beta.messages.create({
+    model: "claude-sonnet-4-6",
+    maxTokens: 4096,
+    betas: ["advisor-tool-2026-03-01"],
+    tools: [{ type: "advisor_20260301", name: "advisor", model: "claude-opus-4-7" }],
+    messages: [{ role: "user", content: "Build a concurrent worker pool in Go." }],
+});
+```
+
+When the executor decides to consult the advisor, it emits a `server_tool_use` block with `name: "advisor"` and empty input. The server runs a separate inference pass on the advisor model, passing the full conversation transcript, and returns an `advisor_tool_result` block with the advisor's guidance. The executor then continues.
+
+#### 20.6.6 Multi-Turn Conversations — Critical Rule
+
+`advisor_tool_result` blocks **must be preserved verbatim** in every subsequent turn of the conversation. If you omit the advisor tool from `tools` on a follow-up turn while `advisor_tool_result` blocks are still in the message history, the API returns a `400 invalid_request_error`. If you want to stop using the advisor mid-conversation, you must strip all `advisor_tool_result` blocks from the history at the same time as you remove the tool from the `tools` array.
+
+```python
+# Multi-turn example — round-trip advisor_tool_result blocks:
+messages.append({"role": "assistant", "content": response.content})
+messages.append({"role": "user", "content": "Now add a max-in-flight limit of 10."})
+
+response = client.beta.messages.create(
+    model="claude-sonnet-4-6",
+    max_tokens=4096,
+    betas=["advisor-tool-2026-03-01"],
+    tools=[{"type": "advisor_20260301", "name": "advisor", "model": "claude-opus-4-7"}],
+    messages=messages,   # includes advisor_tool_result blocks from previous turn
+)
+```
+
+#### 20.6.7 Behavior Details
+
+Several behaviors are important to understand. First, **advisor output does not stream** — expect a visible pause in the response stream while the sub-inference runs on the advisor model. Second, **`max_tokens` applies to executor output only** and does not bound advisor tokens. Third, **there is no built-in per-conversation cap** on advisor calls — track and cap them client-side if you have a budget (or use the `max_uses` field in the tool definition). Fourth, **enable prompt caching only when you expect three or more advisor calls** per conversation, because the cache write cost is only justified when you get multiple cache hits.
+
+#### 20.6.8 Billing, Rate Limits, and ZDR
+
+Advisor tokens are billed at each model's standard per-token rate. The executor (Sonnet/Haiku) generates at its lower rate; the advisor (Opus) generates the advisory response at the Opus rate. Advisor tokens are broken out separately in the `usage` object under `usage.iterations[]` for clean cost attribution.
+
+Rate limits for the advisor draw from the same per-model bucket as direct calls to that model. A rate limit hit on the advisor surfaces as `too_many_requests` inside the `advisor_tool_result` block — the executor sees this and continues without advice rather than failing the whole request. A rate limit on the executor fails the entire request with HTTP 429 as normal.
+
+This feature is eligible for **Zero Data Retention (ZDR)**. When your organisation has a ZDR arrangement, data sent through the advisor tool is not stored after the API response is returned. Contact your Anthropic account team to request ZDR coverage for the advisor feature. The beta header `advisor-tool-2026-03-01` is accessible with no special waitlist — any API key can include it.
+
+#### 20.6.9 Best Practices
+
+For coding agents, pair Sonnet 4.6 at medium effort as executor with Opus as advisor. The cost math is compelling: Sonnet executes the mechanical 85–90% of turns cheaply, while Opus handles only the hard decisions. For maximum intelligence regardless of cost, keep the executor at default effort — combining high-effort Sonnet with Opus advisor provides diminishing returns over default-effort Sonnet + Opus.
+
+When budgeting, count advisor calls at **Opus input/output pricing** (not Sonnet pricing), since each advisor invocation runs a full Opus inference pass. Plan for 400–700 additional output tokens and 1,400–1,800 total tokens per advisor call.
+
+#### 20.6.10 Known Bug and Fix
+
+A critical stability bug (issue #49994) caused sessions that had used the advisor tool to become unrecoverable: every subsequent prompt returned `400 "Advisor tool result content could not be processed"`, and `/compact` failed with the same error. This was fixed in **v2.1.126**. Sessions created between v2.1.105 and v2.1.112 that used the advisor and are now broken can only be recovered by editing the session JSONL file to remove the malformed `advisor_tool_result` blocks manually.
 
 ---
 
@@ -1848,6 +2039,8 @@ Voice mode enables push-to-talk input directly in the CLI.
 
 v2.1.79 fixed voice mode not activating on startup when `voiceEnabled: true` was set. v2.1.122 added an error when the voice key is bound to Caps Lock (terminals cannot deliver Caps Lock as a key event). v2.1.121 ensured VS Code voice dictation respects `accessibility.voice.speechLanguage` when no `language` is configured in Claude Code settings.
 
+**Supported STT languages (20 total as of v2.1.101+):** English, Spanish, French, German, Italian, Portuguese, Japanese, Korean, Chinese (Mandarin), Hindi, Russian, Polish, Turkish, Dutch, Ukrainian, Greek, Czech, Danish, Swedish, Norwegian. The `language` setting in `settings.json` controls which language Claude transcribes. If unset, the VS Code `accessibility.voice.speechLanguage` setting is used as a fallback.
+
 ---
 
 ## 28. Multi-Directory Workspaces
@@ -1902,6 +2095,7 @@ The current working directory is always included. CLAUDE.md files from added dir
 | `f` | Auto-fix issues (in `/doctor`) | v2.1.105 |
 | `Spacebar` | Show QR code (in `claude remote-control`) | |
 | `Cmd+Enter` / `Ctrl+Enter` | Submit in IDE extensions | Remap via `~/.claude/keybindings.json` |
+| Paste (image) | Paste an image directly into the prompt for Claude to read | Images >2000px are auto-downscaled; oversized images already in session history are removed and the request retried automatically |
 
 ---
 
