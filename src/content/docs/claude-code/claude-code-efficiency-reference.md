@@ -1,6 +1,6 @@
 ---
 title: "Claude Code: Context, Cost & Token Efficiency — Reference"
-description: "Complete reference for context management, prompt caching, token budgets, model selection, effort controls, hooks, environment variables, and the advisor tool in Claude Code v2.1.101+. Covers all five CCA-F exam domains."
+description: "Complete reference for context management, prompt caching, token budgets, model selection, effort controls, hooks, environment variables, and the advisor tool in Claude Code v2.1.126+. Covers all five CCA-F exam domains."
 sidebar:
   order: 5
 ---
@@ -50,11 +50,12 @@ These are the costs developers most frequently underestimate:
 
 | Command | What it shows | Scope |
 |---------|--------------|-------|
-| `/context` | Live breakdown: system prompt, system tools, MCP tools, custom agents, skills, messages, free space, autocompact buffer | Current snapshot |
-| `/cost` | Per-model input/output/cache-read/cache-write tokens + dollar cost (v2.1.92: per-model breakdown with cache-hit accounting) | Cumulative session |
+| `/context` | Live breakdown: system prompt, system tools, MCP tools, custom agents, skills, messages, free space, autocompact buffer. In VS Code (v2.1.121), opens native Account & Usage dialog | Current snapshot |
+| `/usage` | **Primary session cost command** (v2.1.118, merged `/cost` + `/stats`). Per-model input/output/cache-read/cache-write tokens + dollar cost + plan limits. `/cost` and `/stats` remain as shortcuts that open the relevant tab | Cumulative session |
+| `/recap` | Manually invoke session recap (v2.1.108) — same summary that fires automatically after absence. Opt out: `CLAUDE_CODE_ENABLE_AWAY_SUMMARY=0` | Current session |
 | `/clear` | Resets conversation; preserves tools, CLAUDE.md, and memory | Destructive reset |
 | `/compact [focus]` | Summarizes conversation with optional focus topic | Lossy compression |
-| `Esc+Esc` or `/rewind` | Partial compaction — select a message checkpoint and summarize from there | Selective compression |
+| `Esc+Esc`, `/rewind`, or `/undo` | Partial compaction — select a message checkpoint and summarize from there. `/undo` is an alias for `/rewind` (v2.1.108) | Selective compression |
 
 ---
 
@@ -68,15 +69,17 @@ The system stores **KV (key-value) attention cache tensors** server-side. When a
 
 Each cache entry has a **5-minute TTL** that refreshes on every hit. Active sessions with turns less than 5 minutes apart keep the cache warm indefinitely. The cache is **per-model** — switching models mid-session means a complete cache miss where the entire context must be re-cached at write cost.
 
-### 2.2 Pricing Multipliers (April 2026)
+### 2.2 Pricing Multipliers
 
-| Token type | Multiplier vs base | Sonnet 4.6 | Opus 4.6 | Haiku 4.5 |
-|------------|-------------------|------------|----------|-----------|
-| Standard input (no cache) | 1.0× | $3.00/MTok | $15.00/MTok | $1.00/MTok |
-| 5-minute cache write | 1.25× | $3.75/MTok | $18.75/MTok | $1.25/MTok |
-| 1-hour cache write | 2.0× | $6.00/MTok | $30.00/MTok | $2.00/MTok |
-| **Cache read (hit)** | **0.1×** | **$0.30/MTok** | **$1.50/MTok** | **$0.08/MTok** |
-| Output tokens | — | $15.00/MTok | $75.00/MTok | $5.00/MTok |
+| Token type | Multiplier vs base | Sonnet 4.6 | Opus 4.6 / Opus 4.7 | Haiku 4.5 |
+|------------|-------------------|------------|---------------------|-----------|
+| Standard input (no cache) | 1.0× | $3.00/MTok | $5.00/MTok | $1.00/MTok |
+| 5-minute cache write | 1.25× | $3.75/MTok | $6.25/MTok | $1.25/MTok |
+| 1-hour cache write | 2.0× | $6.00/MTok | $10.00/MTok | $2.00/MTok |
+| **Cache read (hit)** | **0.1×** | **$0.30/MTok** | **$0.50/MTok** | **$0.10/MTok** |
+| Output tokens | — | $15.00/MTok | $25.00/MTok | $5.00/MTok |
+
+> **Pricing update (April 16, 2026):** Opus 4.6 was repriced when Opus 4.7 launched — from $15/$75 (input/output) to $5/$25. Opus 4.7 carries the same price. Opus 4.6 is now considered legacy; Opus 4.7 is the recommended primary model. See Section 4.1 for model comparison.
 
 **CCA-F formula:** Effective input cost = `(miss_tokens × write_rate) + (hit_tokens × 0.1 × base_rate)`. At 90% hit rate over a 20-turn session with 100K context on Sonnet, caching delivers **~84% savings** ($0.945 vs $6.00 without caching).
 
@@ -88,6 +91,15 @@ The two write tiers exist because Anthropic optimizes differently depending on h
 |------|-----------|------------|------------------|
 | **5-minute** | 1.25× base | API-key customers; subagents; rarely-resumed sessions | Default everywhere for direct API users |
 | **1-hour** | 2.0× base | Pro/Max subscribers (logged-in CLI) for likely-reused prefixes | System prompt + tool definitions on interactive sessions |
+
+**New cache tier env vars (v2.1.108):**
+
+| Variable | Effect |
+|----------|--------|
+| `ENABLE_PROMPT_CACHING_1H` | Opt into 1-hour prompt cache TTL on API key, Bedrock, Vertex, or Foundry. Replaces the deprecated `ENABLE_PROMPT_CACHING_1H_BEDROCK`. |
+| `FORCE_PROMPT_CACHING_5M` | Force 5-minute prompt cache TTL regardless of plan. Useful for CI where long-lived cache is not needed. |
+
+**v2.1.108 bug fix:** Subscribers who set `DISABLE_TELEMETRY=1` were silently falling back to the 5-minute cache TTL instead of the 1-hour TTL they were entitled to. Fixed. Claude Code now also prints a startup warning when prompt caching is disabled via any `DISABLE_PROMPT_CACHING*` env var, so unintended cache-off states are immediately visible.
 
 **Why the split exists:** Writing a 1-hour cache entry costs 2.0× but a cache hit costs only 0.1×. If the prefix is reused even once within an hour the write premium is fully recovered. Anthropic rolls the 1-hour tier out selectively — interactive users reuse long prefixes (system prompt, tools) repeatedly in a session; API script runs and subagents rarely do.
 
@@ -168,6 +180,12 @@ ToolSearch is automatic by default — zero configuration needed. For servers wh
 
 Additional details: only MCP tools (`mcp__` prefix) are eligible for deferral; built-in tools (Read, Edit, Bash, Write, Glob, Grep, WebSearch, WebFetch) are never deferred. Tool descriptions and server instructions are capped at **2KB** (v2.1.84) to prevent OpenAPI-generated servers from bloating context.
 
+**Skill description cap in `/skills` listing:** Individual skill descriptions shown in the `/skills` command output were capped at 250 characters in v2.1.86 to reduce context usage; this cap was raised to **1,536 characters** in v2.1.105.
+
+**Vertex AI:** ToolSearch is disabled by default on Vertex AI to avoid an unsupported beta-header error. Opt in with `ENABLE_TOOL_SEARCH=1` (v2.1.119).
+
+**v2.1.113 ranking fix:** ToolSearch now surfaces the correct tool when a pasted MCP tool name is used as the search query. Previously, sibling tools with overlapping descriptions could rank above the named tool.
+
 ### 3.3 ToolSearch Failure Modes
 
 Claude can invoke ToolSearch using either a **regex variant** (`tool_search_tool_regex`) or a **BM25 variant** (`tool_search_tool_bm25`). Each has distinct failure modes.
@@ -189,23 +207,27 @@ Claude can invoke ToolSearch using either a **regex variant** (`tool_search_tool
 
 ## 4. Model Selection for Cost Optimization
 
-### 4.1 Model Comparison (April 2026)
+### 4.1 Model Comparison
 
-| Dimension | Opus 4.6 | Sonnet 4.6 | Haiku 4.5 |
-|-----------|----------|------------|-----------|
-| Input $/MTok | $15 | $3 | $1 |
-| Output $/MTok | $75 | $15 | $5 |
-| Cache read $/MTok | $1.50 | $0.30 | $0.08 |
-| Context window | 1M (standard pricing) | 1M (standard pricing) | 200K |
-| Max output (default / upper) | 64K / 128K | 64K / 128K | 64K |
-| SWE-bench Verified | 80.8% | 79.6% | — |
-| Extended thinking | low / med / high | low / med / high | Not supported |
-| Fast mode | Yes (v2.1.36, Max/Team users) | N/A | N/A |
-| Cost relative to Opus | 1× | 0.2× (80% cheaper) | 0.07× (93% cheaper) |
+| Dimension | Opus 4.7 | Opus 4.6 (legacy) | Sonnet 4.6 | Haiku 4.5 |
+|-----------|----------|------------------|------------|-----------|
+| Input $/MTok | $5 | $5 | $3 | $1 |
+| Output $/MTok | $25 | $25 | $15 | $5 |
+| Cache read $/MTok | $0.50 | $0.50 | $0.30 | $0.10 |
+| Context window | 1M | 1M | 1M | 200K |
+| Max output | 128K | 64K / 128K | 64K / 128K | 64K |
+| SWE-bench Verified | Step-change above Opus 4.6 | 80.8% | 79.6% | — |
+| Thinking modes | Adaptive only (xhigh default) | low / med / high | low / med / high | Not supported |
+| Fast mode | N/A | Yes (v2.1.36, Max/Team) | N/A | N/A |
+| New tokenizer | Yes (up to 1.35× more tokens for same text) | No | No | No |
+| Max image resolution | 2,576px long edge | 768px | 768px | 768px |
+| Cost relative to Opus 4.7 | 1× | 1× | 0.6× (40% cheaper) | 0.2× (80% cheaper) |
 
-**Fast mode for Opus 4.6 (v2.1.36):** Available to Max and Team tier users. Activates a faster, lower-latency processing path. Good for quick lookups, formatting, and simple refactors where latency matters more than maximum reasoning depth. Toggle with `/fast on` or in session settings.
+> **Model IDs:** `claude-opus-4-7`, `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`. Use `claude-opus-4-7` for new projects — Opus 4.6 is now legacy. Both share the same price ($5/$25 input/output per MTok).
 
-**Sonnet handles ~90% of coding tasks** at 80% lower cost than Opus. The SWE-bench delta is only 1.2 percentage points.
+**Fast mode for Opus 4.6 (v2.1.36):** Available to Max and Team tier users. Activates a faster, lower-latency processing path at premium pricing (6× standard rates). Toggle with `/fast on`. Not available for Opus 4.7.
+
+**Sonnet handles ~90% of coding tasks** at 40% lower input cost than Opus 4.7/4.6. For most daily work, Sonnet 4.6 remains the recommended default.
 
 ### 4.2 The `opusplan` Alias
 
@@ -264,11 +286,12 @@ The primary way to set effort in an interactive session:
 
 ```
 /effort low      # Quick tasks: formatting, lookups, simple moves
-/effort medium   # Default: most coding work
+/effort medium   # Most coding work
 /effort high     # Complex debugging, architecture decisions
+/effort xhigh    # Very hard problems (Opus 4.7 default)
 ```
 
-Can also be set via arrow keys in the `/model` picker. In **VS Code** (v2.1.72+), a colored indicator on the input border shows current effort level.
+**Interactive slider (v2.1.111):** When called without arguments, `/effort` opens an interactive slider with arrow-key navigation between effort levels. Can also be set via arrow keys in the `/model` picker. In **VS Code** (v2.1.72+), a colored indicator on the input border shows current effort level.
 
 ### `ultrathink` Keyword (v2.1.68)
 
@@ -292,11 +315,11 @@ Does not change the session effort level — subsequent turns revert to the sess
 
 > **Note:** Token ranges are approximate and model-dependent. Adaptive thinking (see "Adaptive Thinking" subsection below) adjusts within these bands per-turn. `xhigh` is available on Opus 4.7 only. Use `ultrathink` in the prompt to request maximum reasoning depth for a single turn without changing the session level.
 
-**Default effort by plan and model (as of v2.1.94, April 2026):**
+**Default effort by plan and model (as of v2.1.117):**
 
 | User tier | Opus 4.6 / Sonnet 4.6 | Opus 4.7 |
 |-----------|----------------------|---------|
-| Pro / Max (CLI) | medium | xhigh |
+| Pro / Max (CLI) | **high** (raised from `medium` in v2.1.117) | xhigh |
 | API key / Team / Enterprise | high (raised in v2.1.94) | xhigh |
 | Bedrock / Vertex / Foundry | high (raised in v2.1.94) | xhigh |
 
@@ -316,6 +339,16 @@ name: code-reviewer
 model: sonnet
 effort: low
 ---
+```
+
+**`${CLAUDE_EFFORT}` in skill content (v2.1.120):** Skills can reference the current session effort level using the `${CLAUDE_EFFORT}` variable in their content. This allows skill descriptions or instructions to adapt to the active effort setting:
+
+```markdown
+---
+name: smart-review
+description: "Runs with ${CLAUDE_EFFORT} effort — adjusts depth automatically"
+---
+Review the diff. Current effort: ${CLAUDE_EFFORT}.
 ```
 
 **Priority order:** `CLAUDE_CODE_EFFORT_LEVEL` env var (highest) → skill/agent frontmatter → session `/effort` command → model default. `ultrathink` in prompt text overrides for a single turn.
@@ -348,7 +381,7 @@ export CLAUDE_CODE_EFFORT_LEVEL=high
 | Symptom | Fix |
 |---------|-----|
 | Responses feel shallow / low reasoning depth | Raise effort: `/effort high` or `export CLAUDE_CODE_EFFORT_LEVEL=high` |
-| Costs spiked after Feb 2026 update | Likely effort default raised for your tier; set `export CLAUDE_CODE_EFFORT_LEVEL=medium` |
+| Costs spiked after the v2.1.117 update (Pro/Max users) | Pro/Max default raised from `medium` → `high` in v2.1.117. Set `export CLAUDE_CODE_EFFORT_LEVEL=medium` to revert, or use `low` for simple tasks |
 | Need deterministic token budgets for CI billing | `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` + `MAX_THINKING_TOKENS=10000` |
 | One-off deep reasoning on a specific turn | Add `ultrathink` to that prompt; leave session effort unchanged |
 
@@ -513,7 +546,7 @@ TIER 3 — Agent Teams (only when lateral comms needed)
 
 After 75+ minutes idle, Claude Code suggests `/clear` with token savings displayed. Addresses the anti-pattern of resuming stale sessions where the 5-min cache TTL has expired. Bug fix in v2.1.92: now shows current context size (not cumulative session tokens).
 
-### 9.3 Critical Compaction/Memory Fixes (March–April 2026)
+### 9.3 Critical Compaction/Memory Fixes
 
 | Bug | Impact | Fixed in |
 |-----|--------|---------|
@@ -528,6 +561,10 @@ After 75+ minutes idle, Claude Code suggests `/clear` with token savings display
 | PreCompact hook added | Hooks can now block or guide compaction behavior | v2.1.95 |
 | Context token ceiling (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`) | Hard cap prevents runaway context growth in CI | v2.1.96 |
 | Auto mode not respecting explicit user boundaries ("don't push", "wait for X") | Unauthorized actions in auto mode | v2.1.93 |
+| PreCompact hook `{"decision":"block"}` return format | Block compaction programmatically with structured response (previously only exit-code blocking) | v2.1.105 |
+| Subscribers with `DISABLE_TELEMETRY=1` falling back to 5-minute cache TTL | Fixed — now correctly receives 1-hour TTL | v2.1.108 |
+| `--resume` on 40MB+ sessions | 67% faster session resumption | v2.1.116 |
+| "Extra usage required for long context" error during compaction in resumed sessions | Fixed | v2.1.113 |
 
 ### 9.4 Long-Running Sessions
 
@@ -574,16 +611,35 @@ Subscribes to GitHub PR events. CI failure → investigate → fix → push → 
 
 ---
 
+### 10.4 New Power Commands (v2.1.101 → v2.1.126)
+
+| Command | Version | Description |
+|---------|---------|-------------|
+| `/usage` | v2.1.118 | Merged `/cost` + `/stats`. Per-model breakdown, cache-hit accounting, plan limits. In VS Code opens native Account & Usage dialog. `/cost` and `/stats` remain as shortcuts |
+| `/ultrareview [target]` | v2.1.111 | Cloud-based comprehensive code review using parallel multi-agent analysis. No args = review current branch changes; `/ultrareview <PR#>` = specific GitHub PR |
+| `claude ultrareview [target]` | v2.1.120 | CLI/CI version of `/ultrareview` — prints to stdout, `--json` for raw output, exits 0 (clean) or 1 (issues found) |
+| `/recap` | v2.1.108 | Manually invoke session recap. Also fires automatically when returning to a session after an absence. Opt out: `CLAUDE_CODE_ENABLE_AWAY_SUMMARY=0` |
+| `/tui [fullscreen]` | v2.1.110 | Switch to flicker-free fullscreen rendering in the same conversation |
+| `/team-onboarding` | v2.1.101 | Generate a teammate ramp-up guide from your local Claude Code usage patterns |
+| `/less-permission-prompts` | v2.1.111 | Scans transcripts for common read-only Bash/MCP calls and proposes an allowlist for `.claude/settings.json` |
+| `/undo` | v2.1.108 | Alias for `/rewind` — partial compaction back to a message checkpoint |
+| `/loop [interval] [cmd]` | v2.1.71 | Run a prompt or slash command on a recurring interval. `/proactive` is an alias (v2.1.105) |
+| `/branch` | v2.1.77 | Fork the current conversation into a new branch. Renamed from `/fork` (which still works as alias) |
+| `/powerup` | v2.1.90 | Interactive lessons teaching Claude Code features with animated demos |
+| `claude project purge [path]` | v2.1.126 | Delete all Claude Code state for a project (transcripts, tasks, file history, config). Supports `--dry-run`, `-y/--yes`, `-i/--interactive`, and `--all` flags |
+
+---
+
 ## 11. Top 12 Cost Optimizations (Ranked by Impact)
 
 | Rank | Optimization | Impact | Command | CCA-F Domain |
 |------|-------------|--------|---------|-------------|
-| 1 | Default to Sonnet 4.6 | 80% input cost reduction vs Opus | `/model sonnet` | D2 |
+| 1 | Default to Sonnet 4.6 | 40% input cost reduction vs Opus 4.7/4.6 | `/model sonnet` | D2 |
 | 2 | Set MAX_THINKING_TOKENS=10000 | ~70% reduction in thinking costs | `export MAX_THINKING_TOKENS=10000` | D2 |
 | 3 | `/clear` between unrelated tasks | Prevents stale context compounding | `/clear` | D5 |
 | 4 | Write specific prompts naming files | 3-turn vs 12-turn = 50K+ tokens | Name exact files + outcomes | D3 |
 | 5 | Use opusplan alias | Opus design + Sonnet implementation | `/model opusplan` | D2 |
-| 6 | Subagent model → Haiku globally | ~93% cheaper exploration | `export CLAUDE_CODE_SUBAGENT_MODEL=haiku` | D1 |
+| 6 | Subagent model → Haiku globally | ~80% cheaper exploration vs Opus | `export CLAUDE_CODE_SUBAGENT_MODEL=haiku` | D1 |
 | 7 | CLAUDE.md under 200 lines | Saves tokens every turn | Move to `.claude/commands/` | D2 |
 | 8 | ToolSearch (automatic) | 85%+ reduction in tool tokens | Auto when MCP > 10K tokens | D4 |
 | 9 | Effort: low for simple tasks | Skips thinking entirely | Frontmatter: `effort: low` | D2 |
@@ -597,7 +653,7 @@ Subscribes to GitHub PR events. CI failure → investigate → fix → push → 
 
 Hooks are user-defined shell commands (or scripts) that fire at specific points in Claude Code's lifecycle. They turn best-practice guidelines into deterministic enforcement — hooks always run; prompts sometimes work.
 
-### 12.1 All Hook Events (April 2026)
+### 12.1 All Hook Events
 
 Hooks fire at three cadences: **once per session**, **once per turn**, and **on every tool call** in the agentic loop.
 
@@ -607,17 +663,31 @@ Hooks fire at three cadences: **once per session**, **once per turn**, and **on 
 | `SessionEnd` | Per session | No | Cleanup, final reporting, summary logs |
 | `UserPromptSubmit` | Per turn | Yes (exit 2) | Sanitize input, classify task type, route to skill |
 | `PreToolUse` | Per tool call | **Yes (exit 2 or `{"decision":"block"}`)** | Security gates, file protection, mandatory review |
-| `PostToolUse` | Per tool call | No | Format-on-save, lint, test runner trigger |
-| `PostToolUseFailure` | Per tool call (on failure) | No | Add diagnostic context for Claude's next step |
+| `PostToolUse` | Per tool call | No | Format-on-save, lint, test runner trigger. Input now includes `duration_ms` (v2.1.119) |
+| `PostToolUseFailure` | Per tool call (on failure) | No | Add diagnostic context for Claude's next step. Input now includes `duration_ms` (v2.1.119) |
 | `Stop` | Per turn | Yes (return to keep going) | Enforce completion criteria before Claude stops |
+| `StopFailure` | Per turn (API error) | No | Fires when turn ends due to API error (rate limit, auth failure) — v2.1.78 |
 | `SubagentStop` | Per subagent | No | Validate subagent output before returning to parent |
 | `PermissionRequest` | Per auto-mode check | Yes | Auto-approve/deny permission dialogs |
 | `PermissionDenied` | Per auto-mode denial | Partial (`{retry: true}`) | Tell Claude it can retry after adjusting approach |
-| `PreCompact` | Before compaction | Yes (exit 2) | Block compaction; inject critical context that compaction would lose |
+| `PreCompact` | Before compaction | Yes (exit 2 or `{"decision":"block"}`) | Block compaction; inject critical context that compaction would lose |
 | `PostCompact` | After compaction | No | Re-inject state; reload environment |
+| `ConfigChange` | On config file write | Yes | Enterprise security auditing; block unauthorized settings changes — v2.1.49 |
+| `InstructionsLoaded` | When CLAUDE.md/rules loaded | No | React when instruction files are loaded into context — v2.1.69 |
+| `Elicitation` | Per MCP elicitation request | Yes | Intercept MCP server structured input requests; auto-fill or transform — v2.1.76 |
+| `ElicitationResult` | Per MCP elicitation response | Yes | Override elicitation responses before sent to MCP server — v2.1.76 |
+| `WorktreeCreate` | On worktree creation | No | Custom VCS setup for isolated agent worktrees — v2.1.50 |
+| `WorktreeRemove` | On worktree removal | No | Custom VCS teardown — v2.1.50 |
+| `Setup` | Via `--init`/`--init-only`/`--maintenance` | No | Repository setup and maintenance operations — v2.1.10 |
+| `TeammateIdle` | On teammate idle | Yes | Stop teammate: return `{"continue": false}` — v2.1.69 |
+| `TaskCompleted` | On task completion | Yes | Validate task output before returning to parent — v2.1.69 |
 | `Notification` | On alert | No | Slack/webhook routing; desktop notifications |
 | `FileChanged` | On watched file change | No | Hot-reload, re-read config on disk changes |
 | `CwdChanged` | On directory change | No | Reload env vars (direnv-style), switch project context |
+
+**Additional notes:**
+- Agent frontmatter `hooks:` now fire when running via `--agent` (v2.1.116)
+- Hook source (settings/plugin/skill) is displayed in permission prompts (v2.1.75) for audit traceability
 
 ### 12.2 Hook Configuration
 
@@ -650,9 +720,62 @@ Hooks fire at three cadences: **once per session**, **once per turn**, and **on 
 }
 ```
 
+**HTTP hooks (v2.1.63):** Call a remote webhook instead of a local script:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Edit",
+      "hooks": [{
+        "type": "http",
+        "url": "https://my-service.com/webhook",
+        "method": "POST"
+      }]
+    }]
+  }
+}
+```
+
+**MCP tool invocation from hooks (v2.1.118):** Hooks can invoke MCP tools directly without spawning a subprocess:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Edit",
+      "hooks": [{
+        "type": "mcp_tool",
+        "server": "my-server",
+        "tool": "format_code",
+        "input": {"file": "$CLAUDE_TOOL_ARG_FILE_PATH"}
+      }]
+    }]
+  }
+}
+```
+
+**Conditional `if` field (v2.1.85):** Filter when a hook runs using permission-rule syntax:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "if": "Bash(git *)",
+      "hooks": [{"type": "command", "command": "echo 'git call detected'"}]
+    }]
+  }
+}
+```
+
+**`once: true` option:** Add `"once": true` to a hook definition to run it only once per session, regardless of how many times the event fires.
+
 **Blocking a tool call (PreToolUse):**
 - Exit with code `2`, or
 - Return JSON `{"decision": "block", "reason": "explanation"}` — Claude sees the reason
+
+**PreToolUse satisfying AskUserQuestion (v2.1.85):** A `PreToolUse` hook can satisfy `AskUserQuestion` by returning `updatedInput` alongside `"permissionDecision": "allow"`.
 
 **PermissionDenied retry:**
 - Return `{"retry": true}` — tells Claude it may try again with an adjusted approach
@@ -687,47 +810,69 @@ Consolidated reference for all token-cost-relevant environment variables. Variab
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| ★ `CLAUDE_CODE_SUBAGENT_MODEL` | inherit | Override model for all subagents. Set to `haiku` globally for ~93% cost reduction on exploration tasks |
+| ★ `CLAUDE_CODE_SUBAGENT_MODEL` | inherit | Override model for all subagents. Set to `haiku` globally for ~80% cost reduction on exploration tasks vs Opus 4.7/4.6 |
 | ★ `MAX_THINKING_TOKENS` | ~32K | Fixed thinking budget when adaptive thinking is disabled. Lower to `10000` for ~70% thinking cost reduction |
-| ★ `CLAUDE_CODE_EFFORT_LEVEL` | model/plan default | Highest-priority effort override. Values: `low`, `medium`, `high`, `xhigh`, `max`. Set `high` to restore pre-March 2026 reasoning depth |
+| ★ `CLAUDE_CODE_EFFORT_LEVEL` | model/plan default | Highest-priority effort override. Values: `low`, `medium`, `high`, `xhigh`, `max`. Set `medium` to reduce costs vs the v2.1.117 default of `high` |
 | `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` | unset | Set to `1` to revert Opus 4.6/Sonnet 4.6 to fixed `MAX_THINKING_TOKENS` budget. No effect on Opus 4.7 |
 | `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | 83.5 | Context fill % that triggers auto-compaction. Range: 1–100. Lower = more aggressive compaction |
 | `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (v2.1.96) | unset | Hard ceiling on context size. When combined with `DISABLE_COMPACT`, prevents context growth beyond the cap |
+| `ENABLE_PROMPT_CACHING_1H` (v2.1.108) | unset | Opt into 1-hour prompt cache TTL for API key, Bedrock, Vertex, or Foundry. Replaces deprecated `ENABLE_PROMPT_CACHING_1H_BEDROCK` |
+| `FORCE_PROMPT_CACHING_5M` (v2.1.108) | unset | Force 5-minute prompt cache TTL regardless of plan. Useful for CI where long-lived cache is unnecessary |
 
 ### Session and Execution Controls
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | model max | Cap output token budget per turn. Note: has no effect on Opus 4.6 in some versions (tracked bug) |
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | model max | Cap output token budget per turn |
 | `CLAUDE_CODE_SCRIPT_CAPS` (v2.1.96) | unset | Restricts script capabilities in Bash tool. Paired with PID namespace isolation on Linux |
 | `CLAUDE_CODE_PERFORCE_MODE` (v2.1.96) | unset | Enables Perforce VCS mode instead of Git |
 | `CLAUDE_CODE_USE_MANTLE` (v2.1.94) | unset | Set to `1` for Amazon Bedrock powered by Mantle |
-| `AWS_BEARER_TOKEN_BEDROCK` | unset | Bearer token for Bedrock auth (replaces SigV4 in CLAUDE_CODE_SKIP_BEDROCK_AUTH mode) |
+| `AWS_BEARER_TOKEN_BEDROCK` | unset | Bearer token for Bedrock auth (replaces SigV4 in `CLAUDE_CODE_SKIP_BEDROCK_AUTH` mode) |
+| `ENABLE_TOOL_SEARCH` (v2.1.119) | unset | On Vertex AI, ToolSearch is off by default; set to `1` to opt in |
+| `DISABLE_UPDATES` (v2.1.118) | unset | Completely blocks all update paths including manual `claude update`. Stricter than `DISABLE_AUTOUPDATER` |
+| `CLAUDE_CODE_ENABLE_AWAY_SUMMARY` (v2.1.108) | 1 (on) | Set to `0` to opt out of the automatic session recap when returning after an absence |
+| `CLAUDE_CODE_FORK_SUBAGENT` (v2.1.121) | unset | Set to `1` to enable fork subagent mode in non-interactive sessions |
+| `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` (v2.1.4) | unset | Disables all background task functionality including auto-backgrounding and Ctrl+B |
+| `CLAUDE_CODE_SIMPLE` (v2.1.50) | unset | Fully minimal — disables MCP tools, attachments, hooks, CLAUDE.md, skills, session memory, and custom agents |
+| `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK` (v2.1.83) | unset | Disable non-streaming fallback when streaming fails |
+| `CLAUDE_CODE_DISABLE_1M_CONTEXT` (v2.1.50) | unset | Disable 1M context window support (forces 200K cap) |
+| `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` (v2.1.83) | unset | Set to `1` to strip Anthropic/cloud credentials from subprocess environments (Bash tool, hooks, MCP stdio) |
+| `ANTHROPIC_CUSTOM_MODEL_OPTION` (v2.1.78) | unset | Add a custom entry to the `/model` picker. Also supports `_NAME` and `_DESCRIPTION` suffix variants |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | — | Control the `sonnet` model alias used by Claude Code |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | — | Control the `opus` model alias used by Claude Code |
+| `CLAUDE_CODE_USE_POWERSHELL_TOOL` (v2.1.111) | platform default | Enable PowerShell tool (opt-in on non-Windows, opt-out on Windows) |
+| `AI_AGENT` (v2.1.120) | set automatically | Automatically set for subprocesses so `gh` and other tools can attribute traffic to Claude Code |
 
 ### Observability and Telemetry
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `DISABLE_TELEMETRY` | unset | Set to `1` to opt out of usage telemetry |
+| `DISABLE_TELEMETRY` | unset | Set to `1` to opt out of usage telemetry. Note: previously caused 5-min cache TTL fallback — fixed in v2.1.108 |
 | `DISABLE_ERROR_REPORTING` | unset | Set to `1` to suppress crash report uploads |
 | `CLAUDE_CODE_ENABLE_TELEMETRY` | unset | Enable structured telemetry output (OpenTelemetry) |
 | `OTEL_*` | — | Standard OpenTelemetry transport/logging env vars; used for forwarding metrics to external observability stacks |
+| `OTEL_LOG_USER_PROMPTS` (v2.1.101) | unset | Gate to emit user prompt text in OTel spans. Requires `CLAUDE_CODE_ENABLE_TELEMETRY=1` |
+| `OTEL_LOG_TOOL_DETAILS` (v2.1.85) | unset | Gate to emit tool parameter details in OTel events |
+| `OTEL_LOG_TOOL_CONTENT` (v2.1.101) | unset | Gate to emit full tool result content in OTel spans |
 | `MAX_STRUCTURED_OUTPUT_RETRIES` | 3 | Retry limit for structured output format recovery |
 
 ### Quick-Start `.env` for Cost-Optimized Interactive Sessions
 
 ```bash
-# Restore high-reasoning default (pre-March 2026 behavior)
-export CLAUDE_CODE_EFFORT_LEVEL=high
+# Reduce from the v2.1.117 high default if costs are too high
+export CLAUDE_CODE_EFFORT_LEVEL=medium
 
 # Set thinking budget ceiling (applies when adaptive thinking is off)
 export MAX_THINKING_TOKENS=10000
 
-# Route all subagents to Haiku (~93% cheaper for exploration)
+# Route all subagents to Haiku (~80% cheaper vs Opus 4.7/4.6)
 export CLAUDE_CODE_SUBAGENT_MODEL=haiku
 
 # Compact at 75% instead of 83.5% for faster headroom recovery
 export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75
+
+# Opt into 1-hour cache TTL on API key / Bedrock / Vertex / Foundry
+export ENABLE_PROMPT_CACHING_1H=1
 ```
 
 ### Quick-Start for CI / `--bare` Pipelines
@@ -1054,12 +1199,21 @@ The exam rewards **programmatic enforcement over prompt-based guidance** — hoo
 8. The `--resume` bug connected ToolSearch, caching, and session management
 9. Auto-compaction triggers at ~83.5% with a circuit breaker after 3 thrash loops
 10. `opusplan` routes Plan-mode turns to Opus while keeping main session on Sonnet
-11. PreToolUse is the ONLY hook that can block an action; all others are observational
+11. **Blocking hooks:** `PreToolUse`, `PreCompact` (via `{"decision":"block"}`), `ConfigChange`, `Elicitation`, and `ElicitationResult` can all block actions. `UserPromptSubmit` blocks via exit 2. `Stop` blocks by returning a keep-going signal. `TeammateIdle` and `TaskCompleted` are also blocking. Not all hooks are observational-only.
 12. `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1` does NOT apply to Opus 4.7
 13. ToolSearch regex patterns >200 chars are silently truncated — use short high-entropy patterns
-14. 1-hour cache write tier (2.0×) is for Pro/Max subscribers on likely-reused prefixes; API customers get 5-minute (1.25×) by default
+14. 1-hour cache write tier (2.0×) is for Pro/Max subscribers on likely-reused prefixes; API key, Bedrock, Vertex, Foundry users get 5-minute (1.25×) by default unless `ENABLE_PROMPT_CACHING_1H=1` is set (v2.1.108)
 15. The advisor() tool forwards the entire conversation — most valuable before approach crystallization and before declaring done
+16. `/usage` (v2.1.118) is the primary session cost monitoring command; `/cost` and `/stats` remain as shortcuts
+17. Opus 4.7 is the new primary model: `claude-opus-4-7`; same price as Opus 4.6 ($5/$25 MTok); xhigh effort is default for ALL plans; uses a new tokenizer (up to 1.35× more tokens for same text)
+18. Default effort for Pro/Max users on Opus 4.6/Sonnet 4.6 changed from `medium` → `high` in v2.1.117
+19. ToolSearch disabled by default on Vertex AI — opt in with `ENABLE_TOOL_SEARCH=1` (v2.1.119)
+20. `PostToolUse` and `PostToolUseFailure` hook inputs now include `duration_ms` field (v2.1.119)
+21. Hooks can invoke MCP tools directly via `"type": "mcp_tool"` (v2.1.118) — no subprocess needed
+22. `claude project purge [path]` (v2.1.126) deletes all Claude Code project state (transcripts, tasks, file history, config); supports `--dry-run`
+23. Skill descriptions in `/skills` listing capped at 1,536 characters (raised from 250 in v2.1.105)
+24. Opus 4.7 tokenizer change: same text may use up to 35% more tokens than on earlier models — account for this in context budget estimates
 
 ---
 
-*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Apiyi April 2026 Changelog Analysis](https://help.apiyi.com/en/claude-code-changelog-2026-april-updates-en.html), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated April 18, 2026 (v2.1.101).*
+*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Introducing Claude Opus 4.7](https://www.anthropic.com/news/claude-opus-4-7), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated May 2, 2026 (v2.1.126).*
