@@ -574,6 +574,7 @@ body {
   flex-wrap: wrap;
   gap: 2rem;
   justify-content: center;
+  align-items: center;
   margin: 0 auto 3rem;
   padding: 1.5rem 2rem;
   background: var(--sl-color-bg-sidebar);
