@@ -42,9 +42,9 @@ function AgenticLoop() {
 
   const boxStyle = (id, active) => ({
     padding: "10px 14px", borderRadius: 10, textAlign: "center", fontSize: 12, fontWeight: 600,
-    border: `2px solid ${active ? "#3B82F6" : "#E2E8F0"}`,
-    background: active ? "#EBF5FF" : "white",
-    color: active ? "#1E40AF" : "#64748B",
+    border: `2px solid ${active ? "#3B82F6" : "rgba(255,255,255,0.12)"}`,
+    background: active ? "rgba(59,130,246,0.15)" : "#161b22",
+    color: active ? "#93c5fd" : "#9ba8b0",
     transition: "all 0.4s ease",
     transform: active ? "scale(1.05)" : "scale(1)",
     boxShadow: active ? "0 4px 15px rgba(59,130,246,0.25)" : "none",
@@ -53,11 +53,11 @@ function AgenticLoop() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 16, color: "#1E293B" }}>The Agentic Loop — Step by Step</h3>
+        <h3 style={{ margin: 0, fontSize: 16, color: "#e0e0e0" }}>The Agentic Loop — Step by Step</h3>
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={() => setStep(Math.max(0, step - 1))} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #E2E8F0", background: "white", cursor: "pointer", fontSize: 13 }}>← Prev</button>
+          <button onClick={() => setStep(Math.max(0, step - 1))} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "#161b22", cursor: "pointer", fontSize: 13 }}>← Prev</button>
           <button onClick={() => setAutoPlay(!autoPlay)} style={{ padding: "4px 12px", borderRadius: 6, border: "none", background: autoPlay ? "#EF4444" : "#3B82F6", color: "white", cursor: "pointer", fontSize: 13 }}>{autoPlay ? "⏸ Pause" : "▶ Auto"}</button>
-          <button onClick={() => setStep((step + 1) % steps.length)} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid #E2E8F0", background: "white", cursor: "pointer", fontSize: 13 }}>Next →</button>
+          <button onClick={() => setStep((step + 1) % steps.length)} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "#161b22", cursor: "pointer", fontSize: 13 }}>Next →</button>
         </div>
       </div>
 
@@ -75,24 +75,24 @@ function AgenticLoop() {
         <div style={boxStyle("loop", s.highlight === "loop")}>🔄 Loop Back to Claude</div>
       </div>
 
-      <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 16, border: "1px solid #E2E8F0" }}>
+      <div style={{ background: "#1c2333", borderRadius: 12, padding: 16, border: "1px solid rgba(255,255,255,0.12)" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           {steps.map((_, i) => (
             <button key={i} onClick={() => setStep(i)} style={{
-              width: 28, height: 28, borderRadius: "50%", border: `2px solid ${i === step ? "#3B82F6" : "#CBD5E1"}`,
-              background: i === step ? "#3B82F6" : i < step ? "#DBEAFE" : "white",
-              color: i === step ? "white" : "#64748B", fontSize: 11, fontWeight: 600, cursor: "pointer",
+              width: 28, height: 28, borderRadius: "50%", border: `2px solid ${i === step ? "#3B82F6" : "rgba(255,255,255,0.2)"}`,
+              background: i === step ? "#3B82F6" : i < step ? "rgba(59,130,246,0.15)" : "#1c2333",
+              color: i === step ? "white" : "#9ba8b0", fontSize: 11, fontWeight: 600, cursor: "pointer",
             }}>{i + 1}</button>
           ))}
         </div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 6 }}>{s.title}</div>
-        <div style={{ fontSize: 13, lineHeight: 1.6, color: "#475569", marginBottom: 12 }}>{s.desc}</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 6 }}>{s.title}</div>
+        <div style={{ fontSize: 13, lineHeight: 1.6, color: "#9ba8b0", marginBottom: 12 }}>{s.desc}</div>
         <pre style={{ background: "#1E293B", color: "#A5F3FC", borderRadius: 8, padding: 12, fontSize: 12, lineHeight: 1.5, overflow: "auto", margin: 0 }}>{s.code}</pre>
       </div>
 
-      <div style={{ marginTop: 12, padding: 12, background: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#991B1B", marginBottom: 4 }}>⚠️ Three Anti-Patterns (Wrong Answers on Exam)</div>
-        <div style={{ fontSize: 12, color: "#7F1D1D", lineHeight: 1.5 }}>
+      <div style={{ marginTop: 12, padding: 12, background: "rgba(239,68,68,0.08)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.3)" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#f87171", marginBottom: 4 }}>⚠️ Three Anti-Patterns (Wrong Answers on Exam)</div>
+        <div style={{ fontSize: 12, color: "#fca5a5", lineHeight: 1.5 }}>
           ❌ Parsing natural language ("I'm done") for termination — use stop_reason<br/>
           ❌ Arbitrary iteration caps (for i in range(5)) as PRIMARY mechanism<br/>
           ❌ Checking for text content as completion signal — text can appear alongside tool_use
@@ -133,22 +133,22 @@ function MultiAgent() {
 
   return (
     <div>
-      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#1E293B" }}>Hub-and-Spoke Multi-Agent Architecture</h3>
-      <p style={{ fontSize: 13, color: "#64748B", margin: "0 0 16px" }}>Click any agent to see its configuration, exam-relevant details, and code.</p>
+      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#e0e0e0" }}>Hub-and-Spoke Multi-Agent Architecture</h3>
+      <p style={{ fontSize: 13, color: "#9ba8b0", margin: "0 0 16px" }}>Click any agent to see its configuration, exam-relevant details, and code.</p>
       
-      <div style={{ position: "relative", height: 250, background: "#F8FAFC", borderRadius: 12, border: "1px solid #E2E8F0", marginBottom: 12 }}>
+      <div style={{ position: "relative", height: 250, background: "#1c2333", borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", marginBottom: 12 }}>
         {Object.entries(agents).map(([key, a]) => (
           <button key={key} onClick={() => setSelected(selected === key ? null : key)} style={{
             position: "absolute", left: `${a.x}px`, top: `${a.y}%`,
             width: a.w, padding: "12px 8px", borderRadius: 12,
             border: `2px solid ${selected === key ? a.color : a.color + "44"}`,
-            background: selected === key ? a.color + "15" : "white",
+            background: selected === key ? a.color + "15" : "#161b22",
             cursor: "pointer", textAlign: "center", fontSize: 13, fontWeight: 600,
             color: a.color, transition: "all 0.2s",
             boxShadow: selected === key ? `0 4px 15px ${a.color}33` : "0 1px 3px rgba(0,0,0,0.1)",
           }}>
             {a.label}
-            <div style={{ fontSize: 10, fontWeight: 400, marginTop: 4, color: "#64748B" }}>
+            <div style={{ fontSize: 10, fontWeight: 400, marginTop: 4, color: "#9ba8b0" }}>
               {key === "coordinator" ? "Manages all communication" : "Isolated context"}
             </div>
           </button>
@@ -159,7 +159,7 @@ function MultiAgent() {
         ))}
         
         <div style={{ position: "absolute", bottom: 8, left: 10, right: 10, textAlign: "center" }}>
-          <div style={{ fontSize: 11, color: "#94A3B8", background: "#FEF3C7", display: "inline-block", padding: "4px 10px", borderRadius: 6 }}>
+          <div style={{ fontSize: 11, color: "#94A3B8", background: "rgba(245,158,11,0.08)", display: "inline-block", padding: "4px 10px", borderRadius: 6 }}>
             ⚡ Parallel: Coordinator emits multiple Agent calls in ONE response → all run concurrently
           </div>
         </div>
@@ -168,22 +168,22 @@ function MultiAgent() {
       {selected && (
         <div style={{ background: agents[selected].color + "08", border: `1px solid ${agents[selected].color}33`, borderRadius: 12, padding: 16, transition: "all 0.3s" }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: agents[selected].color, marginBottom: 8 }}>{agents[selected].label}</div>
-          <div style={{ fontSize: 13, lineHeight: 1.6, color: "#334155", marginBottom: 10 }}>{agents[selected].desc}</div>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: "#9ba8b0", marginBottom: 10 }}>{agents[selected].desc}</div>
           <pre style={{ background: "#1E293B", color: "#A5F3FC", borderRadius: 8, padding: 10, fontSize: 12, margin: "0 0 10px" }}>{agents[selected].code}</pre>
-          <div style={{ fontSize: 12, padding: 8, background: "#FEF2F2", borderRadius: 6, color: "#991B1B" }}>
+          <div style={{ fontSize: 12, padding: 8, background: "rgba(239,68,68,0.08)", borderRadius: 6, color: "#f87171" }}>
             <strong>🎯 Exam Tip:</strong> {agents[selected].exam}
           </div>
         </div>
       )}
       
       <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <div style={{ padding: 10, background: "#F0FDF4", borderRadius: 8, border: "1px solid #BBF7D0" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#166534" }}>✅ Context Passing Pattern</div>
-          <div style={{ fontSize: 11, color: "#15803D", marginTop: 4, lineHeight: 1.5 }}>Pass complete findings from prior agents directly in the subagent's prompt. Use structured data separating content from metadata.</div>
+        <div style={{ padding: 10, background: "rgba(34,197,94,0.08)", borderRadius: 8, border: "1px solid rgba(34,197,94,0.3)" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#86efac" }}>✅ Context Passing Pattern</div>
+          <div style={{ fontSize: 11, color: "#86efac", marginTop: 4, lineHeight: 1.5 }}>Pass complete findings from prior agents directly in the subagent's prompt. Use structured data separating content from metadata.</div>
         </div>
-        <div style={{ padding: 10, background: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#991B1B" }}>❌ Common Mistake</div>
-          <div style={{ fontSize: 11, color: "#7F1D1D", marginTop: 4, lineHeight: 1.5 }}>Assuming subagents "see" coordinator's conversation. They DON'T. Every subagent starts with a fresh, isolated context window.</div>
+        <div style={{ padding: 10, background: "rgba(239,68,68,0.08)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.3)" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#f87171" }}>❌ Common Mistake</div>
+          <div style={{ fontSize: 11, color: "#fca5a5", marginTop: 4, lineHeight: 1.5 }}>Assuming subagents “see” coordinator’s conversation. They DON’T. Every subagent starts with a fresh, isolated context window.</div>
         </div>
       </div>
     </div>
@@ -239,19 +239,19 @@ function HooksFlow() {
 
   return (
     <div>
-      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#1E293B" }}>Agent SDK Hooks — Interactive Scenarios</h3>
+      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#e0e0e0" }}>Agent SDK Hooks — Interactive Scenarios</h3>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
         {Object.entries(scenarios).map(([key, val]) => (
           <button key={key} onClick={() => setScenario(key)} style={{
-            padding: "6px 12px", borderRadius: 8, border: `2px solid ${scenario === key ? "#F59E0B" : "#E2E8F0"}`,
-            background: scenario === key ? "#FEF3C7" : "white", fontSize: 12, fontWeight: 600,
-            color: scenario === key ? "#92400E" : "#64748B", cursor: "pointer",
+            padding: "6px 12px", borderRadius: 8, border: `2px solid ${scenario === key ? "#F59E0B" : "rgba(255,255,255,0.12)"}`,
+            background: scenario === key ? "rgba(245,158,11,0.08)" : "#161b22", fontSize: 12, fontWeight: 600,
+            color: scenario === key ? "#92400E" : "#9ba8b0", cursor: "pointer",
           }}>{val.title.replace("Scenario: ", "")}</button>
         ))}
       </div>
 
-      <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 16, border: "1px solid #E2E8F0" }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#1E293B", marginBottom: 12 }}>{sc.title}</div>
+      <div style={{ background: "#1c2333", borderRadius: 12, padding: 16, border: "1px solid rgba(255,255,255,0.12)" }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#e0e0e0", marginBottom: 12 }}>{sc.title}</div>
         {sc.steps.map((s, i) => (
           <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: i < sc.steps.length - 1 ? 8 : 0 }}>
             <div style={{
@@ -262,9 +262,9 @@ function HooksFlow() {
             }}>{i + 1}</div>
             <div style={{
               flex: 1, padding: "8px 12px", borderRadius: 8,
-              background: s.type === "deny" ? "#FEF2F2" : s.type === "allow" ? "#F0FDF4" : s.type === "hook" || s.type === "transform" || s.type === "check" ? "#FEF3C7" : "white",
+              background: s.type === "deny" ? "rgba(239,68,68,0.08)" : s.type === "allow" ? "rgba(34,197,94,0.08)" : s.type === "hook" || s.type === "transform" || s.type === "check" ? "rgba(245,158,11,0.08)" : "#161b22",
               border: `1px solid ${s.color}33`,
-              fontSize: 13, color: "#334155", fontFamily: s.type === "result" ? "monospace" : "inherit",
+              fontSize: 13, color: "#9ba8b0", fontFamily: s.type === "result" ? "monospace" : "inherit",
             }}>
               {s.type === "hook" && "⚡ "}{s.type === "deny" && "🚫 "}{s.type === "allow" && "✅ "}{s.label}
             </div>
@@ -273,13 +273,13 @@ function HooksFlow() {
         ))}
       </div>
 
-      <div style={{ marginTop: 12, padding: 12, background: "#EBF5FF", borderRadius: 8, border: "1px solid #93C5FD" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "#1E40AF" }}>💡 Key Takeaway</div>
+      <div style={{ marginTop: 12, padding: 12, background: "rgba(59,130,246,0.08)", borderRadius: 8, border: "1px solid rgba(59,130,246,0.3)" }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#93c5fd" }}>💡 Key Takeaway</div>
         <div style={{ fontSize: 13, color: "#1E3A5F", marginTop: 4, lineHeight: 1.5 }}>{sc.takeaway}</div>
       </div>
 
       <div style={{ marginTop: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 8 }}>All 8 Hook Events</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#9ba8b0", marginBottom: 8 }}>All 8 Hook Events</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           {[
             { name: "PreToolUse", desc: "Fires before tool call — can block or modify", color: "#F59E0B" },
@@ -291,9 +291,9 @@ function HooksFlow() {
             { name: "InstructionsLoaded", desc: "Fires when memory/rules load at session start", color: "#0EA5E9" },
             { name: "Elicitation", desc: "Fires when Claude requests user input — can auto-respond", color: "#EC4899" },
           ].map((h, i) => (
-            <div key={i} style={{ padding: 8, background: "#F8FAFC", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+            <div key={i} style={{ padding: 8, background: "#1c2333", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)" }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: h.color }}>{h.name}</div>
-              <div style={{ fontSize: 10, color: "#64748B", marginTop: 3 }}>{h.desc}</div>
+              <div style={{ fontSize: 10, color: "#9ba8b0", marginTop: 3 }}>{h.desc}</div>
             </div>
           ))}
         </div>
@@ -312,8 +312,8 @@ function ToolDesign() {
       content: (
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div style={{ padding: 14, background: "#FEF2F2", borderRadius: 10, border: "1px solid #FECACA" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#991B1B", marginBottom: 8 }}>❌ Minimal Descriptions</div>
+            <div style={{ padding: 14, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#f87171", marginBottom: 8 }}>❌ Minimal Descriptions</div>
               <pre style={{ background: "#1E293B", color: "#FCA5A5", borderRadius: 6, padding: 10, fontSize: 11, margin: 0, lineHeight: 1.4 }}>{`get_customer:
   "Retrieves customer information"
 
@@ -323,8 +323,8 @@ lookup_order:
 → 50% misrouting rate
 → Claude can't differentiate`}</pre>
             </div>
-            <div style={{ padding: 14, background: "#F0FDF4", borderRadius: 10, border: "1px solid #BBF7D0" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#166534", marginBottom: 8 }}>✅ Detailed Descriptions</div>
+            <div style={{ padding: 14, background: "rgba(34,197,94,0.08)", borderRadius: 10, border: "1px solid rgba(34,197,94,0.3)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#86efac", marginBottom: 8 }}>✅ Detailed Descriptions</div>
               <pre style={{ background: "#1E293B", color: "#86EFAC", borderRadius: 6, padding: 10, fontSize: 11, margin: 0, lineHeight: 1.4 }}>{`get_customer:
   "Look up customer by email
    or phone. Returns ID, name,
@@ -336,7 +336,7 @@ lookup_order:
 → Clear boundaries`}</pre>
             </div>
           </div>
-          <div style={{ marginTop: 12, padding: 10, background: "#EBF5FF", borderRadius: 8, fontSize: 12, color: "#1E40AF", border: "1px solid #93C5FD" }}>
+          <div style={{ marginTop: 12, padding: 10, background: "rgba(59,130,246,0.08)", borderRadius: 8, fontSize: 12, color: "#93c5fd", border: "1px solid rgba(59,130,246,0.3)" }}>
             <strong>Exam Rule:</strong> When the question asks about fixing tool misrouting, the answer is ALWAYS "expand tool descriptions" — not few-shot examples, not routing classifiers, not tool consolidation. Descriptions are the #1 mechanism.
           </div>
         </div>
@@ -347,8 +347,8 @@ lookup_order:
       content: (
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div style={{ padding: 14, background: "#FEF2F2", borderRadius: 10, border: "1px solid #FECACA" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#991B1B", marginBottom: 8 }}>Access Failure (isError: true)</div>
+            <div style={{ padding: 14, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#f87171", marginBottom: 8 }}>Access Failure (isError: true)</div>
               <pre style={{ background: "#1E293B", color: "#FCA5A5", borderRadius: 6, padding: 10, fontSize: 11, margin: 0, lineHeight: 1.5 }}>{`{
   "content": [{
     "type": "text",
@@ -359,8 +359,8 @@ lookup_order:
 → Agent knows: query FAILED
 → May retry or try alternative`}</pre>
             </div>
-            <div style={{ padding: 14, background: "#F0FDF4", borderRadius: 10, border: "1px solid #BBF7D0" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#166534", marginBottom: 8 }}>Valid Empty Result (isError: false)</div>
+            <div style={{ padding: 14, background: "rgba(34,197,94,0.08)", borderRadius: 10, border: "1px solid rgba(34,197,94,0.3)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#86efac", marginBottom: 8 }}>Valid Empty Result (isError: false)</div>
               <pre style={{ background: "#1E293B", color: "#86EFAC", borderRadius: 6, padding: 10, fontSize: 11, margin: 0, lineHeight: 1.5 }}>{`{
   "content": [{
     "type": "text",
@@ -372,7 +372,7 @@ lookup_order:
 → Just no matches. Move on.`}</pre>
             </div>
           </div>
-          <div style={{ marginTop: 12, padding: 10, background: "#FEF3C7", borderRadius: 8, fontSize: 12, color: "#92400E", border: "1px solid #FDE68A" }}>
+          <div style={{ marginTop: 12, padding: 10, background: "rgba(245,158,11,0.08)", borderRadius: 8, fontSize: 12, color: "#92400E", border: "1px solid rgba(245,158,11,0.3)" }}>
             <strong>Critical Distinction:</strong> Timeout (access failure) ≠ No matches (empty result). Conflating them is an anti-pattern. isError: true goes into the LLM context window, enabling recovery.
           </div>
         </div>
@@ -386,13 +386,13 @@ lookup_order:
             { opt: '"auto"', desc: "Claude decides freely — may or may not call a tool", when: "Default for most agentic loops", color: "#3B82F6", icon: "🤔" },
             { opt: '"any"', desc: "MUST call a tool, but can choose which one", when: "Guaranteed structured output, unknown document type", color: "#10B981", icon: "🎯" },
             { opt: '{type:"tool", name:"X"}', desc: "MUST call this specific named tool", when: "Force metadata extraction before enrichment", color: "#8B5CF6", icon: "📌" },
-            { opt: '"none"', desc: "Cannot call any tools — text response only", when: "Tools defined but shouldn't be used for this turn", color: "#64748B", icon: "🚫" },
+            { opt: '"none"', desc: "Cannot call any tools — text response only", when: "Tools defined but shouldn’t be used for this turn", color: "#9ba8b0", icon: "🚫" },
           ].map((t, i) => (
             <div key={i} style={{ display: "flex", gap: 12, padding: 12, background: t.color + "08", borderRadius: 10, border: `1px solid ${t.color}22`, alignItems: "center" }}>
               <div style={{ fontSize: 24, flexShrink: 0 }}>{t.icon}</div>
               <div style={{ flex: 1 }}>
                 <code style={{ fontSize: 13, fontWeight: 700, color: t.color }}>{t.opt}</code>
-                <div style={{ fontSize: 12, color: "#475569", marginTop: 2 }}>{t.desc}</div>
+                <div style={{ fontSize: 12, color: "#9ba8b0", marginTop: 2 }}>{t.desc}</div>
                 <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>Use when: {t.when}</div>
               </div>
             </div>
@@ -404,13 +404,13 @@ lookup_order:
 
   return (
     <div>
-      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#1E293B" }}>Tool Design & MCP Integration</h3>
+      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#e0e0e0" }}>Tool Design &amp; MCP Integration</h3>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
         {Object.entries(views).map(([key, val]) => (
           <button key={key} onClick={() => setView(key)} style={{
-            padding: "6px 12px", borderRadius: 8, border: `2px solid ${view === key ? "#10B981" : "#E2E8F0"}`,
-            background: view === key ? "#ECFDF5" : "white", fontSize: 12, fontWeight: 600,
-            color: view === key ? "#065F46" : "#64748B", cursor: "pointer",
+            padding: "6px 12px", borderRadius: 8, border: `2px solid ${view === key ? "#10B981" : "rgba(255,255,255,0.12)"}`,
+            background: view === key ? "rgba(16,185,129,0.1)" : "#161b22", fontSize: 12, fontWeight: 600,
+            color: view === key ? "#065F46" : "#9ba8b0", cursor: "pointer",
           }}>{val.title.split(":")[0].split("→")[0].trim()}</button>
         ))}
       </div>
@@ -439,8 +439,8 @@ function ConfigHierarchy() {
 
   return (
     <div>
-      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#1E293B" }}>CLAUDE.md Configuration Hierarchy</h3>
-      <p style={{ fontSize: 13, color: "#64748B", margin: "0 0 16px" }}>Click each level to see details. Arrow direction shows increasing precedence (higher overrides lower).</p>
+      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#e0e0e0" }}>CLAUDE.md Configuration Hierarchy</h3>
+      <p style={{ fontSize: 13, color: "#9ba8b0", margin: "0 0 16px" }}>Click each level to see details. Arrow direction shows increasing precedence (higher overrides lower).</p>
       
       <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 }}>
         {levels.map((level, i) => (
@@ -449,26 +449,26 @@ function ConfigHierarchy() {
               width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
               padding: "12px 16px", borderRadius: 10, cursor: "pointer",
               border: `2px solid ${selected === level.id ? level.color : level.color + "33"}`,
-              background: selected === level.id ? level.color + "10" : "white",
+              background: selected === level.id ? level.color + "10" : "#161b22",
               transition: "all 0.2s",
             }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <div style={{ width: 32, height: 32, borderRadius: 8, background: level.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: level.color }}>{i + 1}</div>
                 <div style={{ textAlign: "left" }}>
                   <code style={{ fontSize: 13, fontWeight: 600, color: level.color }}>{level.label}</code>
-                  <div style={{ fontSize: 11, color: "#64748B" }}>{level.scope}</div>
+                  <div style={{ fontSize: 11, color: "#9ba8b0" }}>{level.scope}</div>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: level.shared ? "#DCFCE7" : "#FEE2E2", color: level.shared ? "#166534" : "#991B1B", fontWeight: 600 }}>
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: level.shared ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", color: level.shared ? "#86efac" : "#f87171", fontWeight: 600 }}>
                   {level.shared ? "✓ Shared via VC" : "✗ NOT shared"}
                 </span>
                 <span style={{ fontSize: 11, color: "#94A3B8" }}>{i === 0 ? "Lowest" : i === levels.length - 1 ? "Highest" : ""} precedence</span>
               </div>
             </button>
             {selected === level.id && (
-              <div style={{ margin: "4px 0 8px 42px", padding: 14, background: "#F8FAFC", borderRadius: 8, border: `1px solid ${level.color}22` }}>
-                <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.6, marginBottom: 8 }}>{level.detail}</div>
+              <div style={{ margin: "4px 0 8px 42px", padding: 14, background: "#1c2333", borderRadius: 8, border: `1px solid ${level.color}22` }}>
+                <div style={{ fontSize: 13, color: "#9ba8b0", lineHeight: 1.6, marginBottom: 8 }}>{level.detail}</div>
                 <pre style={{ background: "#1E293B", color: "#A5F3FC", borderRadius: 6, padding: 10, fontSize: 11, margin: 0 }}>{level.example}</pre>
               </div>
             )}
@@ -478,16 +478,16 @@ function ConfigHierarchy() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <div style={{ padding: 10, background: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#991B1B" }}>🎯 Exam Trap: New Team Member</div>
-          <div style={{ fontSize: 11, color: "#7F1D1D", marginTop: 4 }}>Conventions in ~/.claude/CLAUDE.md → new member doesn't have them. Fix: move to .claude/CLAUDE.md (project-level).</div>
+        <div style={{ padding: 10, background: "rgba(239,68,68,0.08)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.3)" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#f87171" }}>🎯 Exam Trap: New Team Member</div>
+          <div style={{ fontSize: 11, color: "#fca5a5", marginTop: 4 }}>Conventions in ~/.claude/CLAUDE.md → new member doesn't have them. Fix: move to .claude/CLAUDE.md (project-level).</div>
         </div>
-        <div style={{ padding: 10, background: "#EBF5FF", borderRadius: 8, border: "1px solid #93C5FD" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#1E40AF" }}>🎯 Exam Trap: Scattered Test Files</div>
+        <div style={{ padding: 10, background: "rgba(59,130,246,0.08)", borderRadius: 8, border: "1px solid rgba(59,130,246,0.3)" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#93c5fd" }}>🎯 Exam Trap: Scattered Test Files</div>
           <div style={{ fontSize: 11, color: "#1E3A5F", marginTop: 4 }}>Use .claude/rules/testing.md with paths: ["**/*.test.*"], NOT directory CLAUDE.md in each folder.</div>
         </div>
       </div>
-      <div style={{ marginTop: 8, padding: 10, background: "#ECFDF5", borderRadius: 8, border: "1px solid #A7F3D0" }}>
+      <div style={{ marginTop: 8, padding: 10, background: "rgba(34,197,94,0.08)", borderRadius: 8, border: "1px solid rgba(34,197,94,0.3)" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "#065F46" }}>📝 Also Loads at Session Start: MEMORY.md</div>
         <div style={{ fontSize: 11, color: "#047857", marginTop: 4 }}>MEMORY.md (auto-generated, v2.1.59) also loads permanently — Claude Code writes discovered facts here. Check .claude/MEMORY.md to see what Claude has learned about your project.</div>
       </div>
@@ -501,11 +501,11 @@ function StructuredOutput() {
 
   return (
     <div>
-      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#1E293B" }}>Structured Output via tool_use</h3>
+      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#e0e0e0" }}>Structured Output via tool_use</h3>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        <button onClick={() => setView("flow")} style={{ padding: "6px 12px", borderRadius: 8, border: `2px solid ${view === "flow" ? "#8B5CF6" : "#E2E8F0"}`, background: view === "flow" ? "#F3E8FF" : "white", fontSize: 12, fontWeight: 600, color: view === "flow" ? "#6B21A8" : "#64748B", cursor: "pointer" }}>Extraction Flow</button>
-        <button onClick={() => setView("errors")} style={{ padding: "6px 12px", borderRadius: 8, border: `2px solid ${view === "errors" ? "#8B5CF6" : "#E2E8F0"}`, background: view === "errors" ? "#F3E8FF" : "white", fontSize: 12, fontWeight: 600, color: view === "errors" ? "#6B21A8" : "#64748B", cursor: "pointer" }}>Syntax vs Semantic</button>
-        <button onClick={() => setView("batch")} style={{ padding: "6px 12px", borderRadius: 8, border: `2px solid ${view === "batch" ? "#8B5CF6" : "#E2E8F0"}`, background: view === "batch" ? "#F3E8FF" : "white", fontSize: 12, fontWeight: 600, color: view === "batch" ? "#6B21A8" : "#64748B", cursor: "pointer" }}>Batch vs Real-time</button>
+        <button onClick={() => setView("flow")} style={{ padding: "6px 12px", borderRadius: 8, border: `2px solid ${view === "flow" ? "#8B5CF6" : "rgba(255,255,255,0.12)"}`, background: view === "flow" ? "rgba(168,85,247,0.1)" : "#161b22", fontSize: 12, fontWeight: 600, color: view === "flow" ? "#d8b4fe" : "#9ba8b0", cursor: "pointer" }}>Extraction Flow</button>
+        <button onClick={() => setView("errors")} style={{ padding: "6px 12px", borderRadius: 8, border: `2px solid ${view === "errors" ? "#8B5CF6" : "rgba(255,255,255,0.12)"}`, background: view === "errors" ? "rgba(168,85,247,0.1)" : "#161b22", fontSize: 12, fontWeight: 600, color: view === "errors" ? "#d8b4fe" : "#9ba8b0", cursor: "pointer" }}>Syntax vs Semantic</button>
+        <button onClick={() => setView("batch")} style={{ padding: "6px 12px", borderRadius: 8, border: `2px solid ${view === "batch" ? "#8B5CF6" : "rgba(255,255,255,0.12)"}`, background: view === "batch" ? "rgba(168,85,247,0.1)" : "#161b22", fontSize: 12, fontWeight: 600, color: view === "batch" ? "#d8b4fe" : "#9ba8b0", cursor: "pointer" }}>Batch vs Real-time</button>
       </div>
 
       {view === "flow" && (
@@ -522,7 +522,7 @@ function StructuredOutput() {
               <div style={{ fontSize: 20, flexShrink: 0 }}>{s.icon}</div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: s.color }}>Step {s.step}: {s.label}</div>
-                <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{s.detail}</div>
+                <div style={{ fontSize: 12, color: "#9ba8b0", marginTop: 2 }}>{s.detail}</div>
               </div>
             </div>
           ))}
@@ -531,19 +531,19 @@ function StructuredOutput() {
 
       {view === "errors" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div style={{ padding: 14, background: "#F0FDF4", borderRadius: 10, border: "2px solid #22C55E" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#166534", marginBottom: 10 }}>✅ Syntax Errors (FIXED by tool_use)</div>
+          <div style={{ padding: 14, background: "rgba(34,197,94,0.08)", borderRadius: 10, border: "2px solid #22C55E" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#86efac", marginBottom: 10 }}>✅ Syntax Errors (FIXED by tool_use)</div>
             <div style={{ display: "grid", gap: 6 }}>
               {["Missing closing brace", "Invalid JSON comma", "Wrong type (string vs number)", "Missing required field", "Malformed array syntax"].map((e, i) => (
-                <div key={i} style={{ fontSize: 12, padding: "4px 8px", background: "#DCFCE7", borderRadius: 4, color: "#166534" }}>✓ {e}</div>
+                <div key={i} style={{ fontSize: 12, padding: "4px 8px", background: "rgba(34,197,94,0.15)", borderRadius: 4, color: "#86efac" }}>✓ {e}</div>
               ))}
             </div>
           </div>
-          <div style={{ padding: 14, background: "#FEF2F2", borderRadius: 10, border: "2px solid #EF4444" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#991B1B", marginBottom: 10 }}>❌ Semantic Errors (NOT fixed)</div>
+          <div style={{ padding: 14, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "2px solid #EF4444" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#f87171", marginBottom: 10 }}>❌ Semantic Errors (NOT fixed)</div>
             <div style={{ display: "grid", gap: 6 }}>
               {["Line items don't sum to total", "Values placed in wrong fields", "Fabricated data for missing info", "Inconsistent dates/amounts", "Hallucinated field values"].map((e, i) => (
-                <div key={i} style={{ fontSize: 12, padding: "4px 8px", background: "#FEE2E2", borderRadius: 4, color: "#991B1B" }}>✗ {e}</div>
+                <div key={i} style={{ fontSize: 12, padding: "4px 8px", background: "rgba(239,68,68,0.15)", borderRadius: 4, color: "#f87171" }}>✗ {e}</div>
               ))}
             </div>
           </div>
@@ -553,24 +553,24 @@ function StructuredOutput() {
       {view === "batch" && (
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div style={{ padding: 14, background: "#F0FDF4", borderRadius: 10, border: "1px solid #BBF7D0" }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#166534", marginBottom: 8 }}>Batch API ✅</div>
-              <div style={{ fontSize: 12, color: "#15803D", lineHeight: 1.6 }}>
+            <div style={{ padding: 14, background: "rgba(34,197,94,0.08)", borderRadius: 10, border: "1px solid rgba(34,197,94,0.3)" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#86efac", marginBottom: 8 }}>Batch API ✅</div>
+              <div style={{ fontSize: 12, color: "#86efac", lineHeight: 1.6 }}>
                 50% cost savings<br/>Up to 24hr processing<br/>100K requests/batch<br/>custom_id correlation<br/>No latency SLA
               </div>
-              <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#166534" }}>Good for:</div>
-              <div style={{ fontSize: 11, color: "#15803D" }}>Overnight reports, weekly audits, nightly test gen, bulk extraction</div>
+              <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#86efac" }}>Good for:</div>
+              <div style={{ fontSize: 11, color: "#86efac" }}>Overnight reports, weekly audits, nightly test gen, bulk extraction</div>
             </div>
-            <div style={{ padding: 14, background: "#FEF2F2", borderRadius: 10, border: "1px solid #FECACA" }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#991B1B", marginBottom: 8 }}>Batch API ❌</div>
-              <div style={{ fontSize: 12, color: "#7F1D1D", lineHeight: 1.6 }}>
-                No multi-turn tool calling<br/>No guaranteed latency<br/>Can't use for agentic loops<br/>Results may arrive out of order
+            <div style={{ padding: 14, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#f87171", marginBottom: 8 }}>Batch API ❌</div>
+              <div style={{ fontSize: 12, color: "#fca5a5", lineHeight: 1.6 }}>
+                No multi-turn tool calling<br/>No guaranteed latency<br/>Can’t use for agentic loops<br/>Results may arrive out of order
               </div>
-              <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#991B1B" }}>Bad for:</div>
-              <div style={{ fontSize: 11, color: "#7F1D1D" }}>Blocking pre-merge checks, real-time support, interactive workflows</div>
+              <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#f87171" }}>Bad for:</div>
+              <div style={{ fontSize: 11, color: "#fca5a5" }}>Blocking pre-merge checks, real-time support, interactive workflows</div>
             </div>
           </div>
-          <div style={{ padding: 10, background: "#FEF3C7", borderRadius: 8, border: "1px solid #FDE68A", fontSize: 12, color: "#92400E" }}>
+          <div style={{ padding: 10, background: "rgba(245,158,11,0.08)", borderRadius: 8, border: "1px solid rgba(245,158,11,0.3)", fontSize: 12, color: "#92400E" }}>
             <strong>Exam Question Pattern:</strong> "Should both workflows use Batch API?" → Only the latency-tolerant one. Blocking workflows stay real-time.
           </div>
         </div>
@@ -589,13 +589,13 @@ function ContextMgmt() {
       content: (
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div style={{ padding: 14, background: "#FEF2F2", borderRadius: 10, border: "1px solid #FECACA" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#991B1B", marginBottom: 8 }}>❌ After Summarization</div>
-              <div style={{ fontSize: 13, color: "#7F1D1D", lineHeight: 1.6 }}>"Customer had an order issue and wants a partial refund."</div>
-              <div style={{ fontSize: 11, color: "#B91C1C", marginTop: 6 }}>Lost: amounts, dates, item name, deadline</div>
+            <div style={{ padding: 14, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#f87171", marginBottom: 8 }}>❌ After Summarization</div>
+              <div style={{ fontSize: 13, color: "#fca5a5", lineHeight: 1.6 }}>“Customer had an order issue and wants a partial refund.”</div>
+              <div style={{ fontSize: 11, color: "#fca5a5", marginTop: 6 }}>Lost: amounts, dates, item name, deadline</div>
             </div>
-            <div style={{ padding: 14, background: "#F0FDF4", borderRadius: 10, border: "1px solid #BBF7D0" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#166534", marginBottom: 8 }}>✅ Case Facts Block</div>
+            <div style={{ padding: 14, background: "rgba(34,197,94,0.08)", borderRadius: 10, border: "1px solid rgba(34,197,94,0.3)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#86efac", marginBottom: 8 }}>✅ Case Facts Block</div>
               <pre style={{ background: "#1E293B", color: "#86EFAC", borderRadius: 6, padding: 8, fontSize: 11, margin: 0 }}>{`order_total: $247.50
 order_date: 2025-01-15
 refund_req: $82.50
@@ -603,7 +603,7 @@ item: Widget Pro
 deadline: 2025-02-01`}</pre>
             </div>
           </div>
-          <div style={{ marginTop: 12, padding: 10, background: "#EBF5FF", borderRadius: 8, fontSize: 12, color: "#1E40AF", border: "1px solid #93C5FD" }}>
+          <div style={{ marginTop: 12, padding: 10, background: "rgba(59,130,246,0.08)", borderRadius: 8, fontSize: 12, color: "#93c5fd", border: "1px solid rgba(59,130,246,0.3)" }}>
             <strong>Solution:</strong> Extract transactional facts into a persistent block included in EVERY prompt, OUTSIDE summarized history. Numbers, dates, and amounts never get summarized away.
           </div>
         </div>
@@ -624,8 +624,8 @@ deadline: 2025-02-01`}</pre>
             <div key={i} style={{ display: "flex", gap: 10, padding: 10, background: t.color + "08", borderRadius: 8, border: `1px solid ${t.color}22` }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: t.color, minWidth: 100 }}>{t.action}</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>{t.trigger}</div>
-                <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>{t.why}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#9ba8b0" }}>{t.trigger}</div>
+                <div style={{ fontSize: 11, color: "#9ba8b0", marginTop: 2 }}>{t.why}</div>
               </div>
             </div>
           ))}
@@ -636,9 +636,9 @@ deadline: 2025-02-01`}</pre>
       title: "Lost in the Middle Effect",
       content: (
         <div>
-          <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 16, border: "1px solid #E2E8F0", marginBottom: 12 }}>
+          <div style={{ background: "#1c2333", borderRadius: 12, padding: 16, border: "1px solid rgba(255,255,255,0.12)", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
-              <div style={{ fontSize: 12, color: "#1E293B", fontWeight: 600 }}>Attention across context window:</div>
+              <div style={{ fontSize: 12, color: "#e0e0e0", fontWeight: 600 }}>Attention across context window:</div>
             </div>
             <div style={{ display: "flex", height: 60, gap: 2, alignItems: "flex-end" }}>
               {[90,85,75,60,45,35,30,28,30,35,40,38,35,30,28,30,35,45,60,75,85,90,95].map((h, i) => (
@@ -654,13 +654,13 @@ deadline: 2025-02-01`}</pre>
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <div style={{ padding: 10, background: "#F0FDF4", borderRadius: 8, border: "1px solid #BBF7D0" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#166534" }}>✅ Mitigations</div>
-              <div style={{ fontSize: 11, color: "#15803D", marginTop: 4, lineHeight: 1.5 }}>Put key findings summary at BEGINNING. Use explicit section headers. Place critical data in structured blocks at start or end.</div>
+            <div style={{ padding: 10, background: "rgba(34,197,94,0.08)", borderRadius: 8, border: "1px solid rgba(34,197,94,0.3)" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#86efac" }}>✅ Mitigations</div>
+              <div style={{ fontSize: 11, color: "#86efac", marginTop: 4, lineHeight: 1.5 }}>Put key findings summary at BEGINNING. Use explicit section headers. Place critical data in structured blocks at start or end.</div>
             </div>
-            <div style={{ padding: 10, background: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#991B1B" }}>❌ Anti-pattern</div>
-              <div style={{ fontSize: 11, color: "#7F1D1D", marginTop: 4, lineHeight: 1.5 }}>Dumping all findings in a flat list. Middle items get less attention. Using verbose tool outputs that push important context to the middle.</div>
+            <div style={{ padding: 10, background: "rgba(239,68,68,0.08)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.3)" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#f87171" }}>❌ Anti-pattern</div>
+              <div style={{ fontSize: 11, color: "#fca5a5", marginTop: 4, lineHeight: 1.5 }}>Dumping all findings in a flat list. Middle items get less attention. Using verbose tool outputs that push important context to the middle.</div>
             </div>
           </div>
         </div>
@@ -670,13 +670,13 @@ deadline: 2025-02-01`}</pre>
 
   return (
     <div>
-      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#1E293B" }}>Context Management & Reliability</h3>
+      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#e0e0e0" }}>Context Management &amp; Reliability</h3>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
         {Object.entries(topics).map(([key, val]) => (
           <button key={key} onClick={() => setTopic(key)} style={{
-            padding: "6px 12px", borderRadius: 8, border: `2px solid ${topic === key ? "#EF4444" : "#E2E8F0"}`,
-            background: topic === key ? "#FFF1F2" : "white", fontSize: 12, fontWeight: 600,
-            color: topic === key ? "#9F1239" : "#64748B", cursor: "pointer",
+            padding: "6px 12px", borderRadius: 8, border: `2px solid ${topic === key ? "#EF4444" : "rgba(255,255,255,0.12)"}`,
+            background: topic === key ? "rgba(244,63,94,0.08)" : "#161b22", fontSize: 12, fontWeight: 600,
+            color: topic === key ? "#f87171" : "#9ba8b0", cursor: "pointer",
           }}>{val.title.split(" ").slice(0, 2).join(" ")}</button>
         ))}
       </div>
@@ -739,7 +739,7 @@ function DecisionTrees() {
     
     if (node.answer) {
       return (
-        <div style={{ padding: 12, background: node.color + "15", border: `2px solid ${node.color}`, borderRadius: 10, fontSize: 13, fontWeight: 600, color: node.color === "#22C55E" ? "#166534" : node.color === "#3B82F6" ? "#1E40AF" : node.color === "#8B5CF6" ? "#6B21A8" : "#92400E", marginLeft: depth * 16 }}>
+        <div style={{ padding: 12, background: node.color + "15", border: `2px solid ${node.color}`, borderRadius: 10, fontSize: 13, fontWeight: 600, color: node.color === "#22C55E" ? "#86efac" : node.color === "#3B82F6" ? "#93c5fd" : node.color === "#8B5CF6" ? "#d8b4fe" : "#92400E", marginLeft: depth * 16 }}>
           {node.answer}
         </div>
       );
@@ -747,18 +747,18 @@ function DecisionTrees() {
 
     return (
       <div style={{ marginLeft: depth * 16 }}>
-        <div style={{ padding: 12, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, marginBottom: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", marginBottom: 8 }}>{node.q}</div>
+        <div style={{ padding: 12, background: "#1c2333", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0", marginBottom: 8 }}>{node.q}</div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setChoice("yes")} style={{
-              padding: "6px 16px", borderRadius: 6, border: `2px solid ${choice === "yes" ? "#22C55E" : "#E2E8F0"}`,
-              background: choice === "yes" ? "#F0FDF4" : "white", cursor: "pointer", fontSize: 13, fontWeight: 600,
-              color: choice === "yes" ? "#166534" : "#64748B",
+              padding: "6px 16px", borderRadius: 6, border: `2px solid ${choice === "yes" ? "#22C55E" : "rgba(255,255,255,0.12)"}`,
+              background: choice === "yes" ? "rgba(34,197,94,0.08)" : "#161b22", cursor: "pointer", fontSize: 13, fontWeight: 600,
+              color: choice === "yes" ? "#86efac" : "#9ba8b0",
             }}>Yes</button>
             <button onClick={() => setChoice("no")} style={{
-              padding: "6px 16px", borderRadius: 6, border: `2px solid ${choice === "no" ? "#EF4444" : "#E2E8F0"}`,
-              background: choice === "no" ? "#FEF2F2" : "white", cursor: "pointer", fontSize: 13, fontWeight: 600,
-              color: choice === "no" ? "#991B1B" : "#64748B",
+              padding: "6px 16px", borderRadius: 6, border: `2px solid ${choice === "no" ? "#EF4444" : "rgba(255,255,255,0.12)"}`,
+              background: choice === "no" ? "rgba(239,68,68,0.08)" : "#161b22", cursor: "pointer", fontSize: 13, fontWeight: 600,
+              color: choice === "no" ? "#f87171" : "#9ba8b0",
             }}>No</button>
           </div>
         </div>
@@ -770,18 +770,18 @@ function DecisionTrees() {
 
   return (
     <div>
-      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#1E293B" }}>Interactive Decision Trees</h3>
-      <p style={{ fontSize: 13, color: "#64748B", margin: "0 0 16px" }}>Click Yes/No to navigate to the correct answer for each exam scenario.</p>
+      <h3 style={{ margin: "0 0 12px", fontSize: 16, color: "#e0e0e0" }}>Interactive Decision Trees</h3>
+      <p style={{ fontSize: 13, color: "#9ba8b0", margin: "0 0 16px" }}>Click Yes/No to navigate to the correct answer for each exam scenario.</p>
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
         {Object.entries(trees).map(([key, val]) => (
           <button key={key} onClick={() => setTree(key)} style={{
-            padding: "6px 12px", borderRadius: 8, border: `2px solid ${tree === key ? "#6366F1" : "#E2E8F0"}`,
-            background: tree === key ? "#EEF2FF" : "white", fontSize: 12, fontWeight: 600,
-            color: tree === key ? "#4338CA" : "#64748B", cursor: "pointer",
+            padding: "6px 12px", borderRadius: 8, border: `2px solid ${tree === key ? "#6366F1" : "rgba(255,255,255,0.12)"}`,
+            background: tree === key ? "rgba(99,102,241,0.1)" : "#161b22", fontSize: 12, fontWeight: 600,
+            color: tree === key ? "#a5b4fc" : "#9ba8b0", cursor: "pointer",
           }}>{val.title}</button>
         ))}
       </div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 12 }}>{t.title}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 12 }}>{t.title}</div>
       <TreeNode nodeIdx={0} depth={0} />
     </div>
   );
@@ -806,7 +806,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif", maxWidth: 750, margin: "0 auto", padding: "16px 12px" }}>
+    <div style={{ fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif", maxWidth: 750, margin: "0 auto", padding: "16px 12px", background: "#0d1117", color: "#e0e0e0", borderRadius: 8 }}>
       <div style={{ textAlign: "center", marginBottom: 16 }}>
         <h1 style={{ fontSize: 20, fontWeight: 800, color: "#1a1a2e", margin: 0 }}>Claude Architect Cert — Visual Learning</h1>
         <p style={{ fontSize: 12, color: "#94A3B8", margin: "4px 0 0" }}>Interactive diagrams for all 5 exam domains</p>
@@ -816,9 +816,9 @@ export default function App() {
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
             padding: "6px 10px", borderRadius: 8, whiteSpace: "nowrap",
-            border: `2px solid ${activeTab === tab.id ? domainColors[tab.domain] : "#E2E8F0"}`,
-            background: activeTab === tab.id ? domainColors[tab.domain] + "15" : "white",
-            color: activeTab === tab.id ? domainColors[tab.domain] : "#64748B",
+            border: `2px solid ${activeTab === tab.id ? domainColors[tab.domain] : "rgba(255,255,255,0.12)"}`,
+            background: activeTab === tab.id ? domainColors[tab.domain] + "15" : "#161b22",
+            color: activeTab === tab.id ? domainColors[tab.domain] : "#9ba8b0",
             fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.15s",
           }}>
             {tab.domain > 0 && <span style={{ fontSize: 10, opacity: 0.7 }}>D{tab.domain} </span>}
@@ -827,7 +827,7 @@ export default function App() {
         ))}
       </div>
 
-      <div style={{ background: "white", borderRadius: 16, border: "1px solid #E2E8F0", padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+      <div style={{ background: "#161b22", borderRadius: 16, border: "1px solid rgba(255,255,255,0.08)", padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
         {renderContent()}
       </div>
     </div>

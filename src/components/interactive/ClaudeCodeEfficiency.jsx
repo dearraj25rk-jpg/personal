@@ -20,7 +20,7 @@ const TABS = [
 ];
 
 const CcafBadge = ({ domain }) => (
-  <span style={{display:"inline-block",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:3,marginLeft:8,background:"rgba(0,230,180,0.12)",color:"#00e6b4",border:"1px solid rgba(0,230,180,0.25)",letterSpacing:0.5,verticalAlign:"middle"}}>CCA-F D{domain}</span>
+  <span style={{display:"inline-block",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:3,marginLeft:8,background:"rgba(0,212,106,0.12)",color:"#00d46a",border:"1px solid rgba(0,212,106,0.25)",letterSpacing:0.5,verticalAlign:"middle"}}>CCA-F D{domain}</span>
 );
 const Code = ({ children }) => (
   <code style={{background:"rgba(255,255,255,0.06)",padding:"2px 6px",borderRadius:3,fontSize:12,fontFamily:"monospace",color:"#f0c674",border:"1px solid rgba(255,255,255,0.08)"}}>{children}</code>
@@ -31,7 +31,7 @@ const CodeBlock = ({ code, title }) => (
     <pre style={{background:"rgba(0,0,0,0.3)",padding:14,margin:0,fontSize:11.5,fontFamily:"monospace",color:"#c5c8c6",overflowX:"auto",lineHeight:1.6,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{code}</pre>
   </div>
 );
-const Metric = ({ label, value, sub, color = "#00e6b4" }) => (
+const Metric = ({ label, value, sub, color = "#00d46a" }) => (
   <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8,padding:"14px 16px",flex:"1 1 130px",minWidth:130}}>
     <div style={{fontSize:10,color:"#777",marginBottom:4,textTransform:"uppercase",letterSpacing:1}}>{label}</div>
     <div style={{fontSize:20,fontWeight:700,color,fontFamily:"monospace"}}>{value}</div>
@@ -60,7 +60,7 @@ const Table = ({ headers, rows }) => (
   </div>
 );
 const Callout = ({ type = "info", children }) => {
-  const c = {info:"#3b82f6",warn:"#f59e0b",tip:"#00e6b4",exam:"#a78bfa",danger:"#ef4444"};
+  const c = {info:"#4d9de0",warn:"#f5a623",tip:"#00d46a",exam:"#a78bfa",danger:"#ef4444"};
   const ic = {info:"ℹ️",warn:"⚠️",tip:"💡",exam:"📝",danger:"🚨"};
   return <div style={{margin:"12px 0",padding:"12px 14px",borderRadius:6,background:`${c[type]}11`,borderLeft:`3px solid ${c[type]}`,fontSize:13,color:"#ccc",lineHeight:1.7}}><span style={{marginRight:8}}>{ic[type]}</span>{children}</div>;
 };
@@ -128,17 +128,17 @@ function CachingTab() {
     <Section title="Interactive cache savings calculator">
       <div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"10px 0"}}>
         {["sonnet","opus","haiku"].map(m=>(
-          <button key={m} onClick={()=>setModel(m)} style={{padding:"5px 12px",fontSize:11,fontFamily:"inherit",border:model===m?"1px solid #00e6b4":"1px solid #333",background:model===m?"rgba(0,230,180,0.1)":"transparent",color:model===m?"#00e6b4":"#888",borderRadius:4,cursor:"pointer",textTransform:"capitalize"}}>{m}</button>
+          <button key={m} onClick={()=>setModel(m)} style={{padding:"5px 12px",fontSize:11,fontFamily:"inherit",border:model===m?"1px solid #00d46a":"1px solid #333",background:model===m?"rgba(0,212,106,0.1)":"transparent",color:model===m?"#00d46a":"#888",borderRadius:4,cursor:"pointer",textTransform:"capitalize"}}>{m}</button>
         ))}
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:16,margin:"12px 0"}}>
         {[{l:"Turns",v:turns,s:setTurns,mn:1,mx:100},{l:"Context (K tokens)",v:ctxK,s:setCtxK,mn:10,mx:1000},{l:"Cache hit %",v:hitRate,s:setHitRate,mn:0,mx:99}].map(({l,v,s,mn,mx})=>(
-          <div key={l} style={{flex:"1 1 160px"}}><div style={{fontSize:11,color:"#888",marginBottom:4}}>{l}: <strong style={{color:"#fff"}}>{v}</strong></div><input type="range" min={mn} max={mx} value={v} onChange={e=>s(+e.target.value)} style={{width:"100%",accentColor:"#00e6b4"}} /></div>
+          <div key={l} style={{flex:"1 1 160px"}}><div style={{fontSize:11,color:"#888",marginBottom:4}}>{l}: <strong style={{color:"#fff"}}>{v}</strong></div><input type="range" min={mn} max={mx} value={v} onChange={e=>s(+e.target.value)} style={{width:"100%",accentColor:"#00d46a"}} /></div>
         ))}
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
         <Metric label={`No caching (${model})`} value={`$${noCacheCost.toFixed(2)}`} color="#ef4444" />
-        <Metric label="With caching" value={`$${withCacheCost.toFixed(2)}`} color="#00e6b4" />
+        <Metric label="With caching" value={`$${withCacheCost.toFixed(2)}`} color="#00d46a" />
         <Metric label="Savings" value={`${savings}%`} color="#f59e0b" />
       </div>
     </Section>
@@ -435,8 +435,8 @@ function CheatsheetTab() {
   return (<>
     <div style={{fontSize:15,fontWeight:700,color:"#fff",marginBottom:14}}>Top 10 Cost Optimizations — Ranked by Impact</div>
     {items.map(({r,a,i,c,d})=>(
-      <div key={r} style={{display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",marginBottom:6,background:r<=4?"rgba(0,230,180,0.04)":"rgba(255,255,255,0.02)",border:`1px solid ${r<=4?"rgba(0,230,180,0.15)":"rgba(255,255,255,0.06)"}`,borderRadius:8}}>
-        <div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:r<=4?"rgba(0,230,180,0.15)":"rgba(255,255,255,0.06)",color:r<=4?"#00e6b4":"#888",fontSize:13,fontWeight:700,fontFamily:"monospace",flexShrink:0}}>{r}</div>
+        <div style={{display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",marginBottom:6,background:r<=4?"rgba(0,212,106,0.05)":"rgba(255,255,255,0.02)",border:`1px solid ${r<=4?"rgba(0,212,106,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:8}}>
+        <div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",background:r<=4?"rgba(0,212,106,0.15)":"rgba(255,255,255,0.06)",color:r<=4?"#00d46a":"#888",fontSize:13,fontWeight:700,fontFamily:"monospace",flexShrink:0}}>{r}</div>
         <div style={{flex:1}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:13,fontWeight:600,color:"#e0e0e0"}}>{a}</span>
@@ -461,17 +461,17 @@ export default function App() {
   const [tab, setTab] = useState("context");
   const content = {context:<ContextTab/>,caching:<CachingTab/>,toolsearch:<ToolSearchTab/>,models:<ModelsTab/>,effort:<EffortTab/>,claudemd:<ClaudeMdTab/>,agents:<AgentsTab/>,compaction:<CompactionTab/>,batch:<BatchTab/>,cheatsheet:<CheatsheetTab/>};
   return (
-    <div style={{fontFamily:"system-ui,-apple-system,sans-serif",background:"#09090f",color:"#e0e0e0",minHeight:"100vh"}}>
-      <div style={{borderBottom:"1px solid rgba(255,255,255,0.06)",padding:"20px 16px 0",background:"linear-gradient(180deg,rgba(0,230,180,0.03) 0%,transparent 100%)"}}>
+    <div style={{fontFamily:"system-ui,-apple-system,sans-serif",background:"#0d1117",color:"#e0e0e0",borderRadius:8,overflow:"hidden"}}>
+      <div style={{borderBottom:"1px solid rgba(255,255,255,0.06)",padding:"20px 16px 0",background:"linear-gradient(180deg,rgba(0,212,106,0.04) 0%,transparent 100%)"}}>
         <div style={{maxWidth:900,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
             <span style={{fontSize:19,fontWeight:700,color:"#fff",letterSpacing:-0.5}}>Claude Code</span>
-            <span style={{fontSize:11,padding:"3px 8px",background:"rgba(0,230,180,0.12)",color:"#00e6b4",borderRadius:4,fontWeight:600}}>Efficiency Guide</span>
+            <span style={{fontSize:11,padding:"3px 8px",background:"rgba(0,212,106,0.12)",color:"#00d46a",borderRadius:4,fontWeight:600}}>Efficiency Guide</span>
           </div>
           <div style={{fontSize:11,color:"#666",marginBottom:14}}>April 2026 · v2.1.92+ · CCA-F Domains 1–5</div>
           <div style={{display:"flex",gap:2,overflowX:"auto"}}>
             {TABS.map(t=>(
-              <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 11px",fontSize:11,fontFamily:"inherit",fontWeight:tab===t.id?700:400,background:tab===t.id?"rgba(255,255,255,0.06)":"transparent",color:tab===t.id?"#fff":"#777",border:"none",borderBottom:tab===t.id?"2px solid #00e6b4":"2px solid transparent",cursor:"pointer",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0"}}>
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 11px",fontSize:11,fontFamily:"inherit",fontWeight:tab===t.id?700:400,background:tab===t.id?"rgba(255,255,255,0.06)":"transparent",color:tab===t.id?"#fff":"#777",border:"none",borderBottom:tab===t.id?"2px solid #00d46a":"2px solid transparent",cursor:"pointer",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0"}}>
                 <span style={{marginRight:4}}>{t.icon}</span>{t.label}
               </button>
             ))}

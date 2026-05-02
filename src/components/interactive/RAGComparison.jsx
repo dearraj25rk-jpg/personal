@@ -244,7 +244,7 @@ export default function RAGComparison() {
   const active = ragData.find(r => r.id === selected);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#04080f", color: "#e2e8f0", fontFamily: "'DM Mono', 'Fira Code', monospace" }}>
+    <div style={{ height: 640, background: "#04080f", color: "#e2e8f0", fontFamily: "'DM Mono', 'Fira Code', monospace", borderRadius: 8, overflow: "hidden", display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ padding: "24px 28px 16px", borderBottom: "1px solid #0d1b2a" }}>
         <div style={{ fontSize: 10, letterSpacing: 4, color: "#1e3a5f", marginBottom: 6, textTransform: "uppercase" }}>RAG Benchmark</div>
@@ -264,7 +264,7 @@ export default function RAGComparison() {
         ))}
       </div>
 
-      <div style={{ display: "flex", height: "calc(100vh - 130px)", overflow: "hidden" }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* Main panel */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
 

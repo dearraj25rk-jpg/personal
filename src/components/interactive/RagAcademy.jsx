@@ -925,7 +925,7 @@ export default function RAGAcademy() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", background: "#010409", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#c9d1d9", overflow: "hidden" }}>
+    <div style={{ display: "flex", minHeight: 500, maxHeight: "80vh", background: "#0d1117", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#c9d1d9", overflow: "hidden", borderRadius: 8 }}>
       {/* Sidebar */}
       <div style={{ width: 260, background: "#0d1117", borderRight: "1px solid #21262d", display: "flex", flexDirection: "column", flexShrink: 0, overflowY: "auto" }}>
         <div style={{ padding: "20px 16px", borderBottom: "1px solid #21262d" }}>

@@ -1,19 +1,19 @@
 import React, { useState } from "react";
 
 const COLORS = {
-  bg: "#0a0e1a",
-  card: "#111827",
-  cardHover: "#1a2234",
-  border: "#1e293b",
-  borderActive: "#3b82f6",
+  bg: "#0d1117",
+  card: "#161b22",
+  cardHover: "#1c2333",
+  border: "rgba(255,255,255,0.08)",
+  borderActive: "#00d46a",
   text: "#e2e8f0",
   textMuted: "#94a3b8",
   textDim: "#64748b",
-  accent: "#3b82f6",
-  accentGlow: "rgba(59, 130, 246, 0.15)",
-  green: "#22c55e",
-  greenBg: "rgba(34, 197, 94, 0.1)",
-  greenBorder: "rgba(34, 197, 94, 0.3)",
+  accent: "#00d46a",
+  accentGlow: "rgba(0, 212, 106, 0.15)",
+  green: "#00d46a",
+  greenBg: "rgba(0, 212, 106, 0.1)",
+  greenBorder: "rgba(0, 212, 106, 0.3)",
   amber: "#f59e0b",
   amberBg: "rgba(245, 158, 11, 0.1)",
   amberBorder: "rgba(245, 158, 11, 0.3)",
@@ -30,7 +30,6 @@ const COLORS = {
   pinkBg: "rgba(244, 114, 182, 0.1)",
   pinkBorder: "rgba(244, 114, 182, 0.3)",
 };
-
 const PHASES = {
   ALWAYS: { label: "Always Loaded", color: COLORS.green, bg: COLORS.greenBg, border: COLORS.greenBorder, icon: "🟢" },
   ON_DEMAND: { label: "On-Demand", color: COLORS.amber, bg: COLORS.amberBg, border: COLORS.amberBorder, icon: "🟡" },

@@ -1,15 +1,15 @@
 import React, { useState } from "react";
 
 const COLORS = {
-  enterprise: { bg: "#DC2626", light: "#FEE2E2", border: "#EF4444", text: "#991B1B" },
-  project: { bg: "#2563EB", light: "#DBEAFE", border: "#3B82F6", text: "#1E40AF" },
-  user: { bg: "#7C3AED", light: "#EDE9FE", border: "#8B5CF6", text: "#5B21B6" },
-  local: { bg: "#059669", light: "#D1FAE5", border: "#10B981", text: "#065F46" },
-  skill: { bg: "#B45309", light: "#FEF3C7", border: "#F59E0B", text: "#78350F" },
-  hook: { bg: "#0369A1", light: "#E0F2FE", border: "#0284C7", text: "#0C4A6E" },
-  style: { bg: "#BE185D", light: "#FCE7F3", border: "#F472B6", text: "#831843" },
-  rule: { bg: "#0D9488", light: "#CCFBF1", border: "#14B8A6", text: "#115E59" },
-  perm: { bg: "#0F172A", light: "#E2E8F0", border: "#334155", text: "#0F172A" },
+  enterprise: { bg: "#DC2626", light: "rgba(220,38,38,0.12)", border: "#EF4444", text: "#fca5a5" },
+  project: { bg: "#2563EB", light: "rgba(37,99,235,0.12)", border: "#3B82F6", text: "#93c5fd" },
+  user: { bg: "#7C3AED", light: "rgba(124,58,237,0.12)", border: "#8B5CF6", text: "#c4b5fd" },
+  local: { bg: "#059669", light: "rgba(5,150,105,0.12)", border: "#10B981", text: "#6ee7b7" },
+  skill: { bg: "#B45309", light: "rgba(180,83,9,0.12)", border: "#F59E0B", text: "#fcd34d" },
+  hook: { bg: "#0369A1", light: "rgba(3,105,161,0.12)", border: "#0284C7", text: "#7dd3fc" },
+  style: { bg: "#BE185D", light: "rgba(190,24,93,0.12)", border: "#F472B6", text: "#f9a8d4" },
+  rule: { bg: "#0D9488", light: "rgba(13,148,136,0.12)", border: "#14B8A6", text: "#5eead4" },
+  perm: { bg: "#0F172A", light: "rgba(51,65,85,0.12)", border: "#334155", text: "#cbd5e1" },
 };
 
 // ═══════════════════════ ALL 12 TEST SCENARIOS ═══════════════════════
@@ -591,7 +591,7 @@ See @docs/coding-standards.md for our complete rules.`
 function TestCard({ s, isExpanded, onToggle }) {
   return (
     <div className="mb-3 border-2 rounded-xl overflow-hidden transition-all shadow-sm hover:shadow-md"
-      style={{ borderColor: isExpanded ? s.color.border : "#E2E8F0" }}>
+      style={{ borderColor: isExpanded ? s.color.border : "#30363d" }}>
       
       {/* Header */}
       <div className="flex items-center justify-between p-3 cursor-pointer"
@@ -615,7 +615,7 @@ function TestCard({ s, isExpanded, onToggle }) {
 
       {/* Expanded Body */}
       {isExpanded && (
-        <div className="p-4 space-y-4 bg-white">
+        <div className="p-4 space-y-4" style={{ background: "#161b22" }}>
           
           {/* What We Test */}
           <div className="p-3 rounded-lg" style={{ backgroundColor: s.color.light, border: `1px solid ${s.color.border}` }}>
@@ -755,9 +755,9 @@ function App() {
     : scenarios.filter(s => activeCategories.includes(s.category));
 
   return (
-    <div className="max-w-4xl mx-auto p-4 font-sans" style={{ backgroundColor: "#FAFBFC" }}>
+    <div className="max-w-4xl mx-auto p-4 font-sans" style={{ background: "#0d1117", color: "#e0e0e0" }}>
       <div className="text-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold" style={{ color: "#e0e0e0" }}>
           🧪 Claude Code Override Test Lab
         </h1>
         <p className="text-sm text-gray-500 mt-1">

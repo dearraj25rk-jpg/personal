@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 
 const C = {
-  bg: "#fdfaf4", card: "#ffffff", ink: "#1a1207", muted: "#7a6a50",
-  faint: "#ede8de", border: "#d4cab8", orange: "#e8640a", teal: "#0a7a6e",
-  blue: "#1a4fd6", rose: "#c4193c", amber: "#c47a00", green: "#1a7a3c",
+  bg: "#0d1117", card: "#161b22", ink: "#e0e0e0", muted: "#9ba8b0",
+  faint: "#1c2333", border: "rgba(255,255,255,0.1)", orange: "#fb923c", teal: "#00a854",
+  blue: "#4d9de0", rose: "#f87171", amber: "#f5a623", green: "#00d46a",
 };
 
 const Box = ({ title, color, icon, children }) => (

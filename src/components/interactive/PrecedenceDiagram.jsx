@@ -2,13 +2,13 @@ import React, { useState } from "react";
 
 // Color palette
 const COLORS = {
-  enterprise: { bg: "#DC2626", light: "#FEE2E2", border: "#EF4444", text: "#991B1B" },
-  project: { bg: "#2563EB", light: "#DBEAFE", border: "#3B82F6", text: "#1E40AF" },
-  user: { bg: "#7C3AED", light: "#EDE9FE", border: "#8B5CF6", text: "#5B21B6" },
-  local: { bg: "#059669", light: "#D1FAE5", border: "#10B981", text: "#065F46" },
-  auto: { bg: "#D97706", light: "#FEF3C7", border: "#F59E0B", text: "#92400E" },
-  plugin: { bg: "#EC4899", light: "#FCE7F3", border: "#F472B6", text: "#9D174D" },
-  system: { bg: "#475569", light: "#F1F5F9", border: "#94A3B8", text: "#1E293B" },
+  enterprise: { bg: "#DC2626", light: "rgba(220,38,38,0.12)", border: "#EF4444", text: "#fca5a5" },
+  project: { bg: "#2563EB", light: "rgba(37,99,235,0.12)", border: "#3B82F6", text: "#93c5fd" },
+  user: { bg: "#7C3AED", light: "rgba(124,58,237,0.12)", border: "#8B5CF6", text: "#c4b5fd" },
+  local: { bg: "#059669", light: "rgba(5,150,105,0.12)", border: "#10B981", text: "#6ee7b7" },
+  auto: { bg: "#D97706", light: "rgba(217,119,6,0.12)", border: "#F59E0B", text: "#fcd34d" },
+  plugin: { bg: "#EC4899", light: "rgba(236,72,153,0.12)", border: "#F472B6", text: "#f9a8d4" },
+  system: { bg: "#475569", light: "rgba(71,85,105,0.12)", border: "#94A3B8", text: "#cbd5e1" },
 };
 
 // ───────────────────── SECTION 1: MASTER PRECEDENCE PYRAMID ─────────────────────
@@ -32,7 +32,7 @@ function PrecedencePyramid() {
       id: "cli",
       label: "CLI ARGUMENTS",
       priority: "Priority 2",
-      color: { bg: "#0F172A", light: "#E2E8F0", border: "#334155", text: "#0F172A" },
+      color: { bg: "#0F172A", light: "rgba(51,65,85,0.12)", border: "#334155", text: "#cbd5e1" },
       width: "50%",
       files: ["--model", "--dangerously-skip-permissions", "--append-system-prompt", "--agents"],
       description: "Temporary, session-only overrides passed when launching Claude Code. Gone when the session ends.",
@@ -80,7 +80,7 @@ function PrecedencePyramid() {
 
   return (
     <div className="mb-8">
-      <h2 className="text-xl font-bold text-center mb-2" style={{ color: "#1E293B" }}>
+      <h2 className="text-xl font-bold text-center mb-2" style={{ color: "#e0e0e0" }}>
         🏔️ The Precedence Pyramid — Who Overrides Whom?
       </h2>
       <p className="text-center text-sm text-gray-500 mb-4">
@@ -153,7 +153,7 @@ function MarkdownFileCard({ file, isExpanded, onToggle }) {
   return (
     <div 
       className="border-2 rounded-lg mb-3 overflow-hidden transition-all cursor-pointer"
-      style={{ borderColor: file.color.border, backgroundColor: isExpanded ? file.color.light : "white" }}
+      style={{ borderColor: file.color.border, backgroundColor: isExpanded ? file.color.light : "transparent" }}
       onClick={onToggle}
     >
       <div className="flex items-center justify-between p-3" style={{ backgroundColor: file.color.bg }}>
@@ -274,7 +274,7 @@ function ConflictScenarios() {
       projectFile: "output-styles/python.md (replaces system prompt)",
       winner: "Both apply but output style is MORE POWERFUL",
       reason: "Output styles replace the system prompt. CLAUDE.md adds context as user message. Both load, but system prompt instructions carry more weight.",
-      color: { bg: "#0F172A", light: "#E2E8F0", border: "#334155", text: "#0F172A" },
+      color: { bg: "#0F172A", light: "rgba(51,65,85,0.12)", border: "#334155", text: "#cbd5e1" },
     },
     {
       title: "Deny at ANY level vs Allow at ANY level (permissions)",
@@ -290,7 +290,7 @@ function ConflictScenarios() {
 
   return (
     <div className="mb-8">
-      <h2 className="text-xl font-bold mb-2" style={{ color: "#1E293B" }}>
+      <h2 className="text-xl font-bold mb-2" style={{ color: "#e0e0e0" }}>
         ⚔️ Real Conflict Scenarios — Who Wins?
       </h2>
       <p className="text-sm text-gray-500 mb-3">Click each scenario to see the detailed resolution.</p>
@@ -299,7 +299,7 @@ function ConflictScenarios() {
         <div
           key={i}
           className="border rounded-lg mb-2 cursor-pointer overflow-hidden transition-all"
-          style={{ borderColor: expandedIdx === i ? s.color.border : "#E2E8F0" }}
+          style={{ borderColor: expandedIdx === i ? s.color.border : "#30363d" }}
           onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
         >
           <div className="flex items-center justify-between p-3 bg-gray-50">
@@ -386,7 +386,7 @@ function LoadingTimeline() {
 
   return (
     <div className="mb-8">
-      <h2 className="text-xl font-bold mb-2" style={{ color: "#1E293B" }}>
+      <h2 className="text-xl font-bold mb-2" style={{ color: "#e0e0e0" }}>
         ⏱️ When Does Each File Load?
       </h2>
       <p className="text-sm text-gray-500 mb-3">Files load at different times — earlier = more token cost.</p>
@@ -417,7 +417,7 @@ function LoadingTimeline() {
 function SettingsHierarchy() {
   const tiers = [
     { tier: 1, name: "Managed", file: "managed-settings.json", loc: "macOS: /Library/Application Support/ClaudeCode/  |  Linux: /etc/claude-code/  |  Windows: C:\\ProgramData\\ClaudeCode\\", desc: "IT-deployed, cannot be overridden. Also: server-managed settings from Anthropic for Enterprise.", color: COLORS.enterprise },
-    { tier: 2, name: "CLI Args", file: "command line flags", loc: "claude --model opus --dangerously-skip-permissions", desc: "Session-only. Overrides everything except Managed.", color: { bg: "#0F172A", light: "#E2E8F0", border: "#334155", text: "#0F172A" } },
+    { tier: 2, name: "CLI Args", file: "command line flags", loc: "claude --model opus --dangerously-skip-permissions", desc: "Session-only. Overrides everything except Managed.", color: { bg: "#0F172A", light: "rgba(51,65,85,0.12)", border: "#334155", text: "#cbd5e1" } },
     { tier: 3, name: "Local Project", file: ".claude/settings.local.json", loc: ".claude/settings.local.json (auto-gitignored)", desc: "Your personal project overrides. Not shared with team.", color: COLORS.local },
     { tier: 4, name: "Shared Project", file: ".claude/settings.json", loc: ".claude/settings.json (version-controlled)", desc: "Team settings. Everyone gets same config.", color: COLORS.project },
     { tier: 5, name: "User", file: "~/.claude/settings.json", loc: "~/.claude/settings.json", desc: "Your personal global defaults for all projects.", color: COLORS.user },
@@ -425,7 +425,7 @@ function SettingsHierarchy() {
 
   return (
     <div className="mb-8">
-      <h2 className="text-xl font-bold mb-2" style={{ color: "#1E293B" }}>
+      <h2 className="text-xl font-bold mb-2" style={{ color: "#e0e0e0" }}>
         ⚙️ Settings.json — 5-Tier Hierarchy
       </h2>
       <p className="text-sm text-gray-500 mb-3">Settings MERGE across tiers. Higher tier wins on conflicts. Special rule: DENY always wins.</p>
@@ -463,7 +463,7 @@ function SettingsHierarchy() {
 function DirectoryMap() {
   return (
     <div className="mb-8">
-      <h2 className="text-xl font-bold mb-2" style={{ color: "#1E293B" }}>
+      <h2 className="text-xl font-bold mb-2" style={{ color: "#e0e0e0" }}>
         📁 Complete Directory Map — Every File Claude Code Reads
       </h2>
       
@@ -592,7 +592,7 @@ function OverrideRulesTable() {
 
   return (
     <div className="mb-8">
-      <h2 className="text-xl font-bold mb-2" style={{ color: "#1E293B" }}>
+      <h2 className="text-xl font-bold mb-2" style={{ color: "#e0e0e0" }}>
         📋 Master Override Rules — Every File Type
       </h2>
       
@@ -884,9 +884,9 @@ function App() {
   ];
 
   return (
-    <div className="max-w-4xl mx-auto p-4 font-sans" style={{ backgroundColor: "#FAFBFC" }}>
+    <div className="max-w-4xl mx-auto p-4 font-sans" style={{ background: "#0d1117", color: "#e0e0e0" }}>
       <div className="text-center mb-6">
-        <h1 className="text-2xl font-bold" style={{ color: "#0F172A" }}>
+        <h1 className="text-2xl font-bold" style={{ color: "#e0e0e0" }}>
           Claude Code: Complete File Hierarchy & Precedence Guide
         </h1>
         <p className="text-sm text-gray-500 mt-1">
@@ -917,7 +917,7 @@ function App() {
       
       {activeTab === "files" && (
         <div>
-          <h2 className="text-xl font-bold mb-2" style={{ color: "#1E293B" }}>
+          <h2 className="text-xl font-bold mb-2" style={{ color: "#e0e0e0" }}>
             📄 Every Markdown File Claude Code Reads
           </h2>
           <p className="text-sm text-gray-500 mb-3">Click any file for complete details including examples, priority, and conflict behavior.</p>

@@ -1007,7 +1007,7 @@ export default function ContextEngineeringClaudeCode() {
   const [active,setActive]=useState(0)
   const Section=SECTIONS[active]
   return (
-    <div style={{maxWidth:820,margin:"0 auto",padding:"0 20px 80px",fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,sans-serif",background:C.bg3,color:C.text1,lineHeight:1.6,fontSize:15,minHeight:"100vh"}}>
+    <div style={{maxWidth:820,margin:"0 auto",padding:"0 20px 80px",fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,sans-serif",background:C.bg3,color:C.text1,lineHeight:1.6,fontSize:15}}>
       <div style={{padding:"12px 0 16px",borderBottom:`0.5px solid ${C.borderMd}`}}>
         <p style={{fontSize:13,color:C.text2,margin:0}}>v2.1.101 · Models: Opus 4.7, Sonnet 4.6, Haiku 4.5 · Source: Anthropic docs, Claude Code best practices, community data</p>
       </div>

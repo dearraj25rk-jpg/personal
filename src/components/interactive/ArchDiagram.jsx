@@ -1,20 +1,20 @@
 import React, { useState } from "react";
 
 const C = {
-  bg: "#0B1120",
-  surface: "#131C2E",
-  card: "#182236",
-  border: "#1E2D45",
-  borderLight: "#2A3F5F",
+  bg: "#0d1117",
+  surface: "#161b22",
+  card: "#1c2333",
+  border: "rgba(255,255,255,0.08)",
+  borderLight: "rgba(255,255,255,0.14)",
   text: "#E8EDF5",
   textSoft: "#9BA8C0",
   textDim: "#5E6E8A",
   white: "#FFFFFF",
   // Phase colors
-  green: "#34D399",
-  greenDim: "#059669",
-  greenBg: "rgba(52,211,153,0.08)",
-  greenBorder: "rgba(52,211,153,0.25)",
+  green: "#00d46a",
+  greenDim: "#00a854",
+  greenBg: "rgba(0,212,106,0.08)",
+  greenBorder: "rgba(0,212,106,0.25)",
   yellow: "#FBBF24",
   yellowDim: "#D97706",
   yellowBg: "rgba(251,191,36,0.08)",
@@ -112,8 +112,8 @@ function Badge({ children, color, bg, border }) {
 function App() {
   return (
     <div style={{
-      ...sans, background: C.bg, color: C.text, minHeight: "100vh",
-      maxWidth: 900, margin: "0 auto", padding: "0 20px 60px",
+      ...sans, background: C.bg, color: C.text,
+      maxWidth: 900, margin: "0 auto", padding: "0 20px 60px", borderRadius: 8,
     }}>
       {/* ═══════════ HEADER ═══════════ */}
       <div style={{ padding: "32px 0 24px", borderBottom: `1px solid ${C.border}`, marginBottom: 32 }}>

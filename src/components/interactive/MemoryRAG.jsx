@@ -556,9 +556,9 @@ export default function MemoryRAG() {
   const [tab, setTab] = useState("what");
 
   return (
-    <div style={{ minHeight: "100vh", background: "#030712", color: "#e2e8f0", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+    <div style={{ background: "#0d1117", color: "#e2e8f0", fontFamily: "'DM Sans', system-ui, sans-serif", borderRadius: 8, overflow: "hidden" }}>
       {/* Header */}
-      <div style={{ padding: "24px 28px 16px", borderBottom: "1px solid #0f172a", background: "#060d17" }}>
+      <div style={{ padding: "24px 28px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "#161b22" }}>
         <div style={{ fontSize: 10, letterSpacing: 4, color: "#1e3a5f", marginBottom: 6, textTransform: "uppercase" }}>Deep Dive</div>
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: -0.5 }}>
           🧠 Memory RAG

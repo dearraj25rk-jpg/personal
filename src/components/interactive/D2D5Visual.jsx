@@ -12,20 +12,20 @@ function Code({ children }) {
 }
 
 function Box({ type, children }) {
-  const s = { exam: { bg: "#FEF3C7", b: "#F59E0B", l: "🎯 EXAM" }, key: { bg: "#EBF5FF", b: "#3B82F6", l: "💡 KEY" }, correct: { bg: "#F0FDF4", b: "#22C55E", l: "✅" }, wrong: { bg: "#FEF2F2", b: "#EF4444", l: "❌" }, warn: { bg: "#FFF7ED", b: "#F97316", l: "⚠️" } }[type] || { bg: "#F8FAFC", b: "#64748B", l: "📌" };
-  return <div style={{ padding: 12, background: s.bg, borderLeft: `4px solid ${s.b}`, borderRadius: "0 8px 8px 0", marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: "#334155" }}><span style={{ fontSize: 11, fontWeight: 700, color: s.b }}>{s.l} </span>{children}</div>;
+  const s = { exam: { bg: "rgba(245,158,11,0.08)", b: "#F59E0B", l: "🎯 EXAM" }, key: { bg: "rgba(59,130,246,0.08)", b: "#3B82F6", l: "💡 KEY" }, correct: { bg: "rgba(34,197,94,0.08)", b: "#22C55E", l: "✅" }, wrong: { bg: "rgba(239,68,68,0.08)", b: "#EF4444", l: "❌" }, warn: { bg: "rgba(249,115,22,0.08)", b: "#F97316", l: "⚠️" } }[type] || { bg: "rgba(100,116,139,0.08)", b: "#64748B", l: "📌" };
+  return <div style={{ padding: 12, background: s.bg, borderLeft: `4px solid ${s.b}`, borderRadius: "0 8px 8px 0", marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: "#cbd5e1" }}><span style={{ fontSize: 11, fontWeight: 700, color: s.b }}>{s.l} </span>{children}</div>;
 }
 
 function Tabs({ items, active, onSelect }) {
   return <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>{items.map((t, i) => (
-    <button key={i} onClick={() => onSelect(i)} style={{ padding: "5px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `2px solid ${active === i ? t.color || "#3B82F6" : "#E2E8F0"}`, background: active === i ? (t.color || "#3B82F6") + "15" : "white", color: active === i ? t.color || "#1E40AF" : "#64748B" }}>{t.label}</button>
+    <button key={i} onClick={() => onSelect(i)} style={{ padding: "5px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `2px solid ${active === i ? t.color || "#3B82F6" : "rgba(255,255,255,0.12)"}`, background: active === i ? (t.color || "#3B82F6") + "15" : "#161b22", color: active === i ? t.color || "#60a5fa" : "#9ba8b0" }}>{t.label}</button>
   ))}</div>;
 }
 
 function Compare({ left, right }) {
   return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-    <div style={{ padding: 12, background: "#FEF2F2", borderRadius: 10, border: "1px solid #FECACA" }}><div style={{ fontSize: 12, fontWeight: 700, color: "#991B1B", marginBottom: 6 }}>{left.title}</div>{left.content}</div>
-    <div style={{ padding: 12, background: "#F0FDF4", borderRadius: 10, border: "1px solid #BBF7D0" }}><div style={{ fontSize: 12, fontWeight: 700, color: "#166534", marginBottom: 6 }}>{right.title}</div>{right.content}</div>
+    <div style={{ padding: 12, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)" }}><div style={{ fontSize: 12, fontWeight: 700, color: "#f87171", marginBottom: 6 }}>{left.title}</div>{left.content}</div>
+    <div style={{ padding: 12, background: "rgba(34,197,94,0.08)", borderRadius: 10, border: "1px solid rgba(34,197,94,0.3)" }}><div style={{ fontSize: 12, fontWeight: 700, color: "#86efac", marginBottom: 6 }}>{right.title}</div>{right.content}</div>
   </div>;
 }
 
@@ -46,7 +46,7 @@ function D2() {
     <Tabs items={tabs} active={tab} onSelect={setTab} />
 
     {tab === 0 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Tool Descriptions = #1 Selection Mechanism</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Tool Descriptions = #1 Selection Mechanism</h3>
       <Compare
         left={{ title: "❌ Minimal Descriptions", content: <Code>{`get_customer:
   "Retrieves customer information"
@@ -65,14 +65,14 @@ lookup_order:
       />
       <Box type="exam">When the exam asks about fixing tool misrouting, the answer is ALWAYS "expand tool descriptions" — not few-shot examples (adds token overhead without fixing root cause), not routing classifiers (over-engineered), not tool consolidation (more effort than needed as "first step").</Box>
       
-      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", marginTop: 16 }}>What Good Descriptions Include</h4>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0", marginTop: 16 }}>What Good Descriptions Include</h4>
       <div style={{ display: "grid", gap: 4, marginBottom: 12 }}>
         {["What it does (one clear sentence)", "Input format (what data it expects, types)", "Output format (what it returns)", "When to use it (specific trigger scenarios)", "When NOT to use it (boundaries with similar tools)", "Example queries that trigger this tool"].map((item, i) => (
-          <div key={i} style={{ padding: "6px 10px", background: "#F0FDF4", borderRadius: 6, fontSize: 12, color: "#166534", border: "1px solid #BBF7D0" }}>✓ {item}</div>
+          <div key={i} style={{ padding: "6px 10px", background: "rgba(34,197,94,0.08)", borderRadius: 6, fontSize: 12, color: "#86efac", border: "1px solid rgba(34,197,94,0.3)" }}>✓ {item}</div>
         ))}
       </div>
 
-      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#1E293B" }}>Splitting Generic Tools</h4>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0" }}>Splitting Generic Tools</h4>
       <Code>{`BEFORE (one generic tool):
   analyze_document → Does everything
 
@@ -85,7 +85,7 @@ AFTER (three specific tools):
     </div>}
 
     {tab === 1 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>MCP isError Flag — Critical Distinction</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>MCP isError Flag — Critical Distinction</h3>
       <Box type="key">Two types of MCP errors exist. Protocol-level errors (JSON-RPC error field) are NOT visible to the LLM. Tool execution errors (isError: true in result) ARE visible to the LLM, enabling self-correction.</Box>
       
       <Compare
@@ -97,7 +97,7 @@ AFTER (three specific tools):
   "isError": true
 }
 → Agent knows: query FAILED
-→ Can retry or try alternative`}</Code><div style={{ fontSize: 12, color: "#991B1B", marginTop: 6 }}>Examples: timeout, rate limit, service unavailable, authentication failure</div></div> }}
+→ Can retry or try alternative`}</Code><div style={{ fontSize: 12, color: "#f87171", marginTop: 6 }}>Examples: timeout, rate limit, service unavailable, authentication failure</div></div> }}
         right={{ title: "🟢 Valid Empty Result (isError: false)", content: <div><Code>{`{
   "content": [{
     "type": "text",
@@ -106,10 +106,10 @@ AFTER (three specific tools):
   "isError": false  
 }
 → Agent knows: search WORKED
-→ Zero matches. Move on.`}</Code><div style={{ fontSize: 12, color: "#166534", marginTop: 6 }}>Examples: no matching records, empty search results, no data for date range</div></div> }}
+→ Zero matches. Move on.`}</Code><div style={{ fontSize: 12, color: "#86efac", marginTop: 6 }}>Examples: no matching records, empty search results, no data for date range</div></div> }}
       />
 
-      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", marginTop: 12 }}>Structured Error Response Pattern</h4>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0", marginTop: 12 }}>Structured Error Response Pattern</h4>
       <Code>{`# Best practice: include actionable metadata
 {
   "content": [{"type": "text", "text": "..."}],
@@ -133,9 +133,9 @@ AFTER (three specific tools):
           { pattern: "Suppressing errors as success (empty result + isError: false)", why: "Agent thinks search worked but found nothing, when actually search didn't complete" },
           { pattern: "Terminating entire workflow on single failure", why: "One subagent timeout shouldn't kill a 5-agent pipeline. Wastes partial results." },
         ].map((p, i) => (
-          <div key={i} style={{ padding: 8, background: "#FEF2F2", borderRadius: 6, border: "1px solid #FECACA" }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "#991B1B" }}>❌ {p.pattern}</span>
-            <div style={{ fontSize: 11, color: "#7F1D1D", marginTop: 2 }}>{p.why}</div>
+          <div key={i} style={{ padding: 8, background: "rgba(239,68,68,0.08)", borderRadius: 6, border: "1px solid rgba(239,68,68,0.3)" }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#f87171" }}>❌ {p.pattern}</span>
+            <div style={{ fontSize: 11, color: "#fca5a5", marginTop: 2 }}>{p.why}</div>
           </div>
         ))}
       </div>
@@ -144,7 +144,7 @@ AFTER (three specific tools):
     </div>}
 
     {tab === 2 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>tool_choice Options — Complete Reference</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>tool_choice Options — Complete Reference</h3>
       <div style={{ display: "grid", gap: 8 }}>
         {[
           { opt: '"auto"', icon: "🤔", desc: "Claude decides freely — may or may not call a tool", when: "Default for most agentic loops. Conversational + tool use mixed.", color: "#64748B", code: 'tool_choice={"type": "auto"}  # Default' },
@@ -157,7 +157,7 @@ AFTER (three specific tools):
               <span style={{ fontSize: 20 }}>{t.icon}</span>
               <code style={{ fontSize: 13, fontWeight: 700, color: t.color }}>{t.opt}</code>
             </div>
-            <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>{t.desc}</div>
+            <div style={{ fontSize: 12, color: "#9ba8b0", marginBottom: 4 }}>{t.desc}</div>
             <div style={{ fontSize: 11, color: "#94A3B8" }}>Use when: {t.when}</div>
             <Code>{t.code}</Code>
           </div>
@@ -167,7 +167,7 @@ AFTER (three specific tools):
     </div>}
 
     {tab === 3 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>MCP Server Configuration</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>MCP Server Configuration</h3>
       <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
         {[
           { scope: "Project", file: ".mcp.json", shared: true, color: "#3B82F6", desc: "Shared via version control. All team members get these servers.", cmd: 'claude mcp add github --scope project' },
@@ -177,15 +177,15 @@ AFTER (three specific tools):
           <div key={i} style={{ padding: 12, background: s.color + "08", borderRadius: 10, border: `1px solid ${s.color}22` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <code style={{ fontSize: 13, fontWeight: 700, color: s.color }}>{s.file}</code>
-              <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: s.shared ? "#DCFCE7" : "#FEE2E2", color: s.shared ? "#166534" : "#991B1B" }}>{s.shared ? "✓ Shared via VC" : "✗ NOT shared"}</span>
+              <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: s.shared ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", color: s.shared ? "#86efac" : "#f87171" }}>{s.shared ? "✓ Shared via VC" : "✗ NOT shared"}</span>
             </div>
-            <div style={{ fontSize: 12, color: "#475569" }}>{s.desc}</div>
+            <div style={{ fontSize: 12, color: "#9ba8b0" }}>{s.desc}</div>
             <Code>{s.cmd}</Code>
           </div>
         ))}
       </div>
 
-      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#1E293B" }}>MCP Config Example (.mcp.json)</h4>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0" }}>MCP Config Example (.mcp.json)</h4>
       <Code>{`// .mcp.json — secrets stay OUT of version control
 {
   "mcpServers": {
@@ -206,16 +206,16 @@ AFTER (three specific tools):
 // Supported in: command, args, env, url, headers`}</Code>
       <Box type="key">MCP 2.0 (2025): Streamable HTTP replaces HTTP+SSE as the production transport. Specify "transport": "streamable-http" for remote servers. Local stdio servers (command/args) remain unchanged.</Box>
 
-      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", marginTop: 12 }}>MCP Resources vs Tools</h4>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0", marginTop: 12 }}>MCP Resources vs Tools</h4>
       <Compare
-        left={{ title: "🔧 MCP Tools (Model-controlled)", content: <div style={{ fontSize: 12, color: "#991B1B", lineHeight: 1.5 }}>Execute actions. Claude decides when to call. Examples: create_ticket, send_email, query_db. Each call costs a tool-use turn.</div> }}
-        right={{ title: "📚 MCP Resources (App-controlled)", content: <div style={{ fontSize: 12, color: "#166534", lineHeight: 1.5 }}>Expose read-only data. App/user selects. Examples: database schemas, doc hierarchies. Reduce exploratory tool calls (0 calls vs 3+ to discover schema).</div> }}
+        left={{ title: "🔧 MCP Tools (Model-controlled)", content: <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.5 }}>Execute actions. Claude decides when to call. Examples: create_ticket, send_email, query_db. Each call costs a tool-use turn.</div> }}
+        right={{ title: "📚 MCP Resources (App-controlled)", content: <div style={{ fontSize: 12, color: "#86efac", lineHeight: 1.5 }}>Expose read-only data. App/user selects. Examples: database schemas, doc hierarchies. Reduce exploratory tool calls (0 calls vs 3+ to discover schema).</div> }}
       />
       <Box type="key">Prefer community MCP servers for standard integrations (GitHub, Jira, Slack, Postgres). Build custom servers only for team-specific workflows.</Box>
     </div>}
 
     {tab === 4 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Built-in Tools — Selection Guide</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Built-in Tools — Selection Guide</h3>
       <div style={{ display: "grid", gap: 6 }}>
         {[
           { tool: "Grep", purpose: "Search file CONTENTS for patterns", use: '"Find all files containing processRefund"', icon: "🔍", color: "#3B82F6" },
@@ -229,7 +229,7 @@ AFTER (three specific tools):
             <span style={{ fontSize: 18 }}>{t.icon}</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: t.color }}>{t.tool}</div>
-              <div style={{ fontSize: 12, color: "#475569" }}>{t.purpose}</div>
+              <div style={{ fontSize: 12, color: "#9ba8b0" }}>{t.purpose}</div>
               <div style={{ fontSize: 11, color: "#94A3B8", fontStyle: "italic" }}>{t.use}</div>
             </div>
           </div>
@@ -259,8 +259,8 @@ function D3() {
     <Tabs items={tabs} active={tab} onSelect={setTab} />
 
     {tab === 0 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>CLAUDE.md Configuration Hierarchy</h3>
-      <div style={{ fontSize: 13, color: "#64748B", marginBottom: 12 }}>Lower levels override higher. All levels COMBINE — more specific rules win on conflicts.</div>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>CLAUDE.md Configuration Hierarchy</h3>
+      <div style={{ fontSize: 13, color: "#9ba8b0", marginBottom: 12 }}>Lower levels override higher. All levels COMBINE — more specific rules win on conflicts.</div>
       <div style={{ display: "grid", gap: 4 }}>
         {[
           { level: "1", file: "~/.claude/CLAUDE.md", scope: "User-level", shared: false, color: "#EF4444", detail: "Personal preferences. NOT shared via VC. Only applies to YOU." },
@@ -273,9 +273,9 @@ function D3() {
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <code style={{ fontSize: 12, fontWeight: 600, color: l.color }}>{l.file}</code>
-                <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: l.shared ? "#DCFCE7" : "#FEE2E2", color: l.shared ? "#166534" : "#991B1B" }}>{l.shared ? "Shared" : "NOT shared"}</span>
+                <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: l.shared ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", color: l.shared ? "#86efac" : "#f87171" }}>{l.shared ? "Shared" : "NOT shared"}</span>
               </div>
-              <div style={{ fontSize: 11, color: "#64748B" }}>{l.detail}</div>
+              <div style={{ fontSize: 11, color: "#9ba8b0" }}>{l.detail}</div>
             </div>
             <div style={{ fontSize: 10, color: "#94A3B8" }}>{i === 0 ? "Lowest" : i === 3 ? "Highest" : ""}</div>
           </div>
@@ -286,7 +286,7 @@ function D3() {
     </div>}
 
     {tab === 1 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>.claude/rules/ — Path-Specific Conditional Loading</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>.claude/rules/ — Path-Specific Conditional Loading</h3>
       <Code>{`# .claude/rules/testing.md
 ---
 paths:                         # YAML frontmatter
@@ -320,7 +320,7 @@ paths:
     </div>}
 
     {tab === 2 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Skills & Slash Commands</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Skills &amp; Slash Commands</h3>
       <Code>{`# .claude/skills/review/SKILL.md (project-scoped skill)
 ---
 name: code-review
@@ -341,7 +341,7 @@ allowed-tools: Bash(npm:*), Bash(git:*)
 Deploy the current branch. Run: !${"``"}git branch --show-current${"``"}
 Current changes: !${"``"}git diff --stat${"``"}`}</Code>
 
-      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", marginTop: 12 }}>SKILL.md Frontmatter Fields</h4>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0", marginTop: 12 }}>SKILL.md Frontmatter Fields</h4>
       <div style={{ display: "grid", gap: 4 }}>
         {[
           { field: "name", desc: "Becomes the /slash-command name", example: "code-review" },
@@ -352,10 +352,10 @@ Current changes: !${"``"}git diff --stat${"``"}`}</Code>
           { field: "agent", desc: "Subagent type for context: fork", example: "Explore, Plan, general-purpose" },
           { field: "model", desc: "Override model. haiku/sonnet/opus/inherit", example: "sonnet" },
         ].map((f, i) => (
-          <div key={i} style={{ display: "flex", gap: 8, padding: "4px 8px", background: "#F8FAFC", borderRadius: 4, fontSize: 12 }}>
-            <code style={{ fontWeight: 600, color: "#1E40AF", minWidth: 110 }}>{f.field}</code>
-            <span style={{ color: "#475569", flex: 1 }}>{f.desc}</span>
-            <code style={{ color: "#64748B", fontSize: 11 }}>{f.example}</code>
+          <div key={i} style={{ display: "flex", gap: 8, padding: "4px 8px", background: "#1c2333", borderRadius: 4, fontSize: 12 }}>
+            <code style={{ fontWeight: 600, color: "#93c5fd", minWidth: 110 }}>{f.field}</code>
+            <span style={{ color: "#9ba8b0", flex: 1 }}>{f.desc}</span>
+            <code style={{ color: "#9ba8b0", fontSize: 11 }}>{f.example}</code>
           </div>
         ))}
       </div>
@@ -363,19 +363,19 @@ Current changes: !${"``"}git diff --stat${"``"}`}</Code>
     </div>}
 
     {tab === 3 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Plan Mode vs Direct Execution</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Plan Mode vs Direct Execution</h3>
       <Compare
         left={{ title: "📐 Plan Mode (Complex Tasks)", content: <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-          <div style={{ color: "#166534", marginBottom: 4 }}>Use for: microservice restructuring, library migrations (45+ files), choosing between integration approaches, architectural decisions.</div>
-          <div style={{ color: "#15803D" }}>Activate: Shift+Tab (twice), /plan, --permission-mode plan</div>
-          <div style={{ color: "#15803D", marginTop: 4 }}>Allowed: Read, Grep, Glob, search, ask questions</div>
-          <div style={{ color: "#991B1B", marginTop: 4 }}>Blocked: Write, Edit, destructive Bash</div>
+          <div style={{ color: "#86efac", marginBottom: 4 }}>Use for: microservice restructuring, library migrations (45+ files), choosing between integration approaches, architectural decisions.</div>
+          <div style={{ color: "#86efac" }}>Activate: Shift+Tab (twice), /plan, --permission-mode plan</div>
+          <div style={{ color: "#86efac", marginTop: 4 }}>Allowed: Read, Grep, Glob, search, ask questions</div>
+          <div style={{ color: "#f87171", marginTop: 4 }}>Blocked: Write, Edit, destructive Bash</div>
         </div> }}
         right={{ title: "⚡ Direct Execution (Simple Tasks)", content: <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-          <div style={{ color: "#166534", marginBottom: 4 }}>Use for: single-file bug fix with clear stack trace, adding one validation check, renaming a variable.</div>
-          <div style={{ color: "#15803D" }}>Just start: type your request normally</div>
-          <div style={{ color: "#15803D", marginTop: 4 }}>Full access to all tools</div>
-          <div style={{ color: "#64748B", marginTop: 4 }}>Well-understood changes with clear scope</div>
+          <div style={{ color: "#86efac", marginBottom: 4 }}>Use for: single-file bug fix with clear stack trace, adding one validation check, renaming a variable.</div>
+          <div style={{ color: "#86efac" }}>Just start: type your request normally</div>
+          <div style={{ color: "#86efac", marginTop: 4 }}>Full access to all tools</div>
+          <div style={{ color: "#9ba8b0", marginTop: 4 }}>Well-understood changes with clear scope</div>
         </div> }}
       />
       <Box type="key">Explore subagent: Built-in, read-only agent (Haiku model) for codebase exploration. Keeps verbose discovery output OUT of main context. Tools: Glob, Grep, Read, safe Bash.</Box>
@@ -383,7 +383,7 @@ Current changes: !${"``"}git diff --stat${"``"}`}</Code>
     </div>}
 
     {tab === 4 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Iterative Refinement Techniques</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Iterative Refinement Techniques</h3>
       <div style={{ display: "grid", gap: 8 }}>
         {[
           { label: "📋 Input/Output Examples", desc: "When prose descriptions produce inconsistent results, provide 2-3 concrete examples.", code: `Input: "Jan 5, 2025" → Output: "2025-01-05"\nInput: "5/1/25" → Output: "2025-01-05"\nInput: "" → raises ValueError` },
@@ -391,9 +391,9 @@ Current changes: !${"``"}git diff --stat${"``"}`}</Code>
           { label: "🤔 Interview Pattern", desc: "Have Claude ask questions BEFORE implementing to surface considerations you may not have anticipated.", code: `Claude asks: "Before I implement caching:\n1. Expected cache hit ratio? (affects eviction)\n2. Survive restarts? (in-memory vs Redis)\n3. Cache invalidation strategy?\n4. Max acceptable staleness?"` },
           { label: "📝 Batch vs Sequential", desc: "Single message when problems interact. Sequential when problems are independent.", code: `BATCH (interacting): "Fix error handler (#1),\nretry logic (#2), and logging (#3) — all related"\n\nSEQUENTIAL (independent):\nMsg 1: "Fix date parsing in utils.py"\nMsg 2: "Add rate limiting to API endpoints"` },
         ].map((t, i) => (
-          <div key={i} style={{ padding: 12, background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B", marginBottom: 4 }}>{t.label}</div>
-            <div style={{ fontSize: 12, color: "#475569", marginBottom: 6 }}>{t.desc}</div>
+          <div key={i} style={{ padding: 12, background: "#1c2333", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#e0e0e0", marginBottom: 4 }}>{t.label}</div>
+            <div style={{ fontSize: 12, color: "#9ba8b0", marginBottom: 6 }}>{t.desc}</div>
             <Code>{t.code}</Code>
           </div>
         ))}
@@ -401,7 +401,7 @@ Current changes: !${"``"}git diff --stat${"``"}`}</Code>
     </div>}
 
     {tab === 5 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>CI/CD Integration with Claude Code</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>CI/CD Integration with Claude Code</h3>
       <Box type="exam">The -p flag is the ONLY correct answer for running Claude Code in CI. CLAUDE_HEADLESS=true doesn't exist. --batch doesn't exist. stdin redirect doesn't properly address Claude Code's syntax.</Box>
       <Code>{`# Run non-interactively in CI
 claude -p "Review this PR for security issues"
@@ -449,7 +449,7 @@ function D4() {
     <Tabs items={tabs} active={tab} onSelect={setTab} />
 
     {tab === 0 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Explicit Criteria Beat Vague Instructions</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Explicit Criteria Beat Vague Instructions</h3>
       <Compare
         left={{ title: '❌ Vague: "Be conservative"', content: <Code>{`"Check that comments are accurate"
 "Only report high-confidence findings"
@@ -472,7 +472,7 @@ Do NOT flag:
     </div>}
 
     {tab === 1 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Few-Shot Prompting — Format + Judgment + Generalization</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Few-Shot Prompting — Format + Judgment + Generalization</h3>
       <Code>{`# 2-4 targeted examples for ambiguous scenarios:
 
 <example>
@@ -496,10 +496,10 @@ Do NOT flag:
     </div>}
 
     {tab === 2 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Structured Output via tool_use — Guarantees Syntax, Not Semantics</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Structured Output via tool_use — Guarantees Syntax, Not Semantics</h3>
       <Compare
-        left={{ title: "✅ Syntax Errors FIXED by tool_use", content: <div style={{ display: "grid", gap: 3 }}>{["Missing closing brace", "Invalid JSON comma", "Wrong type (string vs number)", "Missing required field", "Malformed array"].map((e,i) => <div key={i} style={{ fontSize: 12, padding: "3px 6px", background: "#DCFCE7", borderRadius: 4, color: "#166534" }}>✓ {e}</div>)}</div> }}
-        right={{ title: "❌ Semantic Errors NOT caught", content: <div style={{ display: "grid", gap: 3 }}>{["Line items don't sum to total", "Values in wrong fields", "Fabricated data for missing info", "Inconsistent dates/amounts", "Hallucinated field values"].map((e,i) => <div key={i} style={{ fontSize: 12, padding: "3px 6px", background: "#FEE2E2", borderRadius: 4, color: "#991B1B" }}>✗ {e}</div>)}</div> }}
+        left={{ title: "✅ Syntax Errors FIXED by tool_use", content: <div style={{ display: "grid", gap: 3 }}>{["Missing closing brace", "Invalid JSON comma", "Wrong type (string vs number)", "Missing required field", "Malformed array"].map((e,i) => <div key={i} style={{ fontSize: 12, padding: "3px 6px", background: "rgba(34,197,94,0.15)", borderRadius: 4, color: "#86efac" }}>✓ {e}</div>)}</div> }}
+        right={{ title: "❌ Semantic Errors NOT caught", content: <div style={{ display: "grid", gap: 3 }}>{["Line items don't sum to total", "Values in wrong fields", "Fabricated data for missing info", "Inconsistent dates/amounts", "Hallucinated field values"].map((e,i) => <div key={i} style={{ fontSize: 12, padding: "3px 6px", background: "rgba(239,68,68,0.15)", borderRadius: 4, color: "#f87171" }}>✗ {e}</div>)}</div> }}
       />
       <Code>{`# Force extraction with schema validation
 response = client.messages.create(
@@ -530,7 +530,7 @@ data = response.content[0].input  # Guaranteed valid JSON`}</Code>
     </div>}
 
     {tab === 3 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Validation-Retry Loops</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Validation-Retry Loops</h3>
       <Code>{`# Retry-with-error-feedback pattern:
 extraction = extract(document_text)
 errors = validate(extraction)
@@ -544,37 +544,37 @@ if errors:
     """
     corrected = extract(retry_prompt)`}</Code>
       <Compare
-        left={{ title: "✅ Retries WORK for", content: <div style={{ fontSize: 12, color: "#166534", lineHeight: 1.6 }}>Format mismatches ("Jan 5" → "2025-01-05"), structural errors (wrong field placement), type errors (string vs number)</div> }}
-        right={{ title: "❌ Retries DON'T work for", content: <div style={{ fontSize: 12, color: "#991B1B", lineHeight: 1.6 }}>Information ABSENT from source document. No amount of retrying will find a tax ID that doesn't exist. Fix: make the field nullable.</div> }}
+        left={{ title: "✅ Retries WORK for", content: <div style={{ fontSize: 12, color: "#86efac", lineHeight: 1.6 }}>Format mismatches ("Jan 5" → "2025-01-05"), structural errors (wrong field placement), type errors (string vs number)</div> }}
+        right={{ title: "❌ Retries DON'T work for", content: <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.6 }}>Information ABSENT from source document. No amount of retrying will find a tax ID that doesn't exist. Fix: make the field nullable.</div> }}
       />
       <Box type="key">detected_pattern field: Track which code patterns trigger findings. When developers dismiss findings, analyze which patterns get dismissed most → improve prompts for those. Self-correction: Extract calculated_total AND stated_total to catch semantic errors (values don't sum).</Box>
     </div>}
 
     {tab === 4 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Message Batches API</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Message Batches API</h3>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-        <div style={{ padding: 12, background: "#F0FDF4", borderRadius: 10, border: "1px solid #BBF7D0" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#166534" }}>Key Facts</div>
-          <div style={{ fontSize: 12, color: "#15803D", lineHeight: 1.8 }}>50% cost savings<br/>Up to 24hr processing window<br/>100K requests/batch max<br/>Results via custom_id correlation<br/>29-day result retention<br/>Most complete in under 1 hour</div>
+        <div style={{ padding: 12, background: "rgba(34,197,94,0.08)", borderRadius: 10, border: "1px solid rgba(34,197,94,0.3)" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#86efac" }}>Key Facts</div>
+          <div style={{ fontSize: 12, color: "#86efac", lineHeight: 1.8 }}>50% cost savings<br/>Up to 24hr processing window<br/>100K requests/batch max<br/>Results via custom_id correlation<br/>29-day result retention<br/>Most complete in under 1 hour</div>
         </div>
-        <div style={{ padding: 12, background: "#FEF2F2", borderRadius: 10, border: "1px solid #FECACA" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#991B1B" }}>Limitations</div>
-          <div style={{ fontSize: 12, color: "#7F1D1D", lineHeight: 1.8 }}>No multi-turn tool calling<br/>No guaranteed latency SLA<br/>Results may arrive out of order<br/>Can't use for agentic loops<br/>Validation is asynchronous</div>
+        <div style={{ padding: 12, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.3)" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#f87171" }}>Limitations</div>
+          <div style={{ fontSize: 12, color: "#fca5a5", lineHeight: 1.8 }}>No multi-turn tool calling<br/>No guaranteed latency SLA<br/>Results may arrive out of order<br/>Can't use for agentic loops<br/>Validation is asynchronous</div>
         </div>
       </div>
       <Compare
-        left={{ title: "✅ Good for Batch API", content: <div style={{ fontSize: 12, color: "#166534", lineHeight: 1.6 }}>Overnight technical debt reports. Weekly audit analysis. Nightly test generation. Bulk document extraction (100+ docs).</div> }}
-        right={{ title: "❌ Bad for Batch API", content: <div style={{ fontSize: 12, color: "#991B1B", lineHeight: 1.6 }}>Blocking pre-merge checks (developers waiting). Real-time customer support. Interactive code generation. Any workflow where latency matters.</div> }}
+        left={{ title: "✅ Good for Batch API", content: <div style={{ fontSize: 12, color: "#86efac", lineHeight: 1.6 }}>Overnight technical debt reports. Weekly audit analysis. Nightly test generation. Bulk document extraction (100+ docs).</div> }}
+        right={{ title: "❌ Bad for Batch API", content: <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.6 }}>Blocking pre-merge checks (developers waiting). Real-time customer support. Interactive code generation. Any workflow where latency matters.</div> }}
       />
       <Box type="exam">Classic exam question: "Should both workflows use Batch API — pre-merge checks AND overnight reports?" Answer: Only overnight reports. Pre-merge checks stay real-time. Match each API to its latency requirements. Handle failures by resubmitting only failed docs (identified by custom_id).</Box>
     </div>}
 
     {tab === 5 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Multi-Instance & Multi-Pass Review</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Multi-Instance &amp; Multi-Pass Review</h3>
       <Box type="warn">Self-review limitation: When Claude reviews its own work in the SAME session, it retains the reasoning context that produced the original code. This creates confirmation bias — it's less likely to question its own decisions.</Box>
       <Compare
-        left={{ title: "❌ Same-Session Self-Review", content: <div style={{ fontSize: 12, color: "#991B1B", lineHeight: 1.6 }}>Claude generated the code → knows WHY each decision was made → unlikely to find issues in its own reasoning. Even "please review critically" doesn't fully overcome this bias.</div> }}
-        right={{ title: "✅ Independent Review Instance", content: <div style={{ fontSize: 12, color: "#166534", lineHeight: 1.6 }}>Fresh Claude session with NO prior reasoning context. Examines code without knowing why decisions were made. Catches subtle issues that self-review misses.</div> }}
+        left={{ title: "❌ Same-Session Self-Review", content: <div style={{ fontSize: 12, color: "#f87171", lineHeight: 1.6 }}>Claude generated the code → knows WHY each decision was made → unlikely to find issues in its own reasoning. Even "please review critically" doesn't fully overcome this bias.</div> }}
+        right={{ title: "✅ Independent Review Instance", content: <div style={{ fontSize: 12, color: "#86efac", lineHeight: 1.6 }}>Fresh Claude session with NO prior reasoning context. Examines code without knowing why decisions were made. Catches subtle issues that self-review misses.</div> }}
       />
       <Box type="key">For large PRs (7+ files): Split into per-file local analysis passes (consistent depth) + separate cross-file integration pass (catches data flow issues). This addresses attention dilution that causes contradictory findings.</Box>
     </div>}
@@ -599,7 +599,7 @@ function D5() {
     <Tabs items={tabs} active={tab} onSelect={setTab} />
 
     {tab === 0 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Context Preservation Across Long Interactions</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Context Preservation Across Long Interactions</h3>
       <Compare
         left={{ title: "❌ After Progressive Summarization", content: <Code>{`"Customer had an order issue 
 and wants a partial refund."
@@ -621,8 +621,8 @@ Include in EVERY prompt, OUTSIDE
 summarized history.`}</Code> }}
       />
       
-      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#1E293B", marginTop: 12 }}>"Lost in the Middle" Effect</h4>
-      <div style={{ background: "#F8FAFC", borderRadius: 10, padding: 12, border: "1px solid #E2E8F0", marginBottom: 8 }}>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0", marginTop: 12 }}>“Lost in the Middle” Effect</h4>
+      <div style={{ background: "#1c2333", borderRadius: 10, padding: 12, border: "1px solid rgba(255,255,255,0.12)", marginBottom: 8 }}>
         <div style={{ display: "flex", height: 40, gap: 1, alignItems: "flex-end" }}>
           {[92,88,78,62,45,35,28,25,23,25,28,30,28,25,23,25,28,35,45,62,78,88,92,96].map((h, i) => (
             <div key={i} style={{ flex: 1, height: `${h}%`, borderRadius: "2px 2px 0 0", background: h > 70 ? "#22C55E" : h > 50 ? "#F59E0B" : "#EF4444" }} />
@@ -636,7 +636,7 @@ summarized history.`}</Code> }}
     </div>}
 
     {tab === 1 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Escalation Decision Framework</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Escalation Decision Framework</h3>
       <div style={{ display: "grid", gap: 6 }}>
         {[
           { trigger: '"I want to talk to a real person"', action: "Escalate IMMEDIATELY", color: "#EF4444", why: "Honor explicit request. Do NOT attempt investigation first. Compile structured handoff summary." },
@@ -650,8 +650,8 @@ summarized history.`}</Code> }}
           <div key={i} style={{ display: "flex", gap: 8, padding: 8, borderRadius: 6, background: t.color + "08", border: `1px solid ${t.color}22`, alignItems: "center" }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: t.color, minWidth: 90, textAlign: "center" }}>{t.action}</span>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>{t.trigger}</div>
-              <div style={{ fontSize: 11, color: "#64748B" }}>{t.why}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#cbd5e1" }}>{t.trigger}</div>
+              <div style={{ fontSize: 11, color: "#9ba8b0" }}>{t.why}</div>
             </div>
           </div>
         ))}
@@ -659,7 +659,7 @@ summarized history.`}</Code> }}
     </div>}
 
     {tab === 2 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Error Propagation in Multi-Agent Systems</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Error Propagation in Multi-Agent Systems</h3>
       <Compare
         left={{ title: "❌ Generic Error (Hides Context)", content: <Code>{`# Agent returns:
 {"status": "error", 
@@ -683,7 +683,7 @@ summarized history.`}</Code> }}
     </div>}
 
     {tab === 3 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Large Codebase Exploration Strategies</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Large Codebase Exploration Strategies</h3>
       <div style={{ display: "grid", gap: 8 }}>
         {[
           { label: "Context Degradation", desc: "In extended sessions, models start giving inconsistent answers and referencing 'typical patterns' rather than specific classes discovered earlier. Tool results push important context deep into the window.", color: "#EF4444" },
@@ -694,14 +694,14 @@ summarized history.`}</Code> }}
         ].map((s, i) => (
           <div key={i} style={{ padding: 10, background: s.color + "08", borderRadius: 8, border: `1px solid ${s.color}22` }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: s.color }}>{s.label}</div>
-            <div style={{ fontSize: 12, color: "#475569", marginTop: 4, lineHeight: 1.5 }}>{s.desc}</div>
+            <div style={{ fontSize: 12, color: "#9ba8b0", marginTop: 4, lineHeight: 1.5 }}>{s.desc}</div>
           </div>
         ))}
       </div>
     </div>}
 
     {tab === 4 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Human Review & Confidence Calibration</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Human Review &amp; Confidence Calibration</h3>
       <Box type="warn">97% overall accuracy can MASK poor performance on specific document types: Invoices 99.5% ✓, Receipts 98% ✓, Contracts 85% ✗, Handwritten 72% ✗. Always validate by document type AND field before automating.</Box>
       <Code>{`# Field-level confidence scoring:
 {
@@ -719,7 +719,7 @@ if any field < 0.80  → human review
     </div>}
 
     {tab === 5 && <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1E293B", marginBottom: 8 }}>Information Provenance & Source Attribution</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", marginBottom: 8 }}>Information Provenance &amp; Source Attribution</h3>
       <Code>{`# Claim-source mappings (subagents must output these):
 {
   "claim": "AI reduces drug discovery time by 40%",
@@ -744,24 +744,24 @@ export default function App() {
   const content = { d2: <D2 />, d3: <D3 />, d4: <D4 />, d5: <D5 /> };
 
   return (
-    <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", maxWidth: 780, margin: "0 auto", padding: "12px 10px" }}>
+    <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", maxWidth: 780, margin: "0 auto", padding: "12px 10px", background: "#0d1117", color: "#e0e0e0", borderRadius: 8 }}>
       <div style={{ textAlign: "center", marginBottom: 12 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 800, color: "#1E293B", margin: 0 }}>Domains 2–5: Complete Visual Learning</h1>
-        <div style={{ fontSize: 12, color: "#64748B" }}>Interactive diagrams, comparisons, code examples, and exam tips</div>
+        <h1 style={{ fontSize: 18, fontWeight: 800, color: "#e0e0e0", margin: 0 }}>Domains 2–5: Complete Visual Learning</h1>
+        <div style={{ fontSize: 12, color: "#9ba8b0" }}>Interactive diagrams, comparisons, code examples, and exam tips</div>
       </div>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
         {domains.map(d => (
           <button key={d.id} onClick={() => setDomain(d.id)} style={{
             flex: 1, padding: "8px 4px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
-            border: `2px solid ${domain === d.id ? d.color : "#E2E8F0"}`,
-            background: domain === d.id ? d.color + "15" : "white",
-            color: domain === d.id ? d.color : "#64748B",
+            border: `2px solid ${domain === d.id ? d.color : "rgba(255,255,255,0.12)"}`,
+            background: domain === d.id ? d.color + "15" : "#161b22",
+            color: domain === d.id ? d.color : "#9ba8b0",
           }}>{d.label}</button>
         ))}
       </div>
 
-      <div style={{ background: "white", borderRadius: 16, border: "1px solid #E2E8F0", padding: 16 }}>
+      <div style={{ background: "#161b22", borderRadius: 16, border: "1px solid rgba(255,255,255,0.08)", padding: 16 }}>
         {content[domain]}
       </div>
     </div>

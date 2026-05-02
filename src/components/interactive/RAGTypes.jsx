@@ -698,9 +698,9 @@ export default function RAGTypes() {
   }));
 
   return (
-    <div style={{ minHeight: "100vh", background: "#020617", color: "#e2e8f0", fontFamily: "'DM Sans', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
+    <div style={{ height: 640, background: "#0d1117", color: "#e2e8f0", fontFamily: "'DM Sans', system-ui, sans-serif", display: "flex", flexDirection: "column", borderRadius: 8, overflow: "hidden" }}>
       {/* Header */}
-      <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid #0f172a" }}>
+      <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 4, color: "#475569", textTransform: "uppercase", marginBottom: 8 }}>Complete Taxonomy</div>
         <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, color: "#f8fafc", letterSpacing: -1 }}>Types of RAG</h1>
         <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: 14 }}>13 architectures — from vanilla to agentic. Click any type to explore.</p>
@@ -708,7 +708,7 @@ export default function RAGTypes() {
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* Left: Taxonomy */}
-        <div style={{ width: 380, borderRight: "1px solid #0f172a", overflowY: "auto", padding: "20px 16px", flexShrink: 0 }}>
+        <div style={{ width: 340, borderRight: "1px solid rgba(255,255,255,0.06)", overflowY: "auto", padding: "20px 16px", flexShrink: 0 }}>
           {tierGroups.map(({ tier, color, items }) => (
             <div key={tier} style={{ marginBottom: 24 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -719,7 +719,7 @@ export default function RAGTypes() {
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {items.map(r => (
                   <div key={r.id} onClick={() => { setSelected(r.id); setTab("overview"); }}
-                    style={{ background: selected === r.id ? `${r.color}12` : "#0a0f1e", border: `1px solid ${selected === r.id ? r.color + "55" : "#0f172a"}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", transition: "all 0.15s" }}>
+                    style={{ background: selected === r.id ? `${r.color}12` : "#161b22", border: `1px solid ${selected === r.id ? r.color + "55" : "rgba(255,255,255,0.06)"}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", transition: "all 0.15s" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <span style={{ fontSize: 20 }}>{r.emoji}</span>
                       <div style={{ flex: 1 }}>
@@ -756,7 +756,7 @@ export default function RAGTypes() {
           {!active ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12, padding: 40 }}>
               <div style={{ fontSize: 48 }}>👈</div>
-              <div style={{ color: "#334155", fontSize: 16, textAlign: "center" }}>Select a RAG type to see<br/>architecture, pipeline, code & general context</div>
+              <div style={{ color: "#9ba8b0", fontSize: 16, textAlign: "center" }}>Select a RAG type to see<br/>architecture, pipeline, code &amp; general context</div>
               <div style={{ marginTop: 24, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", maxWidth: 500 }}>
                 {ragTypes.map(r => (
                   <div key={r.id} onClick={() => setSelected(r.id)}
@@ -779,7 +779,7 @@ export default function RAGTypes() {
               </div>
 
               {/* Tabs */}
-              <div style={{ display: "flex", gap: 2, marginBottom: 24, background: "#0a0f1e", borderRadius: 8, padding: 4, border: "1px solid #0f172a", width: "fit-content" }}>
+              <div style={{ display: "flex", gap: 2, marginBottom: 24, background: "#161b22", borderRadius: 8, padding: 4, border: "1px solid rgba(255,255,255,0.06)", width: "fit-content" }}>
                 {["overview", "pipeline", "code", "general"].map(t => (
                   <button key={t} onClick={() => setTab(t)}
                     style={{ background: tab === t ? `${active.color}22` : "none", border: tab === t ? `1px solid ${active.color}44` : "1px solid transparent", color: tab === t ? active.color : "#475569", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: tab === t ? 700 : 400, textTransform: "capitalize" }}>
