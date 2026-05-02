@@ -129,7 +129,7 @@ export default function AdvisorDiagram() {
     ["run","model","task","complete"].includes(tooltip.key) ? "gray" :
     ["active","orient","resumes"].includes(tooltip.key)     ? "teal" :
     ["trigger"].includes(tooltip.key)                       ? "coral" : "blue";
-  const ac = COLORS[accentKey];
+  const ac = theme[accentKey];
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", padding: "12px 0" }}>
