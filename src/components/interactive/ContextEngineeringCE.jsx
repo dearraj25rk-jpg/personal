@@ -112,7 +112,7 @@ const ErrBox   = ({children}) => <div style={{background:C.errBg, border:`0.5px 
 const OkBox    = ({children}) => <div style={{background:C.okBg,  border:`0.5px solid ${C.okBd}`,  borderRadius:8,padding:"9px 13px",fontSize:13,color:C.okT,  margin:"10px 0",lineHeight:1.5}}>{children}</div>
 const Card     = ({children,border,style={}}) => <div style={{background:C.bg1,border:`0.5px solid ${border||C.border}`,borderRadius:12,padding:"13px 15px",marginBottom:8,...style}}>{children}</div>
 const MC       = ({label,value,note,color}) => <div style={{background:C.bg2,borderRadius:8,padding:"11px 13px"}}><div style={{fontSize:11,color:C.text3,marginBottom:3,letterSpacing:.3,minHeight:"2.8em",lineHeight:1.4}}>{label}</div><div style={{fontSize:20,fontWeight:500,lineHeight:1.2,color:color||C.text1}}>{value}</div>{note&&<div style={{fontSize:11,color:C.text3,marginTop:2}}>{note}</div>}</div>
-const SecH2    = ({children}) => <h2 style={{fontSize:19,fontWeight:500,margin:"0 0 5px",paddingBottom:10,borderBottom:`0.5px solid ${C.border}`,borderLeft:"none",paddingLeft:0,marginLeft:0}}>{children}</h2>
+const SecH2    = ({children}) => <h2 style={{fontSize:19,fontWeight:500,margin:"0 0 5px",paddingBottom:10,borderBottom:`0.5px solid ${C.border}`,borderLeft:"none",paddingLeft:0,marginLeft:0,color:C.text1}}>{children}</h2>
 const Sub      = ({children}) => <h3 style={{fontSize:14,fontWeight:500,margin:"18px 0 8px",color:C.text1,borderLeft:"none",paddingLeft:0,marginLeft:0}}>{children}</h3>
 const Body     = ({children}) => <p style={{fontSize:13,color:C.text2,lineHeight:1.7,margin:"10px 0 14px"}}>{children}</p>
 const G2       = ({children}) => <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"10px 0"}}>{children}</div>
