@@ -1,5 +1,5 @@
 ---
-title: Claude Code CLI — Complete Technical Reference
+title: Claude Code CLI — Technical Reference
 description: >
   Authoritative, comprehensive reference covering every officially documented feature of
   Claude Code from its initial launch (February 2025) through v2.1.126 (May 1, 2026).
@@ -9,7 +9,7 @@ description: >
   integrations, GitHub Actions, the Agent SDK, and the full version release timeline.
 sidebar:
   order: 1
-  label: Complete Reference
+  label: CLI Reference
 head:
   - tag: meta
     attrs:
