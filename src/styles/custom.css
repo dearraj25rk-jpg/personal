@@ -587,6 +587,9 @@ body {
 .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--sl-color-accent); font-family: 'Courier New', monospace; line-height: 1; }
 .stat-label { font-size: 0.75rem; color: var(--sl-color-gray-3); text-transform: uppercase; letter-spacing: 0.08em; }
 
+/* Reset Starlight's block-sibling margin-top inside interactive React components */
+.interactive-tool * { margin-top: 0; }
+
 /* Section label */
 .section-label {
   font-size: 0.75rem;
