@@ -1,1718 +1,2388 @@
 ---
-title: "The Definitive Claude Code Reference Guide"
-description: "Complete reference for Claude Code architecture, configuration, slash commands, tools, hooks, MCP, agents, context management, and professional workflows."
+title: Claude Code CLI — Technical Reference
+description: >
+  Authoritative, comprehensive reference covering every officially documented feature of
+  Claude Code from its initial launch (February 2025) through v2.1.126 (May 1, 2026).
+  Covers all built-in tools, slash commands, CLI flags, configuration, CLAUDE.md, Skills,
+  Hooks, MCP, Plugins, Subagents, Agent Teams, Git Worktrees, Remote Control, Cloud
+  Sessions, Sandbox security, Permission system, Models, Pricing, OpenTelemetry, IDE
+  integrations, GitHub Actions, the Agent SDK, and the full version release timeline.
 sidebar:
   order: 2
+  label: CLI Reference
+head:
+  - tag: meta
+    attrs:
+      name: keywords
+      content: >
+        claude code, claude code cli, anthropic, agentic coding, mcp, hooks, skills,
+        plugins, subagents, agent teams, worktrees, remote control, sandbox, permissions
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 3
+lastUpdated: 2026-05-02
 ---
 
-# The Definitive Claude Code Reference Guide
-## Architecture, Configuration & Professional Usage
-
+> **Document scope:** All officially documented Claude Code features from February 2025 through **v2.1.126 (May 1, 2026)**. Sources: `code.claude.com/docs`, `github.com/anthropics/claude-code` (CHANGELOG.md), official Anthropic news posts, and the Agent SDK repos. Every version number cited maps to a real entry in the public CHANGELOG. Where official documentation is sparse, that is explicitly flagged.
 ---
 
-## 1. What Is Claude Code
+## 1. Overview & Product History
 
-Claude Code is Anthropic's **agentic CLI coding tool** that operates as a full autonomous coding agent — not a line-completion assistant. It reads entire codebases, edits files across projects, runs commands, handles failures, iterates, and commits results through natural language instructions.
+**Claude Code** is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your codebase as a whole, and helps you ship code faster by executing routine tasks, explaining complex code, handling Git workflows, and running multi-step engineering tasks autonomously — all driven by natural-language commands.
 
-### Key Differentiators
+Unlike inline IDE copilots that only suggest snippets, Claude Code can read files, run shell commands, edit code, run tests, fix failures, open PRs, and verify its own work in a closed loop. Anthropic's official one-liner: *"Claude Code is an agentic coding tool that reads your codebase, edits files, runs commands, and integrates with your development tools."*
 
-| Feature | Claude Code | GitHub Copilot | Cursor |
-|---------|------------|----------------|--------|
-| Paradigm | Autonomous agent | Line completion | AI-assisted editor |
-| Scope | Entire codebase | Current file | Open files |
-| Execution | Full terminal access | None | Limited |
-| Multi-file edits | Architecturally coherent | N/A | Single-file focus |
-| CI/CD integration | Headless mode | N/A | N/A |
-| Tool extension | MCP protocol | Extensions | Plugins |
-| Permission model | Granular allow/deny/ask | N/A | N/A |
+### 1.1 Release Timeline
 
-### By the Numbers (April 2026)
+Claude Code launched in **February 2025** as a limited research preview alongside Claude 3.7 Sonnet, offering core read/write/edit/bash capabilities. It reached **GA in May 2025** with Claude 4. By November 2025 it had crossed $1B annualised revenue. As of **May 1, 2026** the latest stable version is **v2.1.126**, and the npm package `@anthropic-ai/claude-code` shows **392+ published versions** across the v0/v1/v2 series.
 
-- **113,000+ GitHub stars**
-- **~195 million lines of code** processed weekly
-- **~4% of all public GitHub commits** authored by Claude Code
-- **$1B+ annualized revenue** (surpassed November 2025)
-- **SWE-bench Verified:** Opus 4.6 = 80.8%, Sonnet 4.6 = 79.6%
+| Series | Period | Key Developments |
+|--------|--------|-----------------|
+| v0.2.x | Feb–Apr 2025 | Research preview; core tool loop; `/init`, `/clear`, `/compact` |
+| v1.0.x | May–Sep 2025 | GA; permission system; CLAUDE.md; MCP; hooks; subagents; Bedrock/Vertex; GitHub Action |
+| v2.0.x | Sep–Nov 2025 | Major rewrite; native VS Code extension; checkpoint system (`/rewind`); background tasks; Sonnet 4.5 default; Agent SDK renamed |
+| v2.1.x | Dec 2025–present | Plugin system; Agent Teams; Remote Control; worktrees; cloud sessions; 1M context GA; sandbox hardening; Opus 4.7; v2.1.126 (May 1, 2026) |
 
----
+### 1.2 Deployment Surfaces
 
-## 2. Architecture: The Agentic Loop
+All surfaces share the same underlying engine and load `CLAUDE.md`, skills, agents, MCP servers, hooks, and plugins from `~/.claude/`.
 
-Every Claude Code interaction follows a continuous **three-phase agentic loop**:
-
-```
-┌─────────────────────────────────────────────────┐
-│                  AGENTIC LOOP                    │
-│                                                  │
-│   ┌──────────┐  ┌───────────┐  ┌────────────┐  │
-│   │  GATHER  │→ │   TAKE    │→ │  VERIFY    │  │
-│   │ CONTEXT  │  │  ACTION   │  │  RESULTS   │  │
-│   └──────────┘  └───────────┘  └────────────┘  │
-│        ↑                              │          │
-│        └──────────────────────────────┘          │
-│              (repeat until done)                 │
-└─────────────────────────────────────────────────┘
-```
-
-**Phase 1 — Gather Context:** Search files, read code, grep patterns, navigate dependencies, build understanding.
-
-**Phase 2 — Take Action:** Edit files, write new code, run bash commands, invoke MCP tools, spawn subagents.
-
-**Phase 3 — Verify Results:** Run tests, check compiler output, validate changes, review diffs.
-
-Two components power this: **Models that reason** (Opus, Sonnet, Haiku) and **Tools that act** (Read, Write, Edit, Bash, Search, WebFetch, Agent, MCP tools).
+| Surface | Description |
+|---------|-------------|
+| Terminal CLI | The canonical experience. macOS / Linux / Windows, native binary or npm. |
+| VS Code extension | Inline panel, native diff, terminal handoff, voice dictation. Also works in Cursor and Windsurf. |
+| JetBrains plugin | IntelliJ IDEA, PyCharm, WebStorm, GoLand, RubyMine, PHPStorm, CLion, Rider, AppCode. |
+| Claude Desktop | macOS / Windows desktop app; `/desktop` slash command. |
+| claude.ai/code (Web) | Cloud sandboxed sessions, GitHub repo linking, mobile-friendly. |
+| iOS / Android apps | Mobile via **Remote Control** to a local CLI session, or via cloud sessions. |
+| Slack | Direct @claude integration in channels. |
+| Chrome extension (beta) | Browser-side hooks for `/code` and shared sessions. |
+| GitHub/GitLab Actions | `anthropics/claude-code-action` CI/CD integration. |
 
 ---
 
-## 3. Three-Tier Agent Architecture
+## 2. Installation & Setup
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ TIER 3: AGENT TEAMS (Research Preview)                    │
-│ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │
-│ │ Team Lead│ │Teammate 1│ │Teammate 2│ │Teammate 3│    │
-│ │(orchestr)│ │(worktree)│ │(worktree)│ │(worktree)│    │
-│ └─────┬────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘    │
-│       └────────────┴────────────┴────────────┘           │
-│  Shared task lists │ Dependency tracking │ P2P messaging │
-├──────────────────────────────────────────────────────────┤
-│ TIER 2: SUBAGENTS (Agent/Task Tool)                      │
-│ ┌───────────┐ ┌───────────┐ ┌───────────┐               │
-│ │  Explore  │ │   Plan    │ │  General  │  Up to 10     │
-│ │(read-only)│ │(read-only)│ │(full tool)│  concurrent   │
-│ └───────────┘ └───────────┘ └───────────┘               │
-│  Each: own context window │ custom system prompt         │
-├──────────────────────────────────────────────────────────┤
-│ TIER 1: MAIN AGENT                                       │
-│  User ←→ Terminal/IDE ←→ Claude (Opus/Sonnet/Haiku)     │
-│  Access: files, terminal, git, CLAUDE.md, MCP, all tools │
-└──────────────────────────────────────────────────────────┘
-```
+### 2.1 Installation Methods
 
-### Tier 1 — Main Agent
-The primary instance the user interacts with. Has access to everything: project files, terminal, git, CLAUDE.md memory, MCP servers, and all tools.
-
-### Tier 2 — Subagents
-Spawned via the **Agent tool** for isolated tasks. Each gets its own context window (up to 200K or 1M tokens), custom system prompt, and scoped tool access. Built-in types:
-- **Explore** — Fast, read-only codebase search
-- **Plan** — Implementation planning in read-only mode
-- **General-purpose** — Full tool access for execution
-- Up to **10 concurrent** with intelligent queuing
-- **Cannot spawn other subagents** (single level only)
-
-### Tier 3 — Agent Teams
-Multiple Claude Code instances in parallel with shared task lists, dependency tracking, and peer-to-peer messaging. Each in its own **git worktree**. Enable: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. Cost: **~3-7× a single session**.
-
----
-
-## 4. Installation & Setup
-
-### System Requirements
-
-| Component | Requirement |
-|-----------|-------------|
-| **macOS** | 13.0+ (Ventura) |
-| **Windows** | 10 1809+ or Server 2019+ |
-| **Linux** | Ubuntu 20.04+, Debian 10+, Alpine 3.19+ |
-| **Architecture** | x64 or ARM64 |
-| **RAM** | 4 GB minimum |
-| **Internet** | Required (always) |
-| **Windows extra** | Git for Windows |
-
-### Installation Commands
-
+**macOS / Linux / WSL2 (recommended — native binary):**
 ```bash
-# macOS / Linux / WSL (recommended)
 curl -fsSL https://claude.ai/install.sh | bash
+```
 
-# Windows PowerShell
+**Windows PowerShell (native binary):**
+```powershell
 irm https://claude.ai/install.ps1 | iex
+```
 
-# Windows CMD
+**Windows CMD:**
+```cmd
 curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
+```
 
-# Homebrew
-brew install --cask claude-code
+**Homebrew (macOS / Linux):**
+```bash
+brew install --cask claude-code          # stable channel
+brew install --cask claude-code@latest   # latest channel
+```
 
-# WinGet
+**WinGet:**
+```powershell
 winget install Anthropic.ClaudeCode
+```
 
-# Specific version
-curl -fsSL https://claude.ai/install.sh | bash -s 2.1.89
+**Linux package managers:**
+```bash
+# Debian / Ubuntu
+apt install claude-code
 
-# Stable channel
-curl -fsSL https://claude.ai/install.sh | bash -s stable
+# Fedora / RHEL
+dnf install claude-code
 
-# Legacy npm (deprecated)
+# Alpine
+apk add claude-code
+```
+
+**npm (deprecated — use native installers):**
+```bash
 npm install -g @anthropic-ai/claude-code
 ```
 
-### First Run
+> **Note:** The npm path is deprecated but remains functional. As of **v2.1.113**, the CLI spawns a per-platform native binary via an optional dependency rather than running bundled JavaScript, removing the Node.js requirement for native installs. On macOS/Linux native builds (v2.1.117), `Glob` and `Grep` were replaced with embedded `bfs` and `ugrep` invoked via Bash.
+
+### 2.2 Authentication Methods
+
 ```bash
-cd your-project
-claude          # Opens interactive session
-claude --version  # Verify installation
-claude doctor   # Diagnose health
+# 1) Browser OAuth — Pro / Max / Team / Enterprise subscribers
+claude auth login        # opens browser
+claude --console         # authenticate via Anthropic Console API key (v2.1.79+)
+
+# 2) Anthropic API key — pay-as-you-go
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# 3) Custom gateway / third-party Anthropic-compatible endpoint
+export ANTHROPIC_BASE_URL="https://api.example.com/anthropic"
+export ANTHROPIC_AUTH_TOKEN="..."
 ```
+
+### 2.3 Third-Party Platforms
+
+```bash
+# AWS Bedrock
+export CLAUDE_CODE_USE_BEDROCK=1
+export AWS_REGION=us-east-1
+# Optional: gateway mode, custom endpoint, Mantle
+export CLAUDE_CODE_SKIP_BEDROCK_AUTH=1        # gateway mode
+export ANTHROPIC_BEDROCK_BASE_URL="..."
+export CLAUDE_CODE_USE_MANTLE=1               # Bedrock powered by Mantle (v2.1.94)
+export ANTHROPIC_BEDROCK_SERVICE_TIER="default|flex|priority"  # v2.1.122
+
+# Google Vertex AI
+export CLAUDE_CODE_USE_VERTEX=1
+export ANTHROPIC_VERTEX_PROJECT_ID=my-project
+export CLOUD_ML_REGION=us-east5              # or "global"
+# Optional: Workload Identity Federation (v2.1.121)
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/wif-config.json
+
+# Microsoft Azure AI Foundry
+export CLAUDE_CODE_USE_FOUNDRY=1
+export ANTHROPIC_FOUNDRY_API_KEY="..."
+export ANTHROPIC_FOUNDRY_BASE_URL="..."
+export ANTHROPIC_FOUNDRY_RESOURCE="..."
+
+# Third-party gateway compatibility
+export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1   # strips beta headers
+```
+
+Interactive setup wizards are available: `/setup-bedrock` (v2.1.92) and `/setup-vertex` (v2.1.98) offer guided configuration with model pinning and 1M context options. The Bedrock wizard is also reachable from the login screen → "3rd-party platform".
+
+### 2.4 Post-Install Commands
+
+```bash
+/doctor            # health check; press `f` to have Claude auto-fix issues (v2.1.105+)
+/terminal-setup    # configure scroll sensitivity, clipboard, iTerm2 (v2.1.116+)
+/login             # authenticate
+/logout            # revoke session
+/config            # tabbed settings UI; persists to ~/.claude/settings.json (v2.1.119+)
+```
+
+### 2.5 Version Management
+
+```bash
+claude --version
+claude install stable    # pin to stable channel
+claude install latest    # pin to latest channel
+claude update            # manual update (blocked by DISABLE_UPDATES)
+```
+
+`DISABLE_AUTOUPDATER=1` blocks background auto-updates only. `DISABLE_UPDATES=1` (v2.1.118) blocks **all** update paths including manual `claude update`. Stable Homebrew cask is typically about one week behind; the `latest` cask receives versions immediately.
 
 ---
 
-## 5. Authentication Methods
+## 3. Core Agentic Loop Architecture
 
-| Method | Setup | Best For |
-|--------|-------|----------|
-| **Claude Pro/Max/Team/Enterprise** | Browser OAuth on `claude` first run | Individual/team use |
-| **Anthropic Console** | `ANTHROPIC_API_KEY` env var | API access with credits |
-| **Amazon Bedrock** | `CLAUDE_CODE_USE_BEDROCK=true` + AWS creds; interactive wizard: `claude --bedrock-setup` (v2.1.92) | AWS infrastructure |
-| **Google Vertex AI** | `CLAUDE_CODE_USE_VERTEX=true` + GCP creds; interactive wizard: `claude --vertex-setup` (v2.1.98) | GCP infrastructure |
-| **Azure AI Foundry** | `CLAUDE_CODE_USE_FOUNDRY=1` + Azure creds | Azure infrastructure |
-| **Custom helper** | `apiKeyHelper` setting → shell script | Enterprise SSO |
+### 3.1 The Three-Phase Loop
 
-> **Note:** Free Claude.ai plan does NOT include Claude Code access.
+Claude Code operates as a self-directed agent across three phases:
+
+1. **Gather Context** — read files, run `git status`, search with `grep`/`glob`, fetch URLs, query MCP servers, examine test output.
+2. **Plan & Act** — edit code, run shell commands, write files, run tests, open PRs, invoke subagents.
+3. **Verify Results** — re-run tests, re-read modified files, check diagnostics, iterate until the task is complete.
+
+The model self-drives the loop turn by turn. You control it with prompts, permissions, hooks, and stop conditions (`--max-turns`, `--max-budget-usd`).
+
+### 3.2 Context Window
+
+The default context window is **200K tokens**. **1M tokens** is GA (no beta header required) for `claude-sonnet-4-6`, `claude-opus-4-6`, and `claude-opus-4-7` on Pro/Max/Team/Enterprise plans. Disable the 1M window with `CLAUDE_CODE_DISABLE_1M_CONTEXT=true`.
+
+v2.1.117 fixed Opus 4.7 sessions that were computing context usage against 200K instead of the native 1M, causing premature autocompact.
+
+### 3.3 Context Compaction
+
+Compaction creates a new fork of the conversation that inherits the same prompt-cache prefix — so KV cache reuse continues even after compaction.
+
+```bash
+/compact [optional steering instructions]    # manual compaction
+```
+
+Auto-compact triggers near a configurable threshold (default ≈ 92%; overridable with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`). v2.1.89 added an autocompact thrash-loop guard: if context refills to the limit immediately after compacting three times in a row, the session stops with an actionable error message.
+
+### 3.4 Prompt Caching
+
+Claude Code aggressively caches the stable prefix (system prompt, tool definitions, CLAUDE.md, recent assistant turns) for 70–80% cost reduction on repeated content.
+
+```bash
+ENABLE_PROMPT_CACHING_1H=1      # 1-hour TTL on API/Bedrock/Vertex/Foundry (v2.1.108)
+FORCE_PROMPT_CACHING_5M=1       # force 5-minute TTL
+DISABLE_PROMPT_CACHING=1        # disable entirely (startup warning shown)
+```
+
+The default TTL is 5 minutes; subscribers default to **1 hour**. v2.1.108 fixed a bug where subscribers who set `DISABLE_TELEMETRY` were incorrectly falling back to the 5-minute TTL. The older `ENABLE_PROMPT_CACHING_1H_BEDROCK` env var is deprecated in favour of the unified `ENABLE_PROMPT_CACHING_1H`.
+
+### 3.5 Minimal & Bare Modes
+
+```bash
+CLAUDE_CODE_SIMPLE=1 claude    # only Bash, file-read, file-edit tools; minimal system prompt
+claude --bare                  # skip hooks, plugins, auto-memory, CLAUDE.md, MCP auto-discovery
+```
+
+### 3.6 Adaptive Reasoning & Interleaved Thinking
+
+Claude Code uses extended thinking selectively — fast routine responses, deeper thinking for complex steps. It can be toggled and configured:
+
+```bash
+# Effort levels: low | medium | high | xhigh (Opus 4.7 only) | max
+/effort high
+claude --effort xhigh "Redesign the caching layer"
+
+# Always-on thinking
+# In settings.json:
+{ "alwaysThinkingEnabled": true }
+
+# Per-session keyboard toggle: Option+T / Alt+T
+
+# Disable entirely:
+export DISABLE_INTERLEAVED_THINKING=1
+```
+
+As of v2.1.117, the default effort for Pro/Max users on Opus 4.6 and Sonnet 4.6 is `high` (changed from `medium`). The thinking spinner shows inline progress: *"still thinking"* → *"thinking more"* → *"almost done thinking"* (v2.1.116).
+
+### 3.7 Background Tasks
+
+Background tasks let you send a long-running tool operation to the background so you can continue prompting Claude while it executes.
+
+Press **Ctrl+B** during any running tool invocation to background it. The task continues executing in the background while Claude returns to the input prompt. You can monitor background tasks with `/tasks` and bring results back into the foreground when they complete.
+
+The `--bg` CLI flag starts a session in background mode from the outset — useful for launching a long migration or test run and disconnecting:
+
+```bash
+# Start a background session; returns immediately:
+claude --bg --print "Run the full test suite and report failures"
+
+# Monitor background agents collectively:
+# Ctrl+X Ctrl+K  — stop all background agents
+```
+
+Background task output is streamed to the Monitor tool (v2.1.97) when plugin `monitors/` entries are defined, enabling structured event capture from running scripts.
+
+### 3.8 Routines & Scheduled Sessions
+
+Routines are recurring Claude Code sessions triggered on a schedule — effectively cron jobs for your agentic workflows. They are configured via the `/schedule` slash command and backed by the internal scheduling system (disable with `CLAUDE_CODE_DISABLE_CRON=1`).
+
+```bash
+/schedule                    # open the scheduling UI
+/schedule "Run test suite"   # schedule a recurring task
+```
+
+A scheduled routine stores its configuration in `.claude/routines/` at the project level. On each trigger it starts a new Claude Code session with the configured prompt, tools, and permission mode, then records the result. Routines are useful for nightly regression runs, weekly dependency audits, or daily changelog summaries. The full Routines specification is not yet publicly documented in the official docs beyond what is observable from the CLI and `/schedule` UI.
 
 ---
 
-## 6. CLAUDE.md Configuration System
+## 4. Built-In Tools Reference
 
-### File Hierarchy (Load Order — All Concatenated)
+> **Prefer built-in tools over Bash equivalents.** Read, Grep, Glob, Write, and Edit are tracked in the audit log, integrate with hooks and permissions, work correctly inside the sandbox, and feed results to the model in token-efficient form. Use Bash only when no built-in tool fits.
 
-```
-Priority 1 (Highest):  Managed Policy CLAUDE.md
-                        macOS: /Library/Application Support/ClaudeCode/CLAUDE.md
-                        Linux: /etc/claude-code/CLAUDE.md
-                        Windows: C:\Program Files\ClaudeCode\CLAUDE.md
+| Tool | Purpose | Auto-approved? | Permission Pattern |
+|------|---------|:---:|---|
+| **Read** | Read file contents (text, images, PDFs, notebooks) | ✅ | `Read(...)` deny rules honoured |
+| **Write** | Create or overwrite files | ❌ | `Write(pattern)` |
+| **Edit** | Targeted in-place patch | ❌ | `Edit(pattern)`. Diff 60% faster on files with tabs/`&`/`$` (v2.1.119) |
+| **MultiEdit** | Multiple edits to the same file in one call | ❌ | Same as Edit |
+| **Bash** | Execute shell commands | ❌ | `Bash(cmd:*)` patterns; deny rules match wrappers `env`/`sudo`/`watch`/`ionice`/`setsid` (v2.1.113) |
+| **PowerShell** | Execute PowerShell commands on Windows (opt-in, default from v2.1.126) | ❌ | `PowerShell(cmd:*)` |
+| **Grep** | ripgrep-based regex search (modes: `files_with_matches`, `count`, `lines`); multiline supported | ✅ | n/a |
+| **Glob** | File-pattern search; structured listing | ✅ | n/a |
+| **LS** | List directory contents | ✅ | Not in `CLAUDE_CODE_SIMPLE=1` |
+| **WebFetch** | Fetch URL → markdown; `Claude-User` User-Agent (robots.txt aware); strips `<style>`/`<script>` (v2.1.105) | ❌ | `WebFetch(domain:example.com)` |
+| **WebSearch** | Live web search | ❌ | `WebSearch` |
+| **Task** | Spawn a subagent in an isolated context window | ❌ | `Task(AgentName)` |
+| **TodoRead / TodoWrite** | Structured task list within a session | ✅ | n/a |
+| **NotebookRead / NotebookEdit** | Jupyter notebook support | Mixed | Edit prompts |
+| **Monitor** | Stream events from background scripts (v2.1.97, via plugin `monitors/`) | ❌ | `Monitor` |
+| **RemoteTrigger** | Trigger Remote Control session actions | ❌ | `RemoteTrigger` |
+| **Skill** | Invoke a skill file; discovers built-in slash commands like `/init`, `/review`, `/security-review` (v2.1.108+) | ❌ | `Skill(name)` |
+| **KillShell / KillBash** | Terminate a running background bash shell | ❌ | n/a |
+| **EnterWorktree / ExitWorktree** | Switch into/out of a git worktree; `path` param added v2.1.105 | ❌ | n/a |
+| **TaskCreate / TaskUpdate / TaskList / TaskGet** | Persistent task primitives (Agent Teams) | Mixed | n/a |
+| **SendMessage** | Peer-to-peer agent messaging (Agent Teams only) | ❌ | `SendMessage(*)` |
+| **Teammate** | Spawn/cleanup teammates in Agent Teams | ❌ | `Teammate` |
+| **LSP** | Language-server go-to-def, find-references, hover docs (TS/Python/Go/Rust) | ✅ | n/a |
+| **mcp__{server}__{tool}** | Dynamically registered MCP tool calls | ❌ | Per-tool permission |
 
-Priority 2:            Project CLAUDE.md (team-shared, version-controlled)
-                        ./CLAUDE.md  OR  ./.claude/CLAUDE.md
+**Notable tool-specific details:**
 
-Priority 3:            User CLAUDE.md (personal, all projects)
-                        ~/.claude/CLAUDE.md
+Bash read-only commands (`ls`, `cat`, `head`, `tail`, `grep`, `find`, `wc`, `diff`, `stat`, `du`, `cd`, read-only `git`) are auto-allowed. v2.1.111 added `lsof`, `pgrep`, `tput`, `ss`, `fd`, `fdfind` to that allowlist. `Bash(find:*)` allow rules no longer auto-approve `find -exec`/`-delete` (v2.1.113).
 
-Priority 4 (Lowest):   Local CLAUDE.md (personal, project-specific, gitignored)
-                        ./CLAUDE.local.md
-```
+MCP result size: the default truncation can be bypassed per-server via `_meta["anthropic/maxResultSizeChars"]` up to **500,000 characters** (v2.1.91/v2.1.119). `TaskOutput` is deprecated — use `Read` on the subagent's output file path instead.
 
-### Directory Walking Behavior
-Claude Code walks **up** the directory tree from CWD, checking each directory for `CLAUDE.md` and `CLAUDE.local.md`. Files above CWD load at launch. Files in subdirectories load **on demand** when Claude reads files in those directories.
+---
 
-### Import System
+## 5. Slash Commands Reference
+
+Type `/` in any session to fuzzy-search all commands and skills. There are 60+ built-in commands plus bundled skills. The following tables organise them by purpose.
+
+### 5.1 Session, Model & Cost
+
+| Command | Purpose | Notes |
+|---------|---------|-------|
+| `/help` | List all commands | |
+| `/init` | Auto-generate `CLAUDE.md` | Analyzes build system, tests, code patterns |
+| `/login` / `/logout` | Auth management | |
+| `/model` | Pick model | Warns mid-session; persists across restarts (v2.1.117) |
+| `/effort [low\|medium\|high\|xhigh\|max\|auto]` | Set reasoning budget | Opens slider when bare (v2.1.111) |
+| `/usage` | Session cost, per-model & cache-hit breakdown | Merges `/cost` and `/stats` (v2.1.118) |
+| `/config` | Tabbed settings UI | Persists to `~/.claude/settings.json` (v2.1.119) |
+| `/permissions` | Interactive allow/deny rule editor | Domain allowlisting |
+| `/doctor` | Health check | Press `f` to auto-fix (v2.1.105+) |
+| `/terminal-setup` | Configure terminal | Scroll, clipboard, iTerm2 clipboard |
+| `/release-notes` | Interactive version picker | v2.1.92 |
+| `/feedback` / `/bug` | Send feedback to Anthropic | |
+| `/status` | Session status | Works mid-response (v2.1.110) |
+| `/extra-usage` | Show extra session usage data | Available from Remote Control clients (v2.1.113) |
+
+### 5.2 Context & Memory
+
+| Command | Purpose | Notes |
+|---------|---------|-------|
+| `/clear` | Reset context | Hint shows current size, not cumulative (fixed v2.1.119) |
+| `/compact [steering]` | Summarise; preserves cache prefix | Fork-based architecture |
+| `/context` | Show context-usage grid | Native dialog in VS Code (v2.1.121) |
+| `/recap` | Manual session recap | v2.1.108; `CLAUDE_CODE_ENABLE_AWAY_SUMMARY` |
+| `/btw` | Side question not polluting main thread | |
+| `/rewind` (alias `/undo`) | Roll back the last turn | v2.1.108 |
+| `/branch` (formerly `/fork`) | Branch the current conversation | Renamed v2.1.77 |
+| `/resume` (`/r`) | Session picker | Ctrl+A for all projects; 67% faster on 40MB+ (v2.1.116) |
+| `/rename` | Rename a session | Syncs over Remote Control (v2.1.116) |
+| `/memory` | Manage auto-memory entries | |
+
+### 5.3 Files, Directories & Worktrees
+
+| Command | Purpose |
+|---------|---------|
+| `/add-dir <path> [--remember]` | Add a directory to the session |
+| `/diff` | Show pending diff |
+| `/copy` | Copy last response with table-aligned markdown |
+| `/env` | Manage session environment variables |
+
+### 5.4 Agents, Skills, Plugins & MCP
+
+| Command | Purpose | Notes |
+|---------|---------|-------|
+| `/agents` | List/edit subagents | "Generate with Claude" button |
+| `/skills` | Browse skills | Sort by token count `t`, type to filter (v2.1.121) |
+| `/tasks` | Tasks list view | |
+| `/plugin` | Plugin marketplace UI | |
+| `/plugin install <name>` | Install a plugin | |
+| `/plugin update` | Update plugins | |
+| `/plugin list` | List installed plugins | |
+| `/mcp` | Manage MCP servers, OAuth re-auth | |
+| `/reload-plugins` | Reload plugins | Auto-installs missing deps |
+
+### 5.5 Workflow & Power Features
+
+| Command | Purpose | Version |
+|---------|---------|---------|
+| `/review` | Code review | |
+| `/security-review` | Security-focused review | |
+| `/think` | One-shot deep-thinking response | |
+| `/plan [description]` | Enter plan mode (optional immediate plan execution) | v2.1.111 description arg |
+| `/ultraplan` | Multi-agent cloud planning; auto-creates cloud env | v2.1.101 |
+| `/ultrareview [PR#]` | Parallelised multi-agent cloud code review | v2.1.111 |
+| `/loop` (alias `/proactive`) | Self-referential iterative loop | v2.1.105 |
+| `/simplify` | 3-agent quality review pipeline | |
+| `/batch` | Parallel large-scale changes across worktrees → auto PRs | |
+| `/debug` | Debug skill | |
+| `/claude-api` | Skill for Anthropic API work | |
+| `/team-onboarding` | Generate teammate ramp-up guide | v2.1.101 |
+| `/less-permission-prompts` | Scan transcripts; propose allowlist | v2.1.111 |
+| `/sandbox` | Enable OS-level sandbox | |
+| `/voice` | Voice dictation toggle | Option+P / Alt+P |
+| `/theme` / `/color` | Color/custom themes | Named themes v2.1.118 |
+| `/remote-control` (`/rc`) | Bridge local CLI to claude.ai/code, iOS/Android | v2.1.51 |
+| `/tui [fullscreen]` | Switch rendering mode | v2.1.110 |
+| `/focus` | Focus mode toggle | |
+| `/schedule` | Schedule background tasks | |
+| `/insights` | Personal usage analytics | |
+| `/setup-bedrock` | Guided Bedrock configuration | v2.1.92 |
+| `/setup-vertex` | Guided Vertex AI configuration | v2.1.98 |
+| `/powerup` | Enable additional Claude Code capabilities | v2.1.90 |
+| `/desktop` | Surface-specific command for the Claude Desktop app; opens desktop-context workflows | Desktop app only |
+
+### 5.6 Custom Slash Commands / Skills
+
+Custom commands have been merged into Skills (v2.1.101). A file at `.claude/commands/deploy.md` and a skill at `.claude/skills/deploy/SKILL.md` both create `/deploy`. **Skills win on collision.**
+
+Files at `.claude/commands/<name>.md` (project) or `~/.claude/commands/<name>.md` (personal) remain supported for backwards compatibility.
+
 ```markdown
-# In your CLAUDE.md
-@README.md                    # Import project readme
-@docs/architecture.md         # Import architecture docs
-@docs/git-instructions.md     # Import workflow docs
-@AGENTS.md                    # Cross-compatibility with AGENTS.md
+---
+allowed-tools: Bash(git add:*), Bash(git commit:*)
+argument-hint: [message]
+description: Create a git commit with the staged changes
+model: claude-haiku-4-5
+context: fork
+disable-model-invocation: false
+---
+
+Commit all staged changes with message: $ARGUMENTS
 ```
-- Recursive imports up to **5 hops deep**
-- HTML comments stripped before injection
 
-### What to Put in CLAUDE.md
-- Project architecture and structure
-- Build commands: `npm run build`, `dotnet build`
-- Test instructions: `npm test -- --file path`
-- Coding standards and style guidelines
-- Naming conventions
-- Common workflows
-- Architectural decisions and patterns
-- Preferred libraries and frameworks
-- Review checklists
-- Compact Instructions (preserved during compaction)
-
-### Best Practices
-- Target **under 200 lines** per file
-- Use markdown headers and bullets
-- Be specific: "Use 2-space indentation" not "Format code properly"
-- Split large files using `@imports` or `.claude/rules/`
-- Run `/init` to generate starter CLAUDE.md
-- Run `/memory` to view all loaded memory files
+`$ARGUMENTS` captures everything after the command name. `$1`, `$2`, … give positional args. `${CLAUDE_EFFORT}` expands to the current effort level (v2.1.120).
 
 ---
 
-## 7. Complete Slash Commands Reference
+## 6. CLI Flags Reference
 
-### Session Management
-| Command | Aliases | Description |
-|---------|---------|-------------|
-| `/clear` | `/reset`, `/new` | Clears conversation history |
-| `/compact [focus]` | — | Compresses context; optional focus area |
-| `/exit` | `/quit` | Exits CLI |
-| `/resume [session]` | `/continue` | Resume by ID, name, or picker |
-| `/branch [name]` | `/fork` | Creates conversation fork / branch (renamed v2.1.80) |
-| `/rename [name]` | — | Renames session |
-| `/rewind` | `/checkpoint` | Restores code to previous point |
-| `/export [filename]` | — | Export conversation as text |
-| `/copy` | — | Copy last response to clipboard |
+```bash
+claude [PROMPT] [FLAGS]
+```
 
-### Discovery & Debugging
-| Command | Description |
-|---------|-------------|
-| `/help` | Shows all commands |
-| `/context` | Token usage visualization with optimization tips |
-| `/cost` | Detailed token usage and cost stats |
-| `/doctor` | Diagnose installation health |
-| `/feedback` / `/bug` | Submit feedback |
-| `/hooks` | View hook configurations |
-| `/commands` | List available commands |
-| `/skills` | List available skills |
-| `/debug [desc]` | Enable debug logging (bundled skill) |
-| `/insights` | Session analytics and productivity stats |
-| `/changelog` | View what changed in latest Claude Code update |
-| `/todos` | View and manage current task list |
+> **Note:** `claude --help` does not list every flag. A flag's absence from `--help` does not mean it is unavailable.
 
-### Configuration
-| Command | Description |
-|---------|-------------|
-| `/config` / `/settings` | Opens settings interface |
-| `/permissions` / `/allowed-tools` | Manage tool permissions |
-| `/model [model]` | Switch AI model (←/→ adjust effort) |
-| `/effort [level]` | Set effort: `low` / `medium` / `high` / `xhigh` / `max` (available levels depend on model) |
-| `/fast [on/off]` | Toggle fast mode for Opus 4.6 (v2.1.36) |
-| `/output-style [style]` | Set output style |
-| `/theme` | Change color theme |
-| `/color` | Set Claude's response accent color (v2.1.75) |
-| `/vim` | Toggle Vim editing mode |
-| `/terminal-setup` | Configure keybindings |
-| `/keybindings` | Interactive keybinding editor |
-| `/sandbox` | Toggle sandbox mode |
-| `/status` | Session status: version, model, account |
-| `/reload-plugins` | Hot-reload installed plugins without restarting (v2.0.12+) |
+| Flag | Purpose |
+|------|---------|
+| `-p`, `--print` | Non-interactive / headless mode; print result and exit |
+| `--output-format text\|json\|stream-json` | Print-mode output shape |
+| `--input-format` | Input format for stdin |
+| `--include-partial-messages` | Stream intermediate tool content |
+| `--json-schema '<schema>'` | Validate JSON output against a JSON Schema |
+| `-c`, `--continue` | Resume the most recent session in cwd |
+| `-r`, `--resume [id\|name]` | Resume a named or specific session |
+| `--session-id <id>` | Resume by session ID |
+| `-n`, `--name <name>` | Name a new session at start |
+| `--from-pr <url-or-number>` | Resume session linked to a PR (GitHub/GitLab/Bitbucket/GHE, v2.1.119) |
+| `--fork-session` | New session ID, inherits context |
+| `-w`, `--worktree <name>` | Run in `.claude/worktrees/<name>/` (v2.1.50) |
+| `--tmux` | Wrap worktree session in tmux pane |
+| `--model <id>` | Override default model |
+| `--fallback-model <id>` | Fallback model if primary is unavailable |
+| `--effort low\|medium\|high\|xhigh\|max\|auto` | Reasoning budget |
+| `--max-tokens <n>` | Cap output tokens |
+| `--max-turns <n>` | Cap agentic turns |
+| `--max-budget-usd <usd>` | Hard spending cap; session ends gracefully when exceeded |
+| `--allowedTools "Read,Write,Bash(git:*)"` | Auto-approve listed tools |
+| `--disallowedTools` | Disallow listed tools |
+| `--tools` | Hard-restrict toolset (vs `--allowedTools` which only skips prompts) |
+| `--permission-mode default\|acceptEdits\|plan\|bypassPermissions\|auto\|dontAsk` | Permission mode |
+| `--dangerously-skip-permissions` | Bypass all permission prompts |
+| `--system-prompt <text>` | Replace system prompt |
+| `--system-prompt-file <path>` | Replace system prompt from file |
+| `--append-system-prompt <text>` | Append to default system prompt |
+| `--append-system-prompt-file <path>` | Append from file |
+| `--exclude-dynamic-system-prompt-sections` | Moves cwd/env/memory to first user message for better cross-user caching (v2.1.98) |
+| `--add-dir <path>` | Include extra directory |
+| `--settings <path>` | Load settings from a specific file |
+| `--setting-sources user,project,local,policy,managed` | Restrict which config scopes load |
+| `--mcp-config <file>` | Load MCP servers from a file |
+| `--agent <name>` | Run as a specific named agent; honours agent's `permissionMode` (v2.1.119) |
+| `--agents <json>` | Inline agent definitions |
+| `--channels` | Enable MCP server push events into session |
+| `--bg` | Run session in background |
+| `--remote` | Start a cloud VM session |
+| `--remote-control` / `--rc` | Enable Remote Control bridge |
+| `--remote-control-session-name-prefix <pfx>` | Override hostname-derived prefix for Remote Control |
+| `--console` | Authenticate via Anthropic Console API key (v2.1.79) |
+| `--bare` | Skip hooks, plugins, auto-memory, CLAUDE.md |
+| `--no-session-persistence` | Ephemeral session |
+| `--replay-user-messages` | Replay messages for testing |
+| `--debug [categories]` | Verbose logging (`api,hooks,mcp,permissions,skills`) |
+| `--debug-file <path>` | Write debug logs to file |
+| `--verbose` | Verbose output |
+| `--teleport` | Hand off active session to another surface |
+| `--enable-auto-mode` | (Deprecated v2.1.111 — auto mode no longer requires this flag) |
+| `--chrome` | Enable Chrome debugging integration |
+| `--plugin-dir <path>` | Load a plugin from a local directory |
 
-### Project & Memory
-| Command | Description |
-|---------|-------------|
-| `/init` | Initialize project with CLAUDE.md |
-| `/memory` | Edit memory files, toggle auto-memory |
-| `/add-dir <path>` | Add working directories |
+**Top-level subcommands** (not prefixed with `--`):
 
-### Integration
-| Command | Description |
-|---------|-------------|
-| `/agents` | Manage subagent configurations |
-| `/mcp` | Manage MCP server connections |
-| `/ide` | Manage IDE integrations |
-| `/chrome` | Configure Chrome settings |
-| `/install-github-app` | Setup GitHub Actions |
-| `/desktop` / `/app` | Continue in Desktop app |
-| `/mobile` | QR code for mobile app |
-| `/remote-control` / `/rc` | Make session controllable from claude.ai |
-| `/team-onboarding` | Generate team onboarding guide for your codebase (v2.1.104) |
-
-### Code & Review
-| Command | Description |
-|---------|-------------|
-| `/diff` | Interactive diff viewer |
-| `/review` | Start code review |
-| `/security-review` | Security vulnerability analysis |
-| `/pr-comments [PR]` | Show GitHub PR comments |
-| `/plan [desc]` | Enter plan mode |
-
-### Bundled Skills as Commands
-| Command | Description |
-|---------|-------------|
-| `/batch <instruction>` | Parallel large-scale changes (5-30 units) |
-| `/claude-api` | Load Claude API reference |
-| `/loop [interval] <prompt>` | Run prompt on recurring schedule (v2.1.71) |
-| `/simplify [focus]` | Three parallel review agents |
-| `/btw <question>` | Side question (no context impact) |
-| `/ultraplan [desc]` | Invoke extended planning mode for complex tasks |
-| `/powerup` | Load all available skills into context (v2.1.90) |
-| `/bashes` | List all Bash commands approved this session |
-
-### Account
-| Command | Description |
-|---------|-------------|
-| `/login` / `/logout` | Authentication |
-| `/usage` | Plan limits and rate status |
-| `/stats` | Daily usage and session history |
-| `/extra-usage` | Configure overflow billing |
-| `/voice` | Push-to-talk (hold spacebar, 20+ langs) |
+```bash
+claude auth login                     # browser OAuth
+claude update                         # manual update
+claude install [stable|latest]        # pin channel
+claude doctor                         # health check (CLI alias for /doctor)
+claude mcp add|list|remove|get|serve  # MCP management
+claude plugin install|update|list|tag|prune|validate|marketplace  # plugin lifecycle
+claude remote-control                 # start Remote Control server
+claude ultrareview [target] [--json]  # non-interactive code review (v2.1.120)
+claude project purge [path]           # clean up old project data (v2.1.126)
+  # flags: --dry-run, -y/--yes, -i/--interactive, --all
+```
 
 ---
 
-## 8. Settings & Configuration
+## 7. Configuration System
 
-### Settings File Locations & Precedence
+### 7.1 Five-Scope Hierarchy
 
-```
-Highest Priority
-  ↓  Managed settings (server → MDM/OS-level → file-based)
-  ↓  Command line arguments
-  ↓  Local project: .claude/settings.local.json
-  ↓  Shared project: .claude/settings.json
-  ↓  User settings: ~/.claude/settings.json
-Lowest Priority
-```
+Settings are merged from lowest to highest precedence. Higher-precedence scopes override lower-precedence ones; **deny rules always win regardless of scope**.
 
-Array settings **merge** across scopes (concatenated, deduplicated). If **denied** at any level, no lower level can override.
+1. **Default settings** — built-in defaults
+2. **User settings** — `~/.claude/settings.json`
+3. **Project settings** — `.claude/settings.json` (commit to git for team-wide effect)
+4. **Project local settings** — `.claude/settings.local.json` (gitignore this file)
+5. **CLI flags** — highest priority
 
-### Key Settings Fields
+**Above all others — Managed settings (enterprise):** server-managed policy > MDM > file-based (`managed-settings.json` + `managed-settings.d/*.json`) > Windows HKCU registry. Cannot be overridden by anything, including CLI flags.
+
+**Managed settings file locations:**
+
+| OS | Path |
+|----|------|
+| macOS | `/Library/Application Support/ClaudeCode/managed-settings.json` |
+| Linux | `/etc/claude-code/managed-settings.json` |
+| Windows | `C:\ProgramData\ClaudeCode\managed-settings.json` |
+
+The `managed-settings.d/` drop-in directory is supported for separate teams to deploy independent policy fragments that merge alphabetically.
+
+`wslInheritsWindowsSettings: true` (v2.1.118) lets WSL inherit Windows-side managed settings.
+
+### 7.2 settings.json — Complete Key Reference
 
 ```jsonc
 {
-  // Permission rules
+  // JSON Schema for autocomplete (community-maintained schemastore.org)
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  // ── Model & reasoning ──────────────────────────────────────────
+  "model": "claude-sonnet-4-6",
+  "availableModels": ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"],
+  "effort": "high",                      // low|medium|high|xhigh|max
+  "alwaysThinkingEnabled": true,
+  "showThinkingSummaries": false,        // default false (v2.1.89)
+
+  // ── UI & display ───────────────────────────────────────────────
+  "theme": "dark",                       // "auto-match-terminal" also supported
+  "editorMode": "vim",                   // or "emacs"
+  "language": "english",
+  "voiceEnabled": false,
+  "tui": "fullscreen",                   // "fullscreen" or "inline"
+  "autoScrollEnabled": true,
+  "spinnerTipsOverride": { "excludeDefault": false },
+
+  // ── Session management ─────────────────────────────────────────
+  "autoCompact": true,
+  "cleanupPeriodDays": 30,               // ≥1 (v2.1.89 rejects 0)
+  "verbose": false,
+  "outputStyle": "default",
+
+  // ── Permissions ────────────────────────────────────────────────
   "permissions": {
-    "allow": ["Read", "Grep", "Glob", "Bash(npm run *)"],
-    "deny": ["Bash(rm -rf *)"],
-    "ask": ["Write", "Edit"]
+    "allow": ["Bash(npm run *)", "Bash(git status)", "Read(**)"],
+    "deny":  ["Read(**/.env)", "Read(**/.env.*)", "Bash(rm -rf *)"],
+    "ask":   ["WebFetch", "Bash(curl:*)"],
+    "additionalDirectories": ["../shared-libs"],
+    "defaultMode": "default",            // default|acceptEdits|plan|bypassPermissions|auto|dontAsk
+    "disableBypassPermissionsMode": "disable"
   },
-  
-  // Default permission mode
-  "defaultMode": "default", // default|acceptEdits|plan|auto|dontAsk|bypassPermissions
-  
-  // Model override
-  "model": "claude-sonnet-4-6-20260305",
-  
-  // Hooks (lifecycle events)
-  "hooks": { /* see Hooks section */ },
-  
-  // Environment variables
-  "env": {
-    "CUSTOM_VAR": "value"
+
+  // ── Auto mode (Anthropic safety classifier) ────────────────────
+  "autoMode": {
+    "allow":      ["$defaults"],         // "$defaults" extends built-in list (v2.1.118)
+    "soft_deny":  ["$defaults"],
+    "environment": {}
   },
-  
-  // Auto-update channel
-  "autoUpdatesChannel": "stable", // stable|latest
-  
-  // Sandbox config
+
+  // ── Sandbox ────────────────────────────────────────────────────
   "sandbox": {
     "enabled": false,
-    "network": { "allowList": [], "allowMachLookup": true, "enableWeakerNetworkIsolation": false },
-    "filesystem": { "allowWrite": [], "denyRead": [], "allowRead": [] },
-    "failIfUnavailable": false  // v2.1.83: fail if sandbox cannot start
+    "failIfUnavailable": false,
+    "autoAllowBashIfSandboxed": false,
+    "excludedCommands": [],
+    "dangerouslyDisableSandbox": false,
+    "enableWeakerNestedSandbox": false,
+    "enableWeakerNetworkIsolation": false,
+    "allowUnixSockets": [],
+    "allowRead": ["/usr/local/share"],
+    "filesystem": {
+      "allowWrite": ["/tmp/build"],
+      "denyRead":   ["~/.ssh"],
+      "denyWrite":  ["~/.gitconfig"]
+    },
+    "network": {
+      "allowedDomains": ["*.npmjs.org", "github.com"],
+      "deniedDomains":  ["telemetry.example.com"],
+      "allowMachLookup": false
+    }
   },
-  
-  // Restrict available models
-  "availableModels": ["claude-sonnet-4-6-*", "claude-opus-4-6-*", "claude-opus-4-7-*"],
-  
-  // Response language
-  "language": "en",
-  
-  // Auto-memory directory (v2.1.74) — defaults to ~/.claude/projects/<project>/memory/
-  "autoMemoryDirectory": "/path/to/memory/dir",
-  
-  // Map friendly model aliases to specific model IDs (v2.1.73)
-  "modelOverrides": {
-    "opus": "claude-opus-4-7-20260401",
-    "sonnet": "claude-sonnet-4-6-20260305"
+
+  // ── Env vars injected into subprocesses ───────────────────────
+  "env": {
+    "NODE_ENV": "development",
+    "API_TIMEOUT_MS": "300000"
   },
-  
-  // Attribution model for cost tracking (e.g. per-team billing)
-  "attributionModel": "team-name",
-  
-  // Include git metadata in system prompt (v2.1.69)
-  "includeGitInstructions": true,
-  
-  // Disable skill shell execution — skill scripts run in read-only mode (v2.1.91)
-  "disableSkillShellExecution": false,
-  
-  // Prevent Claude Code from registering OS deep links (v2.1.83)
-  "disableDeepLinkRegistration": false,
-  
-  // Restrict which plugin channels are allowed (enterprise, v2.1.84)
-  "allowedChannelPlugins": ["anthropic-official"],
-  
-  // File suggestion in IDE integration (v2.0.65)
-  "fileSuggestion": true,
-  
-  // Respect .gitignore for file discovery
+
+  // ── Attribution ────────────────────────────────────────────────
+  "includeCoAuthoredBy": true,
+  "attribution": { "commits": true, "pullRequests": true },
+  "prUrlTemplate": "https://git.company.com/{owner}/{repo}/pulls/{n}",  // v2.1.119
+
+  // ── Hooks (see §10) ────────────────────────────────────────────
+  "hooks": {},
+
+  // ── MCP servers (see §11) ──────────────────────────────────────
+  "mcpServers": {},
+
+  // ── Plugins (see §12) ──────────────────────────────────────────
+  "enabledPlugins": ["pr-review-toolkit@anthropic"],
+  "extraKnownMarketplaces": {},
+  "blockedMarketplaces": [
+    { "hostPattern": "evil.example.com", "pathPattern": "**" }
+  ],
+  "strictKnownMarketplaces": false,
+
+  // ── Enterprise controls ────────────────────────────────────────
+  "forceRemoteSettingsRefresh": false,   // fail-closed (v2.1.92)
+  "forceLoginMethod": "claudeai",        // "claudeai" | "console"
+  "forceLoginOrgUUID": "...",
+  "allowManagedHooksOnly": false,
+  "allowedHttpHookUrls": ["https://hooks.internal/*"],
+  "httpHookAllowedEnvVars": ["MY_TOKEN"],
+  "allowManagedDomainsOnly": false,
+  "allowManagedReadPathsOnly": false,
+  "disableAllHooks": false,
+  "disableSkillShellExecution": false,   // v2.1.91
+
+  // ── Auth helpers ───────────────────────────────────────────────
+  "apiKeyHelper": "/usr/local/bin/get-anthropic-key",
+  "headersHelper": "/usr/local/bin/get-headers.sh",
+  "otelHeadersHelper": "/usr/local/bin/otel-headers.sh",
+  "awsCredentialExport": "/usr/local/bin/aws-creds.sh",
+  "awsAuthRefresh": "/usr/local/bin/aws-refresh.sh",
+  "gcpAuthRefresh": "gcloud auth application-default login",
+
+  // ── WSL ────────────────────────────────────────────────────────
+  "wslInheritsWindowsSettings": true,   // v2.1.118
+
+  // ── Status line ────────────────────────────────────────────────
+  "statusLine": {
+    "type": "command",
+    "command": "git branch --show-current 2>/dev/null",
+    "refreshInterval": 5000
+  },
+
+  // ── Miscellaneous ──────────────────────────────────────────────
+  "includeBuiltinGitWorkflow": true,
   "respectGitignore": true,
-  
-  // Days before old sessions are purged from history
-  "cleanupPeriodDays": 30,
-  
-  // Override the spinner tips shown during processing (v2.1.45)
-  "spinnerTipsOverride": [],
-  
-  // Fraction (0–1) of sessions that are prompted for feedback survey
-  "feedbackSurveyRate": 0.1,
-  
-  // Sparse checkout paths when using worktree isolation (v2.1.76)
-  "worktree": {
-    "sparsePaths": ["src/", "tests/"]
-  },
-  
-  // MCP servers
-  "mcpServers": { /* see MCP section */ }
+  "fileSuggestion": true,
+  "CLAUDE_CODE_HIDE_CWD": false         // v2.1.119
 }
 ```
 
----
+### 7.3 Environment Variables — Selected Reference
 
-## 9. Permission System
+The complete set exceeds 175 variables. The most important ones are grouped below.
 
-### Permission Modes
+**Auth & Providers:**
+`ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_CUSTOM_HEADERS`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`, `AWS_REGION`, `ANTHROPIC_VERTEX_PROJECT_ID`, `ANTHROPIC_VERTEX_BASE_URL` (custom Vertex endpoint override), `CLOUD_ML_REGION`, `ANTHROPIC_BEDROCK_BASE_URL`, `ANTHROPIC_FOUNDRY_API_KEY`, `ANTHROPIC_FOUNDRY_BASE_URL`, `ANTHROPIC_FOUNDRY_RESOURCE`, `CLAUDE_CODE_SKIP_BEDROCK_AUTH`, `CLAUDE_CODE_SKIP_VERTEX_AUTH`, `CLAUDE_CODE_SKIP_FOUNDRY_AUTH` (gateway mode for Azure Foundry), `CLAUDE_CODE_USE_MANTLE`, `ANTHROPIC_BEDROCK_SERVICE_TIER`, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, `CLAUDE_CODE_CERT_STORE` (`bundled`/`system`; default is OS CA store since v2.1.101), `NO_PROXY`, `HTTP_PROXY`, `HTTPS_PROXY`.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│              PERMISSION MODES (Shift+Tab to cycle)       │
-├──────────────┬──────────────────────────────────────────┤
-│ Default      │ Prompts for file edits + all tool use    │
-│ Accept Edits │ Auto-approves edits + common FS commands │
-│ Plan         │ READ-ONLY — proposes but can't execute   │
-│ Auto         │ Classifier decides safety                │
-│ Don't Ask    │ Denies anything not pre-approved         │
-│ Bypass       │ Auto-approves EVERYTHING (danger!)       │
-└──────────────┴──────────────────────────────────────────┘
-```
+**Models & Thinking:**
+`ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL_NAME`, `ANTHROPIC_DEFAULT_SONNET_MODEL_NAME`, `ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME`, `DISABLE_INTERLEAVED_THINKING`, `CLAUDE_CODE_DISABLE_1M_CONTEXT`, `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `DISABLE_COMPACT`, `CLAUDE_CODE_MAX_CONTEXT_TOKENS`.
 
-### Permission Rule Syntax
-```
-Tool(pattern)     → Bash(npm run *)
-Read(./.env)      → Specific file
-mcp__github__*    → MCP server tools
-```
+**Caching:**
+`DISABLE_PROMPT_CACHING`, `ENABLE_PROMPT_CACHING_1H`, `FORCE_PROMPT_CACHING_5M`.
 
-### Hierarchy: Deny ALWAYS Wins
-```
-Enterprise Managed → deny: [...] 
-      ↓ (cannot override)
-User Settings → allow: [...], deny: [...], ask: [...]
-      ↓
-Project Settings → allow: [...], deny: [...], ask: [...]
-      ↓
-Local Settings → allow: [...], deny: [...], ask: [...]
-```
+**Telemetry / Privacy:**
+`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`, `DISABLE_BUG_COMMAND`, `DISABLE_AUTOUPDATER`, `DISABLE_UPDATES`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, `CLAUDE_CODE_ENABLE_TELEMETRY`, `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`, `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_RAW_API_BODIES` (v2.1.111: `=1` inline 60KB; `=file:<dir>` writes to disk), `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_TRACES_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL` (controls transport: `grpc` or `http/protobuf`; relevant for self-hosted collectors), `OTEL_METRIC_EXPORT_INTERVAL`.
+
+**Sandbox & Security:**
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, `CLAUDE_CODE_SCRIPT_CAPS`, `CLAUDE_CODE_PERFORCE_MODE`, `CLAUDE_CODE_USE_POWERSHELL_TOOL`, `CLAUDE_CODE_NO_FLICKER`.
+
+**Behaviour Toggles:**
+`CLAUDE_CODE_SIMPLE`, `CLAUDE_CODE_DISABLE_CRON`, `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`, `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR`, `CLAUDE_CODE_ENABLE_AWAY_SUMMARY`, `CLAUDE_CODE_FORK_SUBAGENT` (v2.1.117), `CLAUDE_CODE_HIDE_CWD` (v2.1.119), `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`, `CLAUDE_CODE_NEW_INIT`, `AI_AGENT` (v2.1.120).
+
+**Skills & Commands:**
+`SLASH_COMMAND_TOOL_CHAR_BUDGET` (override the ~8,000-char fallback), `CLAUDE_ENV_FILE` (path SessionStart hooks write env to), `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`.
+
+**Plugins & MCP:**
+`CLAUDE_CODE_PLUGIN_SEED_DIR` (v2.1.92+: colon-separated on Unix, semicolon on Windows), `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`, `ENABLE_CLAUDEAI_MCP_SERVERS`, `ENABLE_TOOL_SEARCH`.
+
+**Tracing:**
+`TRACEPARENT`, `TRACESTATE` (SDK/headless reads from env for distributed tracing, v2.1.110; also injected into Bash subprocesses when OTEL is on, v2.1.97).
 
 ---
 
-## 10. Environment Variables
+## 8. CLAUDE.md — Project Memory
 
-### API & Authentication
-| Variable | Description |
-|----------|-------------|
-| `ANTHROPIC_API_KEY` | API key for Console auth |
-| `ANTHROPIC_AUTH_TOKEN` | Auth token override |
-| `ANTHROPIC_BASE_URL` | Custom API endpoint |
-| `ANTHROPIC_MODEL` | Override default model |
+`CLAUDE.md` is a Markdown file Claude reads at the start of every session. It is the most important configuration knob: it lets you teach Claude your conventions, build commands, architectural patterns, and "don't" rules once, and have them applied automatically in every future session.
 
-### Provider Selection
-| Variable | Description |
-|----------|-------------|
-| `CLAUDE_CODE_USE_BEDROCK=1` | Use Amazon Bedrock |
-| `CLAUDE_CODE_USE_MANTLE=1` | Use Amazon Bedrock powered by Mantle (v2.1.94) |
-| `CLAUDE_CODE_USE_VERTEX=1` | Use Google Vertex AI |
-| `CLAUDE_CODE_USE_FOUNDRY=1` | Use Azure AI Foundry |
+### 8.1 Discovery Hierarchy
 
-### Behavior Control
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | — | Max output tokens per response |
-| `CLAUDE_CODE_MAX_RETRIES` | 10 | Max API retries |
-| `CLAUDE_CODE_EFFORT_LEVEL` | — | Effort level: `low` / `medium` / `high` / `xhigh` / `max` (available levels depend on model) |
-| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | 83.5 | Auto-compact trigger (1-100) |
-| `BASH_DEFAULT_TIMEOUT_MS` | — | Bash command timeout |
-| `API_TIMEOUT_MS` | 600000 | API request timeout |
-| `CLAUDE_CODE_NO_FLICKER=1` | — | Flicker-free alt-screen rendering (v2.1.89) |
-| `CLAUDE_CODE_PERFORCE_MODE=1` | — | Enable Perforce VCS integration (v2.1.98) |
-| `CLAUDE_STREAM_IDLE_TIMEOUT_MS` | — | Timeout for idle streaming connections |
-| `CLAUDE_CODE_MAX_CONTEXT_TOKENS` | — | Cap context window token count |
-| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | — | Max output tokens per response |
-| `CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS` | — | Limit tokens returned from file read operations |
-| `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` | — | Strip credentials from Bash, hook, and MCP stdio subprocess environments (v2.1.83) |
-| `CLAUDE_CODE_SCRIPT_CAPS` | — | Limit per-session script invocations (v2.1.98) |
-| `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` | — | Force 200K context even when 1M is available |
-| `DISABLE_COMPACT` | — | Disable auto-compaction entirely |
-| `CLAUDE_CODE_DISABLE_CRON=1` | — | Disable CronCreate scheduling tool |
-| `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` | — | Override SessionEnd hook timeout (default: 10 minutes) |
-| `CLAUDE_CODE_EXIT_AFTER_STOP_DELAY` | — | Delay (ms) before exiting after Stop event |
-| `CLAUDE_CODE_SHELL` | — | Override shell used for Bash tool (e.g. `/bin/zsh`) |
-| `CLAUDE_CODE_TMPDIR` | — | Custom temp directory for Claude Code operations |
-| `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1` | — | Keep Bash tool cwd anchored to project root |
+Claude discovers `CLAUDE.md` files by walking the directory tree upward from the current working directory. Files are loaded in this order:
 
-### Model Pinning
-| Variable | Description |
-|----------|-------------|
-| `ANTHROPIC_MODEL` | Override default primary model |
-| `ANTHROPIC_SMALL_FAST_MODEL` | Override the small/fast model (Haiku-equivalent) |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL` | Pin Sonnet version |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL` | Pin Opus version |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Pin Haiku version |
-| `ANTHROPIC_CUSTOM_MODEL_OPTION` | Override the custom model dropdown option (v2.1.78) |
-| `CLAUDE_CODE_SUBAGENT_MODEL` | Override subagent model |
+1. Managed: `/Library/Application Support/ClaudeCode/CLAUDE.md` (macOS enterprise)
+2. User-global: `~/.claude/CLAUDE.md`
+3. Parent directories walking up from cwd (most specific wins)
+4. Project root: `./CLAUDE.md` or `.claude/CLAUDE.md`
+5. Subdirectory files: loaded on-demand when Claude reads files inside that subtree
 
-### MCP & Plugins
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MCP_TIMEOUT` | — | MCP server connection timeout |
-| `MCP_TOOL_TIMEOUT` | — | Per-tool execution timeout (separate from connection) |
-| `MAX_MCP_OUTPUT_TOKENS` | 25000 | Max MCP tool output |
-| `ENABLE_TOOL_SEARCH` | true | Deferred tool loading |
-| `CLAUDE_CODE_PLUGIN_SEED_DIR` | — | Pre-installed plugin directories for offline/headless installs (multiple paths: `:` on Unix, `;` on Windows) |
-| `CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS` | — | Timeout for git operations during plugin installation |
-| `MCP_CONNECTION_NONBLOCKING=true` | — | Non-blocking MCP connections in `-p`/headless mode (v2.1.89) |
+Set `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` to also load CLAUDE.md from `--add-dir` directories.
 
-### Feature Flags
-| Variable | Description |
-|----------|-------------|
-| `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` | Skip all CLAUDE.md loading |
-| `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` | Disable auto memory |
-| `DISABLE_PROMPT_CACHING=1` | Disable prompt caching |
-| `DISABLE_AUTOUPDATER=1` | Disable auto-updates |
-| `CLAUDE_CODE_SIMPLE=1` | Minimal prompt (Bash/Read/Edit only) |
-| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` | Enable agent teams (still flag-gated) |
-| `CLAUDE_CODE_ENABLE_POWERSHELL=1` | Enable opt-in PowerShell tool (Windows, v2.1.84) |
-| `ENABLE_CLAUDEAI_MCP_SERVERS=false` | Opt out of claude.ai MCP connectors (v2.1.63) |
-| `IS_DEMO=1` | Hide email/org info from UI (v2.1.0) |
-| `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` | Disable background task scheduling |
-| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` | Block non-essential network requests (telemetry, updates) |
-| `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=1` | Suppress auto-injected git workflow instructions |
-| `CLAUDE_CODE_CERT_STORE=bundled` | Use only bundled CA certificates, not OS CA store (v2.1.104 changed default to trust OS CA) |
+HTML comments in `CLAUDE.md` are hidden from Claude's auto-injection but remain visible when Claude's `Read` tool reads the file explicitly (added in a v2.1.x release).
 
-### OpenTelemetry (OTEL)
-| Variable | Description |
-|----------|-------------|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint URL for traces/metrics/logs |
-| `OTEL_LOG_USER_PROMPTS=1` | Include user prompt text in OTEL spans |
-| `OTEL_LOG_TOOL_DETAILS=1` | Include tool parameters in OTEL events |
-| `OTEL_LOG_TOOL_CONTENT=1` | Include tool result content in OTEL events |
-| **`TRACEPARENT`** (auto-set) | W3C trace context propagated to Bash tool subprocesses when OTEL is enabled (v2.1.97) — enables child-process spans to parent correctly in distributed traces |
+### 8.2 Recommended Structure
+
+```markdown
+# Project Name
+Brief description.
+
+## Stack
+- Node 22, TypeScript 5.4, React 18, PostgreSQL 16
+
+## Commands
+- `npm run dev`    — start dev server (http://localhost:3000)
+- `npm test`       — run Vitest unit tests
+- `npm run build`  — production build
+- `npm run lint`   — eslint + prettier check
+
+## Conventions
+- TypeScript everywhere; no `any` except in test mocks
+- Functional React components; no class components
+- Tabs, 2-char width; single quotes
+- Error messages must include an error code (e.g., `E_AUTH_FAILED`)
+
+## Architecture
+- src/api/        → REST handlers (Express)
+- src/lib/        → pure business logic (no side effects)
+- src/components/ → React UI components
+- src/db/         → Knex migrations + query builders
+
+## Don't
+- Edit `generated/` files — they are auto-generated
+- Push directly to `main` — open a PR
+- Add new npm dependencies without mentioning it in the PR description
+```
+
+### 8.3 YAML Frontmatter (Advanced)
+
+```markdown
+---
+agent: senior-architect
+include: ["docs/patterns.md", "docs/style.md"]
+priority: high
+---
+```
+
+### 8.4 Auto-Generation & Auto-Memory
+
+`/init` analyses your build system, test framework, and code patterns and writes a starter `CLAUDE.md`. Use `CLAUDE_CODE_NEW_INIT=1` for an interactive flow that asks which files to generate (CLAUDE.md, skills, hooks). After generating, refine it and commit it to git.
+
+**Auto memory** scans sessions and proposes new durable facts (build insights, debugging patterns) to save into `CLAUDE.md` automatically. It is scoped per-project and available on all tiers including free. Entries are truncated at 25KB / 200 lines per v2.1.85. Memory is stored in `~/.claude/memory/`.
+
+### 8.5 Recap
+
+`/recap` summarises the session and re-anchors context. Auto-recap fires when you return to a session after time away. Controlled by `CLAUDE_CODE_ENABLE_AWAY_SUMMARY`. Since v2.1.110, Bedrock/Vertex/Foundry/`DISABLE_TELEMETRY` users get auto-recap enabled by default.
 
 ---
 
-## 11. Complete Tools Inventory
+## 9. Skills
 
-### File Operations
+Skills are auto-discoverable structured capabilities. A skill can be invoked **both** by name (`/skill-name`) **and** automatically by Claude when a task matches its `description` field — unlike slash commands which are always manual.
 
-| Tool | Permission | Description |
-|------|-----------|-------------|
-| **Read** | None | Read text, images, PDFs (≤100 pages), notebooks; offset/limit for large files |
-| **Write** | Required | Create/overwrite files; auto-creates parent dirs |
-| **Edit** | Required | Exact string search-and-replace; optional `replace_all` |
-| **MultiEdit** | Required | Multiple edits in single operation |
+### 9.1 Locations
 
-### Search Tools
+```
+Project:  .claude/skills/<name>/SKILL.md
+User:     ~/.claude/skills/<name>/SKILL.md
+Plugin:   <plugin>/skills/<name>/SKILL.md
+```
 
-| Tool | Permission | Description |
-|------|-----------|-------------|
-| **Grep** | None | Regex search via ripgrep; case-insensitive, context lines, file type filter, multiline |
-| **Glob** | None | File pattern matching; `**` recursive, `{}` alternatives; sorted by modification time |
+Built-in bundled skills: `/simplify`, `/batch`, `/debug`, `/loop`, `/claude-api`, `/less-permission-prompts` (v2.1.111).
 
-### Execution & Web
+### 9.2 SKILL.md Frontmatter — Complete Field Reference
 
-| Tool | Permission | Description |
-|------|-----------|-------------|
-| **Bash** | Required | Persistent shell; configurable timeout; background execution |
-| **PowerShell** | Required | Windows-native PowerShell tool; opt-in preview (v2.1.84, enable via `CLAUDE_CODE_ENABLE_POWERSHELL=1`) |
-| **WebSearch** | Required | Web search for current information |
-| **WebFetch** | Required | Fetch and analyze web pages; domain-controllable |
+```markdown
+---
+name: explain-code             # required; ≤64 chars; lowercase + hyphens; becomes /explain-code
+description: >                 # required; ≤1024 chars
+  Explains code with diagrams and analogies.
+  Use when the user asks how or why code does X.
+when_to_use: "User asks how/why code does X"  # supplemental trigger hint
+allowed-tools: [Read, Grep, Glob]             # tool allowlist for this skill
+disable-model-invocation: false               # true = only manual /name invocation
+context: fork                                 # run in a new fork/subagent context
+agent: general-purpose                        # which agent profile to use
+model: claude-opus-4-7                        # model override for this skill
+mode: default                                 # execution mode
+disabled: false                               # set true to temporarily disable
+keep-coding-instructions: false               # retain main-session coding instructions
+argument-hint: "[function-name]"              # shown in autocomplete hint
+paths: ["src/**/*.ts"]                        # YAML glob list for file scope
+---
 
-### Agent & Task Management
+# Skill body — the prompt Claude follows when this skill runs.
 
-| Tool | Permission | Description |
-|------|-----------|-------------|
-| **Agent** (prev. Task) | None | Spawn subagents: description, prompt, type, model, background, max_turns |
-| **ExitWorktree** | None | Exit current worktree and return to parent session (v2.1.72) |
-| **CronCreate** | None | Schedule recurring task: cron expression + prompt; runs within session (v2.1.71) |
-| **SendMessage** | None | Send message to another agent in the same team; P2P communication (Agent Teams) |
-| **TodoWrite** | None | Task lists: id, content, status, priority |
-| **NotebookEdit** | Required | Edit Jupyter notebook cells |
-| **LSP** | None | Code intelligence: go-to-def, find refs, hover, symbols, call hierarchy |
+## How to read the code
 
-### Monitoring & Observability
+First, identify the entry point: $1
 
-| Tool | Permission | Description |
-|------|-----------|-------------|
-| **Monitor** | None | Stream and filter events from background scripts/agents in real-time (v2.1.98) |
+Then trace the call graph to understand $ARGUMENTS.
 
-### Extension Tools
+The current effort level is: ${CLAUDE_EFFORT}
+```
 
-| Tool | Permission | Description |
-|------|-----------|-------------|
-| **Skill** | Required | Invoke custom skills; controllable via `Skill(name)` |
-| **MCP tools** | Per-server | `mcp__<server>__<tool>` naming convention |
+**Variable substitution:** `$ARGUMENTS` captures everything after the command name. `$1`, `$2`, … give positional arguments. `${CLAUDE_EFFORT}` expands to the current effort level (v2.1.120). `${CLAUDE_PLUGIN_ROOT}` resolves to the plugin root for portable paths.
+
+### 9.3 Bundle Directory Layout
+
+```
+my-skill/
+├── SKILL.md          # required
+├── scripts/          # executable helpers (Python/Bash); deterministic
+├── references/       # docs loaded on demand into context
+└── assets/           # templates, fonts, icons used in output
+```
+
+### 9.4 Discovery & Token Budget
+
+Skill metadata is pre-loaded into context at session start. Budget: approximately **1% of the context window** with an **8,000-character fallback** (community-attested; not published as exact numbers in official docs). Override with `SLASH_COMMAND_TOOL_CHAR_BUDGET`. The listing cap was raised from 250 → **1,536 chars** per skill in v2.1.105; longer descriptions are truncated with a startup warning. The `/skills` command lets you browse skills, sort by token count (`t`), and type to filter (v2.1.121).
+
+### 9.5 Inline vs Subagent Execution
+
+Skills run **inline** in the main session by default. Setting `context: fork` plus an optional `agent: <name>` runs the skill in an isolated subagent context — giving it its own context window and preventing it from seeing the full main-session history. `disableSkillShellExecution: true` blocks shell execution from skill bodies (defence in depth for distrusted plugins, v2.1.91).
+
+Since v2.1.108, the Skill tool can discover and invoke built-in slash commands like `/init`, `/review`, and `/security-review` automatically.
 
 ---
 
-## 12. Hooks System
+## 10. Hooks — Lifecycle Reference
 
-### Overview
-Hooks are **deterministic guarantees** — unlike CLAUDE.md instructions which are advisory. User-defined shell commands, HTTP endpoints, or LLM prompts that execute at specific lifecycle points.
+Hooks are deterministic processes — shell commands, LLM prompts, subagents, MCP tools, or HTTP endpoints — that fire at lifecycle events. They are **guarantees**, not suggestions: if a hook returns a block decision, the action does not proceed.
 
-### Hook Events (25+)
+### 10.1 All Hook Events
 
-```
-SESSION LIFECYCLE          TOOL LIFECYCLE           AGENT LIFECYCLE
-├── SessionStart           ├── PreToolUse *         ├── SubagentStart
-├── SessionEnd             ├── PostToolUse          ├── SubagentStop
-├── UserPromptSubmit *     ├── PostToolUseFailure   ├── TaskCreated
-├── Stop *                 ├── PermissionDenied *   ├── TaskCompleted
-├── StopFailure            │   (v2.1.89)            ├── TeammateIdle
-├── Notification           CONTEXT & CONFIG
-│                          ├── InstructionsLoaded   COMPACTION
-WORKSPACE                  │   (v2.1.69)            ├── PreCompact
-├── CwdChanged (v2.1.83)   ├── ConfigChange         ├── PostCompact (v2.1.76)
-├── WorktreeCreate (v2.1.50)│  (v2.1.49)
-├── WorktreeRemove (v2.1.50)├── FileChanged (v2.1.83)
-                           INTERACTION              SETUP
-                           ├── Elicitation (v2.1.76)├── Setup (v2.1.10)
-                           ├── ElicitationResult         (--maintenance flag)
-                               (v2.1.76)
+| Event | Fires When | Can Block? | Notes |
+|-------|-----------|:---:|-------|
+| `SessionStart` | New session / resume / clear / compact | No | Subtypes: `startup`, `resume`, `clear`, `compact` |
+| `Setup` | First-time init / maintenance tasks | No | Subtypes: `init`, `maintenance` |
+| `UserPromptSubmit` | After user submits, before model | Yes | Can return `sessionTitle` (v2.1.94) |
+| `UserPromptExpansion` | Slash command expands | Yes | |
+| `PreToolUse` | Before any tool call | Yes | Can return `updatedInput`, `additionalContext`, `permissionDecision`, `defer` (v2.1.89) |
+| `PermissionRequest` | When a permission dialog would show | Yes | Can return `behavior`, `updatedInput`, `setMode` |
+| `PostToolUse` | After tool succeeds | Soft | Can return `updatedToolOutput` for all tools (v2.1.121) |
+| `PostToolUseFailure` | After tool errors | Yes | Receives `error`, `is_interrupt`, `duration_ms` (v2.1.119) |
+| `SubagentStart` / `SubagentStop` | Subagent lifecycle | SubagentStop yes | |
+| `Stop` | Turn ends normally | Yes | Can force more work |
+| `StopFailure` | Turn ends due to API error | No | |
+| `Notification` | Async alerts | No | Forward to Slack/webhooks |
+| `PreCompact` | Before compaction | Yes | Block via exit code 2 or `{"decision":"block"}` (v2.1.105) |
+| `PostCompact` | After compaction | No | |
+| `Elicitation` / `ElicitationResult` | MCP requests structured input | Yes | v2.1.76 |
+| `PermissionDenied` | Auto-mode classifier denies an action | No | Can return `{retry: true}` (v2.1.89) |
+| `TaskCreated` | A new task is created | Yes | v2.1.89 |
+| `WorktreeCreate` / `WorktreeRemove` | Worktree lifecycle | Mixed | |
+| `InstructionsLoaded` | CLAUDE.md loaded | No | |
+| `CwdChanged` / `FileChanged` | Watched filesystem events | No | |
+| `TaskCompleted` | Task lifecycle | Mixed | |
+| `TeammateIdle` | Agent team member idles | Yes | |
+| `ConfigChange` | Config file changes mid-session | Yes | |
 
-* = Can block/modify behavior
-```
-
-### Configuration Structure
+### 10.2 Handler Types
 
 ```jsonc
 {
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit|MultiEdit",   // Regex for tool name
-        "if": "Bash(rm *)",                   // Optional permission rule filter (v2.1.85)
-        "once": true,                          // Run once per session then remove (v2.1.0)
-        "hooks": [
-          {
-            "type": "command",                // command | http | prompt | agent
-            "command": "python3 /scripts/validate.py",
-            "timeout": 30000                  // ms; global hook timeout = 10 min (v2.1.3)
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "npm test || exit 2"   // Exit 2 = block, force continue
-          }
-        ]
-      }
-    ],
-    "Setup": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "scripts/setup-env.sh" // Runs on --maintenance flag or Setup event (v2.1.10)
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "scripts/inject-session-title.sh"
-            // hookSpecificOutput: { "sessionTitle": "string" } renames the session (v2.1.x)
-          }
-        ]
-      }
-    ]
+    // command — most common; receives JSON on stdin
+    "PostToolUse": [{
+      "matcher": "Write|Edit|MultiEdit",
+      "hooks": [
+        { "type": "command",
+          "command": "npx prettier --write \"$CLAUDE_TOOL_INPUT_FILE_PATH\"" },
+        { "type": "command",
+          "command": "npx eslint --fix \"$CLAUDE_TOOL_INPUT_FILE_PATH\"" }
+      ]
+    }],
+
+    // prompt — single-turn LLM eval (Haiku by default)
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [
+        { "type": "prompt",
+          "prompt": "Block this command if it appears dangerous: $TOOL_INPUT" }
+      ]
+    }],
+
+    // agent — full subagent with tools (heaviest option)
+    "Stop": [{
+      "hooks": [
+        { "type": "agent", "agent": "test-verifier", "messages": [] }
+      ]
+    }],
+
+    // http — POST event JSON to an endpoint
+    "Notification": [{
+      "hooks": [
+        { "type": "http",
+          "url": "https://hooks.slack.com/services/...",
+          "allowedEnvVars": ["SLACK_BOT_TOKEN"] }
+      ]
+    }],
+
+    // mcp_tool — invoke MCP tools directly (v2.1.118)
+    "PostToolUse": [{
+      "matcher": "Write",
+      "hooks": [
+        { "type": "mcp_tool",
+          "server": "audit-server",
+          "tool": "log_file_write" }
+      ]
+    }],
+
+    // SessionStart — inject git context
+    "SessionStart": [{
+      "hooks": [{
+        "type": "command",
+        "command": "printf '## Git Status\\n'; git status --short; printf '\\n## TODOs\\n'; grep -r 'TODO:' src/ --include='*.ts' | head -10"
+      }]
+    }]
   }
 }
 ```
 
-> **`disableAllHooks` setting:** Set `"disableAllHooks": true` in settings to completely disable all hook execution. `"disableSkillShellExecution": true` (v2.1.91) prevents skills from running shell commands.
->
-> **`CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`**: Override the SessionEnd hook timeout (separate env var; default inherits the 10-minute global hook timeout).
+Exit code `2` in a `command` or `prompt` hook is treated as "block" and its stderr is sent to the model as context.
 
-### hookSpecificOutput
+### 10.3 Output Schema
 
-Some hooks support special output fields:
-
-| Hook event | `hookSpecificOutput` field | Effect |
-|-----------|---------------------------|--------|
-| `UserPromptSubmit` | `sessionTitle` (string) | Renames the current session |
-| `WorktreeCreate` | `worktreePath` (string) | Overrides the worktree directory path (v2.1.50) |
-
-### Hook Types
-
-| Type | Description | Added |
-|------|-------------|-------|
-| `command` | Run a shell command; stdin receives JSON context | Original |
-| `http` | POST JSON to a URL endpoint (v2.1.63); response controls flow | v2.1.63 |
-| `prompt` | Pass hook context to Claude as an LLM prompt | Original |
-| `agent` | Spawn a full subagent to handle the event | Original |
-
-**HTTP Hook Configuration (v2.1.63):**
 ```jsonc
 {
-  "PostToolUse": [{
-    "matcher": "Write|Edit",
-    "hooks": [{
-      "type": "http",
-      "url": "https://your-webhook.example.com/claude-hook",
-      "timeout_ms": 5000          // Optional; default is 30000
-    }]
-  }]
-}
-```
-The HTTP endpoint receives the same JSON body as the `stdin` of a `command` hook. Returning `{"permissionDecision": "deny"}` from a `PreToolUse` HTTP hook blocks execution.
-
-### Hook Input (JSON on stdin)
-```json
-{
-  "session_id": "abc-123",
-  "transcript_path": "/path/to/transcript",
-  "cwd": "/project",
-  "permission_mode": "default",
-  "hook_event_name": "PreToolUse",
-  "tool_name": "Write",
-  "tool_input": { "file_path": "src/auth.ts", "content": "..." }
+  "continue": true,                // false = block
+  "suppressOutput": false,
+  "decision": "block",             // or "approve"
+  "reason": "Command is dangerous",
+  "preventContinuation": false,
+  "defer": false,                  // PreToolUse only: pause headless session (v2.1.89)
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    // For permission hooks:
+    "permissionDecision": "allow|deny|ask",
+    "permissionDecisionReason": "Allowed by org policy",
+    // For PreToolUse:
+    "updatedInput": { "command": "git diff --stat" },
+    "additionalContext": "Adding file diff for context",
+    // For PostToolUse (all tools, v2.1.121):
+    "updatedToolOutput": "Formatted output here",
+    // For UserPromptSubmit (v2.1.94):
+    "sessionTitle": "Auth refactor session"
+  }
 }
 ```
 
-### Environment Variables in Hooks
-| Variable | Description |
-|----------|-------------|
-| `$CLAUDE_PROJECT_DIR` | Project root |
-| `$CLAUDE_SESSION_ID` | Current session |
-| `$CLAUDE_TOOL_INPUT` | JSON tool input |
-| `$CLAUDE_TOOL_INPUT_FILE_PATH` | File path from tool input |
+### 10.4 Environment Available to Hooks
 
-### Exit Codes
-| Code | Meaning |
-|------|---------|
-| 0 | Success — stdout parsed as JSON |
-| 2 | Block — stops tool execution with error |
-| Other | Warning — logged but doesn't block |
+`CLAUDE_PROJECT_DIR`, `CLAUDE_TOOL_INPUT_FILE_PATH` (absolute path for Edit/Write/Read, v2.1.89), `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`, `CLAUDE_ENV_FILE` (Windows support added v2.1.111), `CLAUDE_CODE_MCP_SERVER_NAME`, `CLAUDE_CODE_MCP_SERVER_URL` (v2.1.85), plus all `settings.json` `env` exports.
 
-### PreToolUse Return Values
-```json
-{ "permissionDecision": "allow" }  // Auto-approve
-{ "permissionDecision": "deny" }   // Block
-{ "permissionDecision": "ask" }    // Prompt user
-{ "permissionDecision": "defer" }  // Use normal flow
-```
+Input JSON on stdin includes: `session_id`, `cwd`, `tool_name`, `tool_input`, `tool_response`, `agent_id`, `duration_ms`, `error`, `is_interrupt`.
 
-### Practical Examples
+### 10.5 Enterprise Hook Controls
 
-**Auto-format after edits:**
-```jsonc
-{
-  "PostToolUse": [{
-    "matcher": "Write|Edit|MultiEdit",
-    "hooks": [{
-      "type": "command",
-      "command": "npx prettier --write \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
-    }]
-  }]
-}
-```
-
-**Block sensitive files:**
-```jsonc
-{
-  "PreToolUse": [{
-    "matcher": "Edit|Write",
-    "hooks": [{
-      "type": "command",
-      "command": "python3 -c \"import sys,json; d=json.load(sys.stdin); p=d.get('tool_input',{}).get('file_path',''); sys.exit(2) if any(x in p for x in ['.env','package-lock.json','.git/']) else sys.exit(0)\""
-    }]
-  }]
-}
-```
-
-**Desktop notification on pause:**
-```jsonc
-{
-  "Notification": [{
-    "hooks": [{
-      "type": "command",
-      "command": "notify-send 'Claude Code' 'Awaiting your input'"
-    }]
-  }]
-}
-```
+`allowManagedHooksOnly: true` blocks all user/project/plugin hooks — only hooks bundled with managed `enabledPlugins` run. `allowedHttpHookUrls` whitelists HTTP hook endpoints. `httpHookAllowedEnvVars` controls which env vars http hooks may read.
 
 ---
 
-## 13. MCP Integration
+## 11. MCP — Model Context Protocol
 
-### Transport Types
+MCP is the open protocol for connecting Claude Code to external services — "USB-C for AI tools." It supports tools, resources, prompts, and (v2.1.110) server-pushed events via channels.
 
-| Transport | Use Case | Example |
-|-----------|----------|---------|
-| **HTTP (Streamable HTTP)** | Remote servers (recommended) | `claude mcp add --transport http notion https://mcp.notion.com/mcp` |
-| **stdio** | Local processes | `claude mcp add --transport stdio db -- npx -y @bytebase/dbhub --dsn "postgres://..."` |
-| **SSE** | Legacy (deprecated) | Use HTTP instead |
+### 11.1 Managing Servers
 
-### Installation Scopes
+```bash
+# Add servers by transport type
+claude mcp add github npx @modelcontextprotocol/server-github
+claude mcp add postgres --transport stdio -- /usr/local/bin/pg-mcp
+claude mcp add notion --transport http https://mcp.notion.so
 
-| Scope | Stored In | Shared? | Loaded In |
-|-------|-----------|---------|-----------|
-| **Local** (default) | `~/.claude.json` | No | Current project only |
-| **Project** | `.mcp.json` (repo root) | Yes (VCS) | Current project |
-| **User** | `~/.claude.json` | No | All projects |
+# Manage
+claude mcp list
+claude mcp get github
+claude mcp remove github
+claude mcp enable github
+claude mcp disable github
 
-Precedence: Local > Project > User
-
-### Tool Naming Convention
-```
-mcp__<server_name>__<tool_name>
-
-Example: mcp__github__list_issues
-         mcp__sentry__get_error
-         mcp__db__query
+# Expose Claude Code as an MCP server
+claude mcp serve
 ```
 
-### .mcp.json Format
+`--scope local|project|user` controls where the config is written. `project` scope writes to `.mcp.json` at the repo root (committed to git).
+
+### 11.2 Server Configuration
+
 ```jsonc
 {
   "mcpServers": {
+    // stdio (local subprocess)
     "github": {
-      "type": "http",
-      "url": "https://api.githubcopilot.com/mcp/"
-    },
-    "db": {
       "command": "npx",
-      "args": ["-y", "@bytebase/dbhub", "--dsn", "${DB_CONNECTION_STRING}"],
-      "env": {
-        "DB_CONNECTION_STRING": "${DB_DSN:-postgresql://localhost:5432/dev}"
-      }
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
+    },
+    // Windows: stdio servers using npx need cmd /c wrapper
+    "github-win": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-github"]
+    },
+    // HTTP (recommended for remote servers)
+    "internal-api": {
+      "transport": "http",
+      "url": "https://mcp.internal/rpc",
+      "headers": { "Authorization": "Bearer ${API_TOKEN}" },
+      "alwaysLoad": true   // skip tool-search deferral (v2.1.121)
     }
   }
 }
 ```
 
-### MCP Management Commands
-```bash
-claude mcp add --transport http sentry https://mcp.sentry.dev/mcp
-claude mcp add --transport stdio db -- npx -y @bytebase/dbhub --dsn "..."
-claude mcp list
-claude mcp get <name>
-claude mcp remove <name>
-/mcp                          # In-session status check
-```
+> **Note:** The `sse` transport is deprecated. Use `http` for remote servers.
 
-### Popular MCP Servers
-| Server | Transport | URL/Command |
-|--------|-----------|-------------|
-| **GitHub** | HTTP | `https://api.githubcopilot.com/mcp/` |
-| **Sentry** | HTTP | `https://mcp.sentry.dev/mcp` |
-| **Notion** | HTTP | `https://mcp.notion.com/mcp` |
-| **PostgreSQL** | stdio | `npx -y @bytebase/dbhub --dsn "..."` |
-| **Figma** | HTTP | `https://mcp.figma.com/mcp` |
+### 11.3 Naming & Tool Access
 
-> **Output limit:** 25,000 tokens default (configurable via `MAX_MCP_OUTPUT_TOKENS`)
+- Tool names follow `mcp__<server>__<tool>` (e.g., `mcp__github__list_prs`).
+- Resources and prompts surface as slash commands.
+- `resources/templates/list` is deferred until the first `@`-mention (faster startup, v2.1.116).
+- `alwaysLoad: true` bypasses tool-search deferral so all tools are immediately available (v2.1.121).
 
-### MCP Elicitation (v2.1.76)
+### 11.4 OAuth Support
 
-MCP servers can now request structured input from the user mid-task via the **Elicitation** protocol. When a server sends an elicitation request (e.g., asking for credentials, a confirmation, or a form value), Claude Code pauses and presents the request to the user. Hooks `Elicitation` (pre) and `ElicitationResult` (post) fire around each request.
+Claude Code supports RFC 9728 protected-resource discovery and RFC 8414 server metadata. Servers exposing `/.well-known/oauth-protected-resource` work without `apiKeyHelper`/`headersHelper`. Step-up re-authorisation triggers on `insufficient_scope` 403. OAuth tokens are refreshed with a cross-process lock to prevent concurrent refresh races. v2.1.97 fixed `oauth.authServerMetadataUrl` being lost on token refresh.
 
-### MCP Tool Result Size Override (v2.1.91)
+### 11.5 Result Size & Performance
 
-MCP tools can opt-in to returning up to **500K tokens** per result by including `_meta["anthropic/maxResultSizeChars"]` in their response. This is critical for tools that return large files, database dumps, or long logs:
+The default truncation can be overridden per server call by annotating with `_meta["anthropic/maxResultSizeChars"]` up to **500,000 characters** (v2.1.91/v2.1.119):
 
-```json
-{
-  "content": [{ "type": "text", "text": "...large content..." }],
-  "_meta": { "anthropic/maxResultSizeChars": 500000 }
+```python
+# Example: MCP server returning large content
+return {
+    "content": "...large output...",
+    "_meta": { "anthropic/maxResultSizeChars": 500000 }
 }
 ```
 
-The default cap is still 25,000 tokens unless overridden.
+MCP read/search calls collapse in the TUI by default; press `Ctrl+O` to expand. Transient errors (5xx, connection refused, timeout) retry up to **3 times** (v2.1.121). MCP descriptions are capped at **2KB** per tool to prevent OpenAPI bloat. `clientInfo` in the initialize request identifies Claude Code to servers. `claude mcp serve` returns proper `outputSchema` (fixed v2.1.101).
+
+### 11.6 ENABLE_CLAUDEAI_MCP_SERVERS
+
+```bash
+export ENABLE_CLAUDEAI_MCP_SERVERS=1   # loads claude.ai connectors for CLI/SDK use
+```
+
+v2.1.110: `ENABLE_TOOL_SEARCH=1` on Vertex AI to enable server-side tool search caching.
 
 ---
 
-## 14. Subagents Deep Dive
+## 12. Plugins System
 
-### Agent Tool Parameters
+Plugins are bundles of skills, agents, hooks, MCP servers, monitors, settings, themes, executables, and LSP configs — the atomic deployment unit for team and enterprise tooling.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `description` | string | 3-5 word task summary |
-| `prompt` | string | Detailed instructions |
-| `subagent_type` | string | `"general-purpose"`, `"Explore"`, `"Plan"`, or custom |
-| `model` | string | `"sonnet"`, `"opus"`, `"haiku"` |
-| `run_in_background` | boolean | For tasks >30 seconds |
-| `max_turns` | number | Iteration limit |
+### 12.1 Directory Layout
 
-### Built-in Subagent Types
+```
+my-plugin/
+├── .claude-plugin/
+│   ├── plugin.json          # manifest (only "name" required)
+│   └── marketplace.json     # for marketplace publishers
+├── commands/                # *.md slash commands (legacy; prefer skills/)
+├── agents/                  # subagent .md definitions
+├── skills/<name>/SKILL.md   # skills
+├── hooks/
+│   └── hooks.json           # plugin-scoped hooks
+├── monitors/                # background monitors (auto-arm at session start)
+├── bin/                     # executables added to Bash PATH (v2.1.91)
+├── themes/                  # named themes (v2.1.118)
+├── lib/                     # shared libraries for skill scripts
+├── output-styles/           # output format styles
+├── settings.json            # plugin-level config defaults
+├── .mcp.json                # MCP servers bundled with plugin
+├── .lsp.json                # LSP server configs
+└── README.md
+```
 
-| Type | Mode | Tools | Best For |
-|------|------|-------|----------|
-| **Explore** | Read-only | Read, Grep, Glob, LSP | Codebase investigation |
-| **Plan** | Read-only | Read, Grep, Glob | Implementation planning |
-| **General-purpose** | Full | All tools | Execution tasks |
+### 12.2 plugin.json
 
-### Custom Subagent Definition
-File: `.claude/agents/code-reviewer.md`
-```yaml
+```json
+{
+  "$schema": "...",
+  "name": "deployment-toolkit",
+  "version": "1.2.0",
+  "description": "Deploy and rollback workflows for our cloud infra",
+  "author": { "name": "Platform Team" },
+  "homepage": "https://internal.example.com/docs/deployment-toolkit",
+  "license": "MIT",
+  "keywords": ["deploy", "rollback", "kubernetes"],
+  "category": "devops",
+  "dependencies": [
+    { "plugin": "git-toolkit", "version": ">=1.0.0" }
+  ],
+  "userConfig": [
+    { "name": "envName", "type": "string", "required": false,
+      "description": "Deployment environment (staging/production)" }
+  ],
+  "mcpServers": {
+    "deploybot": { "command": "deploybot-mcp" }
+  },
+  "strict": true
+}
+```
+
+`${user_config.envName}` and `${CLAUDE_PLUGIN_ROOT}` are interpolated at runtime. Sensitive config values are stored in the macOS Keychain or a protected `~/.claude/.credentials.json`.
+
+### 12.3 Plugin Lifecycle
+
+```bash
+/plugin marketplace add anthropics/claude-plugins-official
+/plugin install pr-review-toolkit@anthropic-bundled
+/plugin update
+/plugin list
+claude plugin tag v1.0.0         # create release tag with version validation (v2.1.118)
+claude plugin prune              # remove orphaned auto-installed deps (v2.1.121)
+claude plugin validate           # validate plugin.json (v2.1.120: accepts $schema/version/description)
+claude plugin marketplace list|add|remove|refresh
+```
+
+Marketplace state lives in `~/.claude/plugins/known_marketplaces.json`. Use `CLAUDE_CODE_PLUGIN_SEED_DIR` to pre-bake plugins into container images; multiple paths are separated by `:` (Unix) or `;` (Windows) since v2.1.92.
+
+### 12.4 Enterprise Controls
+
+`blockedMarketplaces` (with `hostPattern`/`pathPattern` enforcement fixed v2.1.119) and `strictKnownMarketplaces` prevent installs from non-approved sources. Both are enforced on install, update, refresh, and auto-update (v2.1.117). `enabledPlugins` in managed-settings forces plugins on for the whole organisation. Plugins force-enabled via managed settings can run hooks even when `allowManagedHooksOnly: true`.
+
 ---
-description: "Thorough code review with security focus"
-tools:
-  - Read
-  - Grep
-  - Glob
-  - LSP
-disallowedTools:
-  - Write
-  - Bash
-model: sonnet
-permissionMode: plan
+
+## 13. Subagents — Isolated Context Execution
+
+A subagent is a temporary agent spawned via the **Task** tool. It has its own context window, its own system prompt, optionally its own tool allowlist and model, and **only the summary** is returned to the parent session.
+
+### 13.1 Agent Definition Format
+
+Create files at `~/.claude/agents/<name>.md` (user) or `.claude/agents/<name>.md` (project):
+
+```markdown
+---
+name: code-reviewer
+description: >
+  Reviews code for security vulnerabilities, style violations, and logic bugs.
+  Returns a prioritised, actionable report.
+tools: [Read, Grep, Glob, Bash(git diff:*)]
+disallowedTools: [Write, Edit]
+model: claude-opus-4-7
+effort: xhigh
+permissionMode: acceptEdits
 maxTurns: 20
-effort: high
-background: false
-color: "#FF6B35"
----
-
-# Code Reviewer Agent
-
-Review code changes for:
-1. Security vulnerabilities (OWASP Top 10)
-2. Performance anti-patterns
-3. Coding standard violations per CLAUDE.md
-4. Test coverage gaps
-```
-
-### Key Constraints
-- Subagents **cannot spawn other subagents** (single level)
-- Up to **10 concurrent** with intelligent queuing
-- Each gets **own context window** (up to 200K or 1M)
-- Main agent receives **summarized results** only
-
----
-
-## 15. Agent Teams
-
-### Architecture
-```
-┌─────────────────────────────────────────────┐
-│               TEAM LEAD                      │
-│  Creates team, spawns teammates, coordinates │
-│  Assigns tasks, merges results               │
-├─────────────────────────────────────────────┤
-│ TEAMMATE 1    │ TEAMMATE 2    │ TEAMMATE 3  │
-│ ┌───────────┐ │ ┌───────────┐ │ ┌─────────┐│
-│ │ Worktree  │ │ │ Worktree  │ │ │Worktree ││
-│ │ (branch)  │ │ │ (branch)  │ │ │(branch) ││
-│ │ Own CTX   │ │ │ Own CTX   │ │ │Own CTX  ││
-│ └───────────┘ │ └───────────┘ │ └─────────┘│
-└─────────────────────────────────────────────┘
-Communication: Shared task lists + dependency tracking + P2P messaging
-```
-
-### Enable & Display
-```bash
-# Enable (research preview)
-export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-
-# Display modes
-# In-process: all in main terminal, Shift+Down to cycle
-# Split panes: tmux or iTerm2 for parallel viewing
-```
-
-### Best Practices
-- **3-5 teammates** optimal
-- **5-6 tasks per teammate**
-- Start with **research before parallel implementation**
-- **Avoid same-file edits** across teammates
-- Cost: **~3-7× single session**
-
-### SendMessage Tool (Agent P2P)
-
-Teammates can communicate directly via `SendMessage` without routing through the lead. This is useful for progress updates and dependency notifications:
-
-```
-// Teammate 1 notifies Teammate 2 that shared library is ready
-SendMessage(to="teammate-2", message="auth module complete at src/auth/index.ts")
-```
-
-### ExitWorktree (v2.1.72)
-
-When a teammate finishes its work in an isolated worktree, it calls **ExitWorktree** to release the branch lock and signal completion back to the lead. The lead receives the result and can proceed with merging.
-
----
-
-## 16. Prompt Caching & Cost Optimization
-
-### How Caching Works
-```
-REQUEST STRUCTURE (prefix-based caching):
-
-┌──────────────────────────────────┐
-│ System prompt                     │  ← Cached (stable)
-├──────────────────────────────────┤
-│ CLAUDE.md content                │  ← Cached (stable)
-├──────────────────────────────────┤
-│ Tool schemas                     │  ← Cached (stable)
-├──────────────────────────────────┤
-│ Conversation history (growing)   │  ← Partially cached
-├──────────────────────────────────┤
-│ New message                      │  ← Never cached
-└──────────────────────────────────┘
-
-Only the newest content at the end differs between turns →
-Everything before it = cache HIT
-```
-
-### Cache Pricing
-
-| Token Type | Cost vs Base Input | TTL |
-|------------|-------------------|-----|
-| Cache Write | 1.25× (5-min) or 2× (1-hour) | 5 min / 1 hour |
-| Cache Read (HIT) | **0.1×** (90% discount) | — |
-| Non-cached Input | 1.0× | — |
-
-### Economics
-- **Break-even:** After single cache read (5-min TTL)
-- **Typical hit rate:** 70-95% in active sessions
-- **Example:** 400K input tokens, 95% hit rate → costs ~15% of non-cached pricing
-- **Average cost:** ~$13/developer/active day, <$30 for 90% of users
-- **Monthly average:** $150-250/developer/month
-
-### What Breaks Cache
-| Action | Impact |
-|--------|--------|
-| `/clear` | Resets conversation → all cache lost |
-| Switching models | New prefix → all cache lost |
-| Editing CLAUDE.md | Prefix changes → cache invalidated |
-| TTL expiry | 5 minutes inactivity → cache drops |
-
-### Maximizing Cache Hits
-1. Keep sessions focused on one task
-2. Use `/compact` instead of `/clear`
-3. Don't change models or CLAUDE.md mid-session
-4. Work in bursts within 5-minute window
-5. Track with `/cost` (API) or `/stats` (subscription)
-
----
-
-## 17. Context Window Management
-
-### Context Structure (200K or 1M tokens)
-
-```
-┌─────────────────────────────────────────────┐
-│ System prompt              ~2,700 tokens    │
-├─────────────────────────────────────────────┤
-│ System tools (schemas)    ~16,800 tokens    │
-├─────────────────────────────────────────────┤
-│ Custom agent descriptions  ~1,300 tokens    │
-├─────────────────────────────────────────────┤
-│ Memory files (CLAUDE.md)   ~7,400 tokens    │
-├─────────────────────────────────────────────┤
-│ Skill descriptions         ~1,000 tokens    │
-├─────────────────────────────────────────────┤
-│                                             │
-│     MESSAGES + TOOL RESULTS                 │
-│     (grows with conversation)               │
-│                                             │
-├─────────────────────────────────────────────┤
-│ Autocompact buffer        ~33,000 tokens    │
-└─────────────────────────────────────────────┘
-
-Overhead BEFORE you type: ~30,000-40,000 tokens
-```
-
-### Compaction Mechanics
-- **Auto-compaction triggers** at ~83.5% capacity (~167K for 200K window)
-- Configurable via `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`
-- Process: clears older tool outputs → summarizes conversation
-- **CLAUDE.md survives** — re-read from disk and re-injected fresh
-- `/compact [focus]` produces higher-quality summaries than auto-compact
-- Since v2.0.64, compaction is **effectively instant**
-
-### Quality Degradation
-Performance degrades around **147K-152K tokens** due to "lost-in-the-middle" attention — not at the 200K limit. Token quality > quantity.
-
-### Strategies
-| Strategy | When | Why |
-|----------|------|-----|
-| `/clear` | Between unrelated tasks | Clean context, no carryover |
-| `/compact [focus]` | At logical breakpoints | Higher quality than auto |
-| Subagent delegation | Verbose operations | Each gets own context |
-| Keep CLAUDE.md concise | Always | <200 lines target |
-| Use `sonnet[1m]` / `opus[1m]` | Large codebases | 1M context avoids 200K limits |
-| Session handoff | Long sessions | Write notes, start fresh |
-
----
-
-## 18. Skills System
-
-### Skill Structure
-```
-.claude/skills/my-skill/
-├── SKILL.md          # Required: YAML frontmatter + instructions
-├── templates/        # Optional: template files
-├── examples/         # Optional: example code
-└── scripts/          # Optional: helper scripts
-```
-
-### SKILL.md Format
-```yaml
----
-name: deploy
-description: "Deploy application to staging or production"
-argument-hint: "[staging|production]"
-disable-model-invocation: false
-user-invocable: true
-allowed-tools:
-  - Bash(npm run deploy:*)
-  - Bash(az *)
-model: sonnet
-effort: high
-context: fork          # Run in subagent
-paths:
-  - "deploy/**"
-  - "infra/**"
+mcpServers: ["github"]
+skills: [security-review]
 hooks:
-  PostToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "echo 'Deploy step completed'"
+  Stop: [{ type: command, command: "echo 'Review complete'" }]
+isolation: worktree          # spawn in its own git worktree
+cwd: "./src"                 # working directory override
+initialPrompt: "Begin by reading the diff..."
+background: false            # run as background task
 ---
 
-# Deploy Skill
-
-Follow these steps to deploy:
-
-1. Run `npm run build` to build the application
-2. Run tests: `npm test`
-3. Deploy to $ARGUMENTS environment
-4. Verify health check at the target URL
-
-## Arguments
-- `staging` — Deploy to staging environment
-- `production` — Deploy to production (requires approval)
+You are a senior security engineer and code reviewer. Your goal is to identify
+every issue in the provided code that could cause security vulnerabilities,
+incorrect behaviour, or maintenance problems. ...
 ```
 
-### Key Frontmatter Fields
+The `/agents` UI offers a **"Generate with Claude"** button to scaffold new subagent files.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Slash command name |
-| `description` | string | Used for auto-invocation matching |
-| `argument-hint` | string | Autocomplete hint |
-| `disable-model-invocation` | boolean | User-only invoke |
-| `user-invocable` | boolean | Hide from menu if false |
-| `allowed-tools` | array | Auto-approved tools |
-| `model` | string | Override model |
-| `effort` | string | Override effort level |
-| `context` | string | `fork` = run in subagent |
-| `paths` | array | Glob patterns for conditional activation |
-| `hooks` | object | Lifecycle hooks scoped to skill |
+### 13.2 Built-In Agents
 
-### Skill Discovery Locations
-1. Enterprise managed settings (highest priority)
-2. Personal: `~/.claude/skills/<name>/SKILL.md`
-3. Project: `.claude/skills/<name>/SKILL.md`
-4. Plugin skills
+- **Explore** — read-only; Haiku by default; codebase exploration and context gathering.
+- **Plan** — gathers context for plan mode proposals.
+- **general-purpose** — default for tasks that need both exploration and modification.
 
-### Loading Behavior
-- **Descriptions** always in context (budget: 1% of context window)
-- **Full content** loads only when invoked (user or auto)
-- Invoked content **stays for session** and **survives auto-compaction**
+### 13.3 Key Behaviours
 
-### String Substitutions
-| Placeholder | Description |
-|-------------|-------------|
-| `$ARGUMENTS` | All arguments after command |
-| `$ARGUMENTS[N]` | Nth argument (0-indexed) |
-| `${CLAUDE_SESSION_ID}` | Current session ID |
-| `${CLAUDE_SKILL_DIR}` | Skill directory path |
-
-### Dynamic Context Injection
-````markdown
-# In SKILL.md content:
-Current PR diff:
-!`gh pr diff`
-
-Current git status:
-!`git status --short`
-````
-Shell commands run before content reaches Claude.
+- Subagents do **not** inherit parent permissions automatically — pre-approve via `PreToolUse` hooks or settings rules.
+- Subagents inherit MCP tools from dynamically-injected servers (fixed v2.1.101).
+- `isolation: worktree` (v2.1.49) creates `.claude/worktrees/<auto-name>/`; the subagent can read and edit its own worktree files (fixed v2.1.101).
+- `CLAUDE_CODE_FORK_SUBAGENT=1` (v2.1.117) enables forked subagents on external builds; v2.1.121 makes it work in non-interactive `-p`/SDK sessions.
+- `TaskOutput` is deprecated — read the output file path directly with the `Read` tool.
+- **Agent frontmatter NOT applied when running as a teammate:** `skills:`, `mcpServers:`, `hooks:` (except Stop/SubagentStop), `permissionMode:` are ignored when the agent runs as a teammate in Agent Teams.
 
 ---
 
-## 19. Rules System
+## 14. Agent Teams (Experimental)
 
-### Location
-```
-.claude/rules/           # Project-level
-~/.claude/rules/         # User-level
-```
-Each `.md` file covers one topic. Discovered recursively, supports symlinks.
+Agent Teams coordinate **multiple Claude Code sessions** on a shared project, with true peer-to-peer messaging between teammates — unlike subagents which only report back to the lead.
 
-### Unconditional Rules
-Rules without YAML frontmatter load at launch (same priority as `.claude/CLAUDE.md`):
-```markdown
-# Code Style Rules
-
-Always use 2-space indentation in TypeScript files.
-Prefer `const` over `let` unless reassignment is required.
-```
-
-### Conditional (Path-Scoped) Rules
-```yaml
----
-paths:
-  - "src/api/**/*.ts"
-  - "src/controllers/**/*.ts"
----
-
-# API Development Rules
-
-All API endpoints must include input validation using Zod schemas.
-Every controller method must have JSDoc documentation.
-Error responses must follow RFC 7807 Problem Details format.
-```
-Triggered **only when Claude reads matching files**.
-
-### Rules vs CLAUDE.md vs Skills
-
-| Feature | CLAUDE.md | Rules | Skills |
-|---------|-----------|-------|--------|
-| Location | Root / subdirectory | `.claude/rules/` | `.claude/skills/` |
-| Loading | Session start | Session start (unconditional) or on-demand (conditional) | On invoke only |
-| Organization | Single file + imports | Multiple focused files | Full packages |
-| Path scoping | Via subdirectory placement | YAML `paths` field | YAML `paths` field |
-| Best for | Core project instructions | Modular per-topic rules | Reusable workflows |
-
----
-
-## 20. Custom Commands (Legacy)
-
-```
-.claude/commands/          # Project-level
-~/.claude/commands/        # User-level
-```
-
-A file at `.claude/commands/deploy.md` creates `/deploy`. Contents become the prompt.
-
-```markdown
-<!-- .claude/commands/fix-tests.md -->
-Run the test suite and fix all failing tests.
-Focus on: $ARGUMENTS
-Commit the fixes with descriptive messages.
-```
-
-> **Note:** Skills system is the recommended replacement. If a skill and command share the same name, the **skill takes precedence**.
-
----
-
-## 21. IDE Integration
-
-### VS Code Extension
-- Requires VS Code **1.98.0+**
-- Also supports **Cursor**, **Windsurf**, **VSCodium**
-- Install via Extensions marketplace → "Claude Code"
-- Open: ✱ Spark icon, `Cmd+Shift+P` → "Claude Code", or Activity Bar
-
-#### Key Features
-- **Inline diffs** with accept/reject
-- **@-mentions** for fuzzy file references
-- **Plan review** as markdown with inline comments
-- **Checkpoints** with three rewind options
-- **Multiple conversations** with colored status dots
-
-#### Key Shortcuts
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+Esc` | Toggle focus editor ↔ Claude |
-| `Option+K` | Insert @-mention from editor |
-| `Cmd+Shift+Esc` | New conversation tab |
-
-### JetBrains Plugin
-- IntelliJ, PyCharm, WebStorm, all JetBrains IDEs
-- `Cmd+Esc` quick launch
-- IDE-native diff viewing
-- `Cmd+Option+K` file reference shortcut
-
-### Terminal Integration
-- `claude` in VS Code terminal auto-detects IDE
-- `/ide` connects external terminal to VS Code/JetBrains
-- Extension and CLI share conversation history
-
----
-
-## 22. Headless Mode & CI/CD
-
-### Non-Interactive Usage
 ```bash
-# Basic headless
-claude -p "refactor the auth module"
-
-# With output format
-claude -p "review code" --output-format json
-
-# With structured output
-claude -p "list all API endpoints" --json-schema '{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"method":{"type":"string"}}}}'
-
-# With scoped permissions
-claude -p "fix tests" --allowedTools "Read,Write,Edit,Bash(npm test *)" --permission-mode dontAsk
-
-# With max turns
-claude -p "implement feature X" --max-turns 20
-
-# Bare mode (reproducible CI)
-claude -p "check code quality" --bare
-
-# Piped input
-git diff main | claude -p "review for security issues" --allowedTools "Read,Grep"
-cat error.log | claude -p "find root cause"
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 ```
 
-### Key Headless Flags
-| Flag | Description |
-|------|-------------|
-| `-p` / `--print` | Non-interactive mode |
-| `--output-format` | `text`, `json`, `stream-json` |
-| `--json-schema` | Structured output schema |
-| `--allowedTools` | Scoped tool permissions |
-| `--permission-mode` | `default`, `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions` |
-| `--max-turns` | Iteration limit |
-| `--bare` | Skip auto-discovery of CLAUDE.md + memory (reproducible CI; v2.1.81) |
-| `--channels` | Subscribe to named event channels for pub/sub messaging (v2.1.80) |
-| `--exclude-dynamic-system-prompt-sections` | Strip volatile auto-injected system prompt sections (e.g., date headers) for cross-user prompt caching in CI (v2.1.98) |
-| `-w` / `--worktree <path>` | Start session in specified Git worktree (v2.1.49) |
-| `--append-system-prompt` | Inject instructions |
-| `--system-prompt` | Full system prompt override |
+### 14.1 Architecture
 
-### GitHub Actions
-```yaml
-name: Claude Code Review
-on:
-  pull_request:
-    types: [opened, synchronize]
+- **Team lead** — main session that spawns teammates, assigns tasks, synthesises results.
+- **Teammates** — full Claude Code sessions; isolated 1M context windows; load the same project CLAUDE.md, MCP, and skills but have no access to the lead's conversation history.
+- **Shared task list** — stored at `~/.claude/tasks/{team-name}/`; tasks are claimed atomically via file locking to prevent double-assignment.
+- **Mailbox** — `SendMessage(to, message)` enables peer-to-peer communication between any teammates.
 
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: "Review this PR for security issues and code quality"
-          trigger_phrase: "@claude"
+### 14.2 Agent Teams Tools
+
+These tools are always available to teammates even when `tools:` allowlists are otherwise restrictive:
+
+```
+Teammate(spawnTeam|cleanup)
+SendMessage(message|broadcast|shutdown_request|shutdown_response|plan_approval_response)
+TaskCreate / TaskUpdate / TaskList / TaskGet
 ```
 
-Quick setup: `/install-github-app`
+### 14.3 Best Practices
+
+Use plan mode first, review proposed roles, then approve the plan before spinning up the team. Include quality-bar instructions in the team's CLAUDE.md section: *"All code must have tests. No commits to main. Every PR must have a description."*
+
+Note that every teammate runs a full Claude Code session with its own 1M context window. Token costs scale with team size. Agent Teams are best suited for genuinely parallel workloads — multi-component features, large-scale migrations, or independent research tasks — not for serial chains that could just be subagents.
+
+### 14.4 Known Limitations
+
+No session resumption with in-process teammates; task status can lag; shutdown waits for the current request to finish; only one team per session; no nested teams; VS Code extension support is partial.
 
 ---
 
-## 23. Security & Sandboxing
+## 15. Git Worktrees
 
-### Defense in Depth
-- Default posture: **read-only** (explicit permission required for writes/commands)
-- Permission hierarchy: **deny always wins** → ask → allow
-- Enterprise managed settings **cannot be overridden**
+Git worktrees let you run multiple Claude sessions on the same codebase simultaneously, each on its own branch, with no risk of interfering with each other.
 
-### Sandbox Mode
-Enable: `/sandbox`
-- **macOS:** Seatbelt framework
-- **Linux:** bubblewrap (`sudo apt install bubblewrap socat`)
-- Reduces permission prompts by **~84%**
-- Filesystem writes restricted to CWD
-- Network isolation via proxy server
-
-### Built-in Protections
-- `curl` and `wget` blocked by default
-- Input sanitization prevents command injection
-- Command injection detection: suspicious commands require manual approval even if allowlisted
-- Web fetch uses separate context (anti-prompt-injection)
-- First-time codebase runs require verification
-- New MCP servers require verification
-- OS CA certificate store trusted by default (v2.1.104) — no need to configure custom CA bundles
-
-> ⚠️ **`--dangerously-skip-permissions`** should ONLY be used in Docker containers without internet. A documented incident resulted in total file loss via `rm -rf`.
-
----
-
-## 23b. Plugin System (v2.0.12+)
-
-> Introduced October 2025. Plugins extend Claude Code with new slash commands, tools, hooks, and CLAUDE.md content — without modifying core files.
-
-### Plugin Installation
 ```bash
-# Install from the marketplace
-claude plugin install anthropic/git-utils
-claude plugin install anthropic/test-runner
+claude -w feature-auth          # creates .claude/worktrees/feature-auth/
+claude -w feature-auth --tmux   # wraps the session in its own tmux session
 
-# List installed plugins
-claude plugin list
-
-# Enable / disable without uninstalling
-claude plugin enable git-utils
-claude plugin disable git-utils
-
-# Validate plugin integrity
-claude plugin validate git-utils
-
-# Update all plugins
-claude plugin update
-
-# Hot-reload without restarting session
-/reload-plugins
+# Run three features in parallel:
+claude -w bugfix-login
+claude -w new-dashboard
+claude -w refactor-api
 ```
 
-### Plugin Structure
-A plugin is a directory with a `plugin.json` manifest:
+If no name is given, a random name is generated. The branch is named `worktree-<name>`.
+
+Worktrees with no changes are automatically cleaned up at session exit and on next startup. Worktrees with changes persist until you explicitly discard them. v2.1.105 additionally cleans up worktrees whose associated PR was squash-merged.
+
+The status-line JSON includes `workspace.git_worktree` (v2.1.97). `isolation: worktree` in a subagent definition runs that subagent in its own worktree automatically — powerful for parallel large-scale changes and code migrations.
+
+**Notable version fixes:** v2.1.101 fixed "already exists" error after stale-directory cleanup; v2.1.116 fixed `/update` and `/tui` after entering a worktree mid-session; v2.1.118 fixed stale worktree reuse.
+
+---
+
+## 16. Remote Control
+
+Remote Control creates a secure bridge between your local CLI session and claude.ai/code, the iOS app, and the Android app — giving you access to your full local environment, MCP servers, and file system from any device.
+
+```bash
+# Start remote control from within a session:
+/remote-control
+# or:
+/rc
+
+# Start with a custom session name prefix:
+claude --remote-control-session-name-prefix mybox
+# or:
+export CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=mybox
+```
+
+The default session name is derived from your hostname: `myhost-graceful-unicorn`. The architecture is outbound-only HTTPS over the Anthropic API — no inbound ports are opened.
+
+### 16.1 Remote Control vs `--remote`
+
+These are different features:
+
+- `--remote` creates a **cloud VM session** (Claude Code on the Web) with a fresh sandbox.
+- `--remote-control` / `/remote-control` exposes your **local CLI session** for remote monitoring and control from any device.
+
+### 16.2 Capabilities
+
+When connected via Remote Control, you have access to: full local filesystem, all MCP servers configured locally, project CLAUDE.md and settings, `@`-file autocomplete (v2.1.113), push notifications (v2.1.110), and commands including `/context`, `/exit`, `/reload-plugins` (v2.1.110).
+
+**Limitations:** One connection per session. A 10-minute network timeout. Permission rules still apply — `--dangerously-skip-permissions` does not bypass them from a remote connection. Requires Pro, Max, or Team Premium plan; Team/Enterprise admins must enable "Remote Control" toggle.
+
+**Notable fixes:** v2.1.81 (generic title, /rename syncing); v2.1.108 (web-set titles overwritten by auto-titles); v2.1.116 (renames from claude.ai persist to local CLI; re-login when session too old); v2.1.113 (`@`-file autocomplete from remote, subagent transcript streaming).
+
+---
+
+## 17. Cloud Sessions (Web)
+
+`claude.ai/code` runs each session in an isolated Anthropic-managed cloud sandbox. GitHub repositories can be linked, cloned, edited, tested, and proposed as PRs entirely from within the sandbox. Git credentials are routed through a proxy and never stored directly on the sandbox VM.
+
+```bash
+# Start a cloud session from the CLI:
+claude --remote "Execute the plan in PLAN.md and open a PR"
+
+# Monitor progress:
+/tasks
+```
+
+### 17.1 Plan-Locally / Execute-Remotely Pattern
+
+This is the most efficient pattern for large, complex tasks:
+
+1. Use plan mode locally (cheap tokens; no file mutations; fast iteration).
+2. Save the final plan to a file: `/copy` or write to `PLAN.md` and commit it.
+3. Launch a cloud session: `claude --remote "Execute plan from PLAN.md"`.
+4. Monitor progress from web or mobile.
+
+`/ultraplan` (v2.1.101+) auto-creates a default cloud environment when invoked. You can also pull a cloud session back into your terminal with `claude --teleport`.
+
+**Rollout status (May 2026):** GA for web/desktop/iOS on Pro/Max/Team/Enterprise. Cowork (the sibling knowledge-work agent product) is research preview on macOS/Windows Desktop for Max plans, expanded to enterprise in February 2026.
+
+---
+
+## 18. Sandbox & Security Model
+
+`/sandbox` is **off by default**. When enabled, it provides OS-level filesystem and network isolation using the same primitives that power browser tab isolation.
+
+### 18.1 Technology Stack
+
+| OS | Technology |
+|----|-----------|
+| macOS | Apple Seatbelt (TrustedBSD MAC) via `sandbox-exec` |
+| Linux / WSL2 | bubblewrap (`bwrap`) + `socat` for the proxy bridge |
+| Windows native | Not supported — use WSL2 |
+
+The `apply-seccomp` helper ships in both npm and native builds to restore Unix-socket blocking for sandboxed commands (v2.1.92).
+
+### 18.2 Filesystem Isolation
+
+Writes outside the working directory fail with `Operation not permitted` at the syscall level. This is not a policy — it is a kernel-level block with no escape path. `sandbox.filesystem.allowWrite` extends the writable area; `sandbox.filesystem.denyRead` restricts reads beyond the kernel sandbox.
+
+> **Important gotcha:** `sandbox.filesystem.denyRead` does **not** affect Claude's `Read` tool — it only affects Bash subprocesses. To prevent Claude from reading files via the `Read` tool, use `permissions.deny`: `["Read(**/.env*)"]`.
+
+### 18.3 Network Isolation
+
+All traffic is routed through a localhost HTTP proxy (HTTPS via CONNECT) and a SOCKS5 proxy for non-HTTP tools. The proxy enforces `allowedDomains` and `deniedDomains`. Hosts not on the allowlist receive HTTP CONNECT 403. Tools that ignore proxy env vars are caught by a Seatbelt/bubblewrap backstop that blocks non-loopback traffic at the socket layer.
+
+### 18.4 Process Isolation
+
+All subprocesses inherit the same restrictions. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` (v2.1.98) strips sensitive env vars from child process environments and enables PID namespace isolation on Linux. `CLAUDE_CODE_SCRIPT_CAPS` limits per-session script invocations via a JSON map of `{ scriptName: maxInvocations }`.
+
+### 18.5 Security Hardening History (Verified in CHANGELOG)
+
+- v2.1.34: `autoAllowBashIfSandboxed` Bash bypass closed.
+- v2.1.38: writes to `.claude/skills` blocked in sandbox mode.
+- v2.1.98: backslash-escape Bash auto-allow bypass; compound-command bypass; env-var-prefix prompt bypass; `/dev/tcp` redirect bypass — all patched.
+- v2.1.113: wrapped-exec deny-rule matching (`env`, `sudo`, `watch`, `ionice`, `setsid`); `find -exec`/`-delete` no longer auto-approved by `Bash(find:*)`.
+- v2.1.116: sandbox auto-allow can no longer bypass dangerous-path safety check for `rm`/`rmdir` on `/` or `$HOME`.
+- v2.1.126: `allowManagedDomainsOnly`/`allowManagedReadPathsOnly` enforcement fixed when a higher-priority managed source lacks a `sandbox` block.
+
+---
+
+## 19. Permission System — Deep Dive
+
+### 19.1 Permission Modes
+
+| Mode | Behaviour |
+|------|-----------|
+| `default` | Prompt for every tool use |
+| `acceptEdits` | Auto-approve all file edits |
+| `plan` | Read-only analysis; no mutations |
+| `auto` | Anthropic safety-classifier-gated auto approval (GA for Max + Opus 4.7, v2.1.111) |
+| `bypassPermissions` | Auto-approve everything (gateable with `disableBypassPermissionsMode: "disable"`) |
+| `dontAsk` | Deny anything not explicitly allowed |
+
+Cycle modes with **Shift+Tab**. `--enable-auto-mode` flag is deprecated since v2.1.111 — auto mode no longer requires it.
+
+### 19.2 Rule Format & Evaluation
+
+Rules use `Tool(specifier)` syntax with gitignore-style glob patterns. Evaluation order: **deny → ask → allow → defaultMode**. First match wins. Deny rules cannot be overridden by lower scopes.
 
 ```jsonc
-// .claude/plugins/my-plugin/plugin.json
+"permissions": {
+  "allow": [
+    "Bash(npm run *)",            // all npm run subcommands
+    "Bash(git:*)",                // all git subcommands
+    "Bash(find /src -name:*)",    // find in /src only (no -exec)
+    "Read(**)",                   // all reads
+    "Write(src/**)",              // writes inside src/
+    "WebFetch(domain:github.com)" // only github.com
+  ],
+  "deny": [
+    "Read(**/.env*)",             // never read .env files
+    "Read(**/.ssh/**)",           // never read SSH keys
+    "Bash(rm -rf *)",             // never rm -rf
+    "Write(/etc/**)"              // never write to /etc
+  ],
+  "ask": [
+    "WebFetch",                   // always ask for web fetches
+    "Bash(curl:*)"                // always ask for curl
+  ]
+}
+```
+
+**Path type prefixes in rules:**
+
+- `//abs/path` — absolute filesystem path
+- `~/path` — relative to home directory
+- `/project/path` — relative to the settings file location
+- `./path` — relative to cwd at runtime
+
+**Known gotchas:**
+
+1. `Read(...)` deny rules apply to Read, Grep, Glob, and LS — but **not** to Bash subprocesses. To block Bash from reading a file, you need a separate `Bash(cat .env*)` deny rule.
+2. MCP rules do **not** support parenthesised specifiers — use `mcp__server` or `mcp__server__tool` only.
+3. `Bash(curl http://github.com *)` does not reliably restrict which URLs curl can access; URL restrictions in Bash rules are fragile.
+4. `Task(AgentName)` restricts which subagent profiles can be spawned.
+5. The **`:*` colon-prefix syntax** is the officially documented way to match a command prefix with any arguments: `Bash(npm run:*)` means "any `npm run` invocation regardless of what follows", while `Bash(npm run *)` uses a shell glob that matches `npm run ` followed by any string. They look similar but behave differently for commands with no arguments. When you want to allow all subcommands of a tool, prefer the colon form: `Bash(git:*)`, `Bash(npm:*)`, `Bash(docker compose:*)`.
+
+### 19.3 Auto Mode Configuration
+
+```jsonc
+"autoMode": {
+  "allow": ["$defaults", "Bash(npm test)"],
+  // "$defaults" extends the built-in Anthropic classifier list (v2.1.118)
+  // instead of replacing it — use this to add safe commands without
+  // losing the built-in safety baseline
+  "soft_deny": ["$defaults", "Bash(git push:*)"],
+  "environment": { "NODE_ENV": "test" }
+}
+```
+
+### 19.4 Enterprise Permission Controls
+
+- `forceRemoteSettingsRefresh: true` blocks startup until the managed settings fetch succeeds — fail-closed (v2.1.92).
+- `disableBypassPermissionsMode: "disable"` removes auto mode from the Shift+Tab cycle and rejects `--permission-mode auto` at startup.
+- `allowManagedDomainsOnly` and `allowManagedReadPathsOnly` restrict network and read access to managed lists.
+
+v2.1.110 fixed `updatedInput` from `PermissionRequest` hooks not being re-checked against `permissions.deny`, and `setMode: "bypassPermissions"` not respecting `disableBypassPermissionsMode`.
+
+---
+
+## 20. Models & Configuration
+
+### 20.1 Available Models (May 2026)
+
+| Model ID | Context | Best Use |
+|----------|---------|----------|
+| `claude-opus-4-7` | 1M | Most capable; complex reasoning; deep agentic coding; xhigh effort |
+| `claude-opus-4-6` | 1M | Previous flagship |
+| `claude-sonnet-4-6` | 1M | Default for Pro/Max — best balance |
+| `claude-haiku-4-5` | 200K | Fast, cheap; routing, simple tasks, skill execution |
+
+The 1M context beta on Sonnet 4 / 4.5 was retired **April 30, 2026**. All 1M models now work at standard pricing with no special headers.
+
+**Claude Mythos Preview (Project Glasswing):** A cybersecurity-focused research preview model available invitation-only on Google Vertex AI. It is not available via the standard API or claude.ai subscription tiers. If you have been granted access, it is accessed through `CLAUDE_CODE_USE_VERTEX=1` with a specific model string provided in your invitation. This model is not listed in `/model` unless you have been granted access and the model string is explicitly configured.
+
+### 20.2 Switching Models
+
+```bash
+/model                          # interactive picker; persists across restarts (v2.1.117)
+claude --model claude-opus-4-7
+```
+
+`/model` warns before switching mid-session because the next response re-reads history uncached. The startup header indicates when the active model comes from a project or managed pin (v2.1.117).
+
+### 20.3 Effort Levels
+
+```bash
+/effort low      # fast, minimal reasoning; boilerplate/routine changes
+/effort medium   # balanced; most day-to-day work
+/effort high     # default for Pro/Max (v2.1.117); code design, debugging
+/effort xhigh    # Opus 4.7 only; heavy architectural reasoning
+/effort max      # maximum thinking budget
+/effort auto     # Claude chooses per-turn
+```
+
+The underlying API parameter is `output_config.effort`. Exact token budget values are not published. `CLAUDE_CODE_EFFORT_LEVEL` overrides persistently.
+
+### 20.4 Thinking Configuration
+
+```jsonc
+// settings.json
 {
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "description": "Adds project-specific commands",
-  "skills": ["./skills/"],       // auto-load all SKILL.md files in directory
-  "claude_md": "./CLAUDE.md",    // appended to root CLAUDE.md
-  "hooks": {                      // merged into session hooks
-    "PostToolUse": [...]
+  "alwaysThinkingEnabled": true,   // force thinking on every turn
+  "showThinkingSummaries": false    // show collapsed thinking summaries (default false)
+}
+```
+
+```bash
+export DISABLE_INTERLEAVED_THINKING=1    # disable entirely
+# Per-session: Option+T / Alt+T to toggle
+```
+
+### 20.5 Model Environment Variables
+
+`ANTHROPIC_DEFAULT_OPUS_MODEL_NAME`, `ANTHROPIC_DEFAULT_SONNET_MODEL_NAME`, `ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME` override model aliases. `ANTHROPIC_BASE_URL` gateway support added v2.1.118; `/model` now lists models from the `/v1/models` endpoint of a custom gateway (v2.1.126).
+
+---
+
+## 21. Context & Memory Management
+
+| Action | Effect | Notes |
+|--------|--------|-------|
+| `/context` | Show token usage grid | Native dialog in VS Code (v2.1.121) |
+| `/compact [hint]` | Compress conversation; preserves cache prefix | Fork-based; cache reuse continues |
+| `/clear` | Reset context | Hint shows current context size (fixed v2.1.119) |
+| `/recap` | Manual session recap | Auto-recap on return (v2.1.108) |
+| `/resume` picker | Session browser | Ctrl+A for all projects; 67% faster on 40MB+ (v2.1.116) |
+
+`autoCompactThreshold` (setting) or `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (env) controls the auto-compact trigger. `DISABLE_COMPACT=1` opts out entirely.
+
+The `/resume` picker offers to summarise stale large sessions before reloading (v2.1.117). When a session's prompt cache expires, Pro users see a footer hint with the uncached token count (v2.1.108).
+
+**Brief mode in focus mode:** Claude writes more self-contained summaries since it knows only the final message is visible (v2.1.97).
+
+**Auto memory:** durable facts are extracted from sessions and proposed for addition to `CLAUDE.md`. Available on all tiers. Stored in `~/.claude/memory/`; truncated at 25KB / 200 lines (v2.1.85).
+
+### 21.1 Checkpoint System
+
+Introduced in v2.0.0, the checkpoint system automatically saves the state of your session at each turn, giving you a true undo/redo history rather than just a single rollback.
+
+**Retention:** checkpoints are kept for **30 days**.
+
+**Checkpoint types** — three modes control what is included in each saved checkpoint. You configure this in `/config` under "Checkpoint mode":
+
+The **chat-only** mode saves the conversation transcript but not file changes. This is the lightest option, useful when you want to be able to re-read earlier reasoning without necessarily reverting code.
+
+The **code-only** mode saves file changes (as a git-like snapshot of modified files) but not the conversation. This is useful when you care about reverting code to a prior state but don't need the dialogue.
+
+The **both** mode (the default) saves both the conversation transcript and the associated file changes together, giving you a fully consistent rollback point that restores both the code and the context simultaneously.
+
+**Accessing checkpoints:**
+
+```bash
+Esc Esc           # immediately rewind the last turn (reverts files and conversation)
+/rewind           # alias for the same action
+/undo             # alias (added v2.1.108)
+```
+
+When you rewind, Claude Code restores the files that were modified during that turn to their prior state, then removes the last turn from the conversation. You can rewind multiple times consecutively to go further back.
+
+---
+
+## 22. IDE Integrations
+
+### 22.1 VS Code (Also Cursor / Windsurf)
+
+The VS Code extension offers inline diffs, `@`-mention autocomplete, plan review, and full conversation history. Notable features by version:
+
+- v2.0.5: IME fix (unintended Enter/Tab submission blocked)
+- v2.1.79: `/remote-control` supported in VS Code
+- v2.1.116: scroll sensitivity configuration via `/terminal-setup`
+- v2.1.120: `/usage` opens a native Account & Usage dialog
+- v2.1.121: `/context` opens a native token usage dialog; `/skills` and `/plugin` panels; LSP diagnostics expand on click/Ctrl+O; voice dictation respects `accessibility.voice.speechLanguage` if no Claude Code `language` setting is configured
+- Spinner turns red with *"Not responding"* after ~30 seconds of backend silence
+
+### 22.2 JetBrains
+
+Full support across IntelliJ IDEA, PyCharm, WebStorm, GoLand, RubyMine, PHPStorm, CLion, Rider, and AppCode via the JetBrains Marketplace plugin.
+
+### 22.3 LSP Integration
+
+`.lsp.json` at the project root or in a plugin configures language server detection. `clientInfo` in the initialize request identifies Claude Code to language servers (v2.1.98). This enables "go to definition" and "find references" for precise code navigation in TypeScript, Python, Go, and Rust.
+
+```bash
+claude --debug /hooks    # view registered hooks in an IDE session
+```
+
+---
+
+## 23. GitHub & CI/CD Integration
+
+### 23.1 claude-code-action
+
+The official GitHub Action is at `anthropics/claude-code-action`. Current major version: v1.0+.
+
+**Complete input reference:**
+
+```yaml
+- uses: anthropics/claude-code-action@v1
+  with:
+    # Authentication (one of):
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+    # Trigger configuration:
+    trigger_phrase: "@claude"        # default
+    label_trigger: "claude-review"   # trigger on label
+    assignee_trigger: "claude-bot"   # trigger on assignee
+
+    # Prompt:
+    prompt: "Review this PR for security issues and suggest improvements"
+    claude_args: "--effort high --model claude-opus-4-7"
+
+    # Optional:
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    additional_permissions: "actions: read"
+    use_sticky_comment: true
+    use_commit_signing: true
+    track_progress: true
+    bot_id: "my-org-claude"
+    bot_name: "My Org Claude"
+    include_fix_links: true
+    show_full_output: false
+    plugins: "pr-review-toolkit@anthropic"
+    plugin_marketplaces: "anthropics/claude-plugins-official"
+    confirmed: false    # require explicit confirmation before acting
+
+    # Cloud providers:
+    use_bedrock: false
+    use_vertex: false
+    use_foundry: false
+```
+
+**v0.x → v1.0 breaking changes:** `mode`, `direct_prompt`, `override_prompt` → unified `prompt`; `custom_instructions`, `model`, `allowed_tools`, `mcp_config`, `claude_env`, `disallowed_tools`, `anthropic_model`, `timeout_minutes` → `claude_args` with CLI format.
+
+The action skips draft PRs and already-reviewed PRs by default. `@claude` can be mentioned in issue comments, PR review comments, PR reviews, and newly opened/assigned/labelled issues.
+
+### 23.2 Non-Interactive CI with `claude ultrareview`
+
+```bash
+# Run a multi-agent code review from CI without interactive prompts (v2.1.120):
+claude ultrareview --json > review.json
+claude ultrareview "https://github.com/owner/repo/pull/123" --json
+# Exit code: 0 = success, 1 = failure
+```
+
+### 23.3 Code Review Analytics
+
+The Code Review analytics dashboard (GA 2026) tracks: PRs reviewed, time saved, false-positive rate, monthly cost, and per-comment resolution rate. A monthly spend cap can be configured per-repository via Code Review settings in your organisation.
+
+### 23.4 GitLab CI/CD Integration
+
+Claude Code works in GitLab CI/CD pipelines through the `--print` / `-p` headless mode. There is no dedicated official GitLab Action (equivalent to `anthropics/claude-code-action` for GitHub), but the CLI runs cleanly in any GitLab Runner that has the native binary installed.
+
+A minimal `.gitlab-ci.yml` example that runs a code review on merge requests:
+
+```yaml
+claude-review:
+  stage: review
+  image: ubuntu:24.04
+  before_script:
+    - curl -fsSL https://claude.ai/install.sh | bash
+    - export PATH="$HOME/.local/bin:$PATH"
+  script:
+    - |
+      claude -p \
+        --output-format json \
+        --exclude-dynamic-system-prompt-sections \
+        --max-budget-usd 2.00 \
+        --allowedTools "Read,Grep,Glob" \
+        "Review the changes in this merge request for security issues, logic errors, and style violations. Output a JSON summary with keys: issues (array), severity (low|medium|high), summary (string)." \
+        > review.json
+      cat review.json
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+```
+
+The `--from-pr` flag (v2.1.119) supports GitLab merge request URLs directly for resuming linked sessions:
+
+```bash
+claude --from-pr "https://gitlab.com/org/repo/-/merge_requests/42" \
+  -p "Continue the review from where we left off"
+```
+
+### 23.5 Bitbucket Pipelines Integration
+
+The same headless pattern applies to Bitbucket Pipelines. Install the native binary in the `before-script` step and invoke `claude -p`. The `--from-pr` flag also accepts Bitbucket pull request URLs (v2.1.119):
+
+```yaml
+# bitbucket-pipelines.yml
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: Claude Code Review
+          script:
+            - curl -fsSL https://claude.ai/install.sh | bash
+            - export PATH="$HOME/.local/bin:$PATH"
+            - claude -p
+                --output-format text
+                --max-budget-usd 1.50
+                --allowedTools "Read,Grep,Glob"
+                "Review this PR for bugs and security issues"
+          caches:
+            - node
+```
+
+> **Stability note:** For production CI/CD on all platforms, pin to a specific Claude Code version (`claude install 2.1.126`) rather than always installing the latest, since Claude Code ships 2–3 versions per week and new versions occasionally introduce regressions (e.g., v2.1.120's `--resume`/`--continue` crash, fixed in v2.1.121).
+
+---
+
+## 24. Prompt Caching Architecture
+
+Understanding prompt caching is critical for cost control in Claude Code. The stable prefix of every request (system prompt, tool definitions, CLAUDE.md, recent assistant turns) is cached server-side. Subsequent requests that share the same prefix pay only the **cache read** price (0.1× input cost) rather than the full input price.
+
+### 24.1 TTL and Controls
+
+| Scenario | TTL |
+|----------|-----|
+| Default (no subscription) | 5 minutes |
+| Subscriber with `ENABLE_PROMPT_CACHING_1H=1` | 1 hour |
+| `FORCE_PROMPT_CACHING_5M=1` | 5 minutes (forced) |
+| `DISABLE_PROMPT_CACHING=1` | Caching disabled (startup warning) |
+
+`ENABLE_PROMPT_CACHING_1H` replaces the deprecated `ENABLE_PROMPT_CACHING_1H_BEDROCK` and works across all providers.
+
+### 24.2 Fork Architecture
+
+When you run `/compact` or `/branch`, the fork inherits the same cached prefix, so KV cache reuse continues immediately after compaction without a cold-start penalty. v2.1.118 fixed an issue where `/branch` wrote a full conversation copy instead of a pointer, causing unnecessary cache invalidation.
+
+### 24.3 Optimising for Cache Hits
+
+```bash
+# Move dynamic content (cwd, env, memory, git status) to the first user message:
+claude --exclude-dynamic-system-prompt-sections
+
+# Check cache hit rate:
+/usage   # shows cache_read_tokens / cache_creation_tokens breakdown
+
+# Example: maximising cache hits in CI/CD
+claude -p \
+  --exclude-dynamic-system-prompt-sections \
+  --output-format json \
+  --max-budget-usd 2.00 \
+  "Run the full test suite and fix any failures"
+```
+
+### 24.4 Pricing
+
+| Token type | Price (relative to input) |
+|-----------|--------------------------|
+| Cache read | 0.10× input price |
+| 5-min cache write | 1.25× input price |
+| 1-hr cache write | ≈ 2× input price (varies by model) |
+
+For Opus 4.7: input $5/MTok, 1-hr cache write ≈ $10/MTok, cache read $0.50/MTok.
+
+---
+
+## 25. Pricing & Plans
+
+### 25.1 Subscription Plans (May 2026)
+
+| Plan | Monthly Price | Claude Code Access | Key Features |
+|------|--------------|:---:|------|
+| Free | $0 | ❌ | Claude.ai chat only |
+| Pro | $20 (or $17/mo annual) | ✅ | Sonnet 4.6; limited Opus |
+| Max 5× | $100/mo | ✅ | ≈5× Pro session usage |
+| Max 20× | $200/mo | ✅ | ≈20× Pro usage; Opus 4.7 + xhigh; Auto Mode |
+| Team Standard | $25/seat/mo annual; $30/mo | ❌ | 1.25× Pro usage; no Claude Code |
+| Team Premium | $100/seat/mo annual; $125/mo | ✅ | 6.25× Pro usage; Claude Code included; min 5 seats |
+| Enterprise | Custom annual | ✅ | 500K context; HIPAA; SCIM/SSO; audit logs; Cowork |
+
+### 25.2 API Pricing (Pay-as-you-go)
+
+| Model | Input ($/MTok) | Output ($/MTok) | Batch discount |
+|-------|---------------|----------------|----------------|
+| Opus 4.7 / 4.6 | $5 | $25 | 50% |
+| Sonnet 4.6 | $3 | $15 | 50% |
+| Haiku 4.5 | $1 | $5 | 50% |
+
+For Sonnet 4.6 with >200K input tokens: $6 in / $22.50 out.
+
+Cache reads: 10% of input price. Cache writes (5-min): 1.25× input. Cache writes (1-hr): ≈2× input.
+
+### 25.3 Cost Controls
+
+```bash
+# Hard per-session spending cap (graceful stop when exceeded):
+claude --max-budget-usd 5.00 "Refactor the auth module"
+
+# Hard turn limit:
+claude --max-turns 10 "Fix all failing tests"
+
+# View live cost:
+/usage
+```
+
+Model selection strategy: Haiku for routing and simple tasks, Sonnet for the default workload, Opus 4.7 for the hardest 10–15% of tasks. `CLAUDE_CODE_EFFORT_LEVEL` sets the global effort default without needing to pass `--effort` every time.
+
+---
+
+## 26. OpenTelemetry & Observability
+
+### 26.1 Enabling OTEL
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1   # enable tracing
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_TRACES_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${MY_TOKEN}"
+```
+
+### 26.2 Span Types & Key Attributes
+
+| Span | Type | Key Attributes |
+|------|------|----------------|
+| `query` | ROOT | `session_id`, `prompt_id`, `service_name`, `service_version` |
+| `api_request` | CLIENT | `model`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`, `cost_usd`, `stop_reason`, `gen_ai.response.finish_reasons`, `effort` (v2.1.117) |
+| `tool_result` | INTERNAL | `tool_name`, `duration_ms`, `success`, `tool_use_id`, `tool_input_size_bytes` |
+| `tool_decision` | INTERNAL | `tool_name`, `decision_type`, `decision_source` |
+| `interaction` | ROOT | Wraps full turns in concurrent SDK calls |
+
+**Additional span attributes added across versions:** `user_system_prompt` (v2.1.121, gated by `OTEL_LOG_USER_PROMPTS`), `invocation_trigger` (v2.1.126: `"user-slash"` / `"claude-proactive"` / `"nested-skill"`), `command_name` and `command_source` (v2.1.117).
+
+**Events:** `claude_code.skill_activated` (v2.1.126 — fires for user-typed slash commands), `claude_code.at_mention` (v2.1.122 — fires on `@`-mention resolution).
+
+### 26.3 TRACEPARENT Injection
+
+When OTEL tracing is on, W3C `TRACEPARENT` and `TRACESTATE` are injected into Bash subprocess environments (v2.1.97). This means that if your build scripts, test runners, or deployment scripts emit their own OTEL spans, those spans will automatically parent to Claude Code's trace tree.
+
+```bash
+# In your shell scripts, this now has a valid parent span:
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+# $TRACEPARENT is already set by Claude Code
+```
+
+The SDK reads `TRACEPARENT`/`TRACESTATE` from the environment for distributed trace linking (v2.1.110).
+
+### 26.4 Full-Body Logging
+
+```bash
+OTEL_LOG_RAW_API_BODIES=1           # log inline (first 60KB)
+OTEL_LOG_RAW_API_BODIES=file:/tmp/traces   # write full bodies to disk
+```
+
+---
+
+## 27. Voice Mode
+
+Voice mode enables push-to-talk input directly in the CLI.
+
+```jsonc
+// settings.json
+{ "voiceEnabled": true }
+```
+
+```bash
+/voice           # toggle voice mode
+# Option+P / Alt+P — push-to-talk (hold key, release to send)
+```
+
+v2.1.79 fixed voice mode not activating on startup when `voiceEnabled: true` was set. v2.1.122 added an error when the voice key is bound to Caps Lock (terminals cannot deliver Caps Lock as a key event). v2.1.121 ensured VS Code voice dictation respects `accessibility.voice.speechLanguage` when no `language` is configured in Claude Code settings.
+
+---
+
+## 28. Multi-Directory Workspaces
+
+Claude Code can work across multiple repositories or directories in a single session.
+
+```bash
+# Add at startup:
+claude --add-dir ../backend-api --add-dir ~/company/shared-configs
+
+# Add mid-session:
+/add-dir ../backend-api
+/add-dir ~/company/shared-configs --remember   # persist across sessions
+```
+
+The current working directory is always included. CLAUDE.md files from added directories are not loaded automatically unless `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`. Skills in `<added>/.claude/skills/` are loaded automatically.
+
+---
+
+## 29. Keyboard Shortcuts
+
+| Key | Action | Version |
+|-----|--------|---------|
+| `Tab` | Command/file completion | |
+| `↑` | Command history navigation | |
+| `/` | Slash command picker | |
+| `@` | File / URL mention autocomplete | |
+| `!` | Enter bash mode with leading `!` | v2.1.89 |
+| `#` | Quick memory entry | |
+| `Esc` | Interrupt current response | |
+| `Esc Esc` | Rewind last turn | |
+| `Ctrl+C` | Cancel / exit | Fixed in -p mode (v2.1.79) |
+| `Ctrl+R` | Prompt history search | |
+| `Shift+Tab` | Cycle permission modes | |
+| `Ctrl+B` | Background a running tool | |
+| `Ctrl+G` | Open prompt in external editor | |
+| `Ctrl+O` | Focus view toggle / expand collapsed tool call | v2.1.97 |
+| `Ctrl+L` | Force redraw (does not clear input since v2.1.126) | v2.1.111 |
+| `Ctrl+A` / `Ctrl+E` | Start / end of logical line in multiline | v2.1.113 |
+| `Cmd+Backspace` / `Ctrl+U` | Delete to start of line | Changed to clear whole buffer v2.1.111 |
+| `Ctrl+Y` | Restore deleted input (after Ctrl+U) | v2.1.111 |
+| `Ctrl+_` | Undo | Kitty protocol fix v2.1.116 |
+| `Ctrl+A` | All projects in `/resume` picker | |
+| `Ctrl+X Ctrl+K` | Stop all background agents | Changed from Ctrl+F (v2.1.x) |
+| `Option+T` / `Alt+T` | Toggle Extended Thinking | |
+| `Option+P` / `Alt+P` | Voice / model picker toggle | |
+| `Shift+↑/↓` | Scroll viewport while extending selection | v2.1.113 |
+| `Shift+↑/↓` | Switch teammate views in agent teams | |
+| `PgUp` / `PgDn` | Scroll fullscreen dialogs | v2.1.121 |
+| `v` / `V` | Vim visual / visual-line mode | v2.1.118 |
+| `w` | Write selection to file (in `/copy`) | v2.1.111 |
+| `f` | Auto-fix issues (in `/doctor`) | v2.1.105 |
+| `Spacebar` | Show QR code (in `claude remote-control`) | |
+| `Cmd+Enter` / `Ctrl+Enter` | Submit in IDE extensions | Remap via `~/.claude/keybindings.json` |
+
+---
+
+## 30. Plan Mode
+
+Plan mode is a safe exploration mode where Claude reads files and runs read-only commands but **does not write to source files or run mutating shell commands.** It produces a written proposal; you review it and authorise execution only when satisfied.
+
+### 30.1 Entering Plan Mode
+
+```bash
+# At startup:
+claude --permission-mode plan "Redesign the caching layer"
+
+# Mid-session:
+/plan
+/plan "Refactor the payment service to use Stripe's new API"
+# The optional description starts plan execution immediately (v2.1.111)
+
+# Cycle to plan mode with:
+# Shift+Tab
+```
+
+Tools allowed in plan mode: `Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task` (with read-only agents). `Edit`, `Write`, `Bash` require exiting plan mode.
+
+Plans are written to `<repo>/plans/` with names derived from the prompt (e.g., `fix-auth-race-snug-otter.md`) since v2.1.111.
+
+### 30.2 Plan-Locally / Execute-Remotely Pattern
+
+```bash
+# Step 1: plan locally (cheap tokens, no file mutations)
+claude --permission-mode plan "Migrate PostgreSQL schema to TimescaleDB"
+
+# Step 2: review the plan in plans/ and approve it
+
+# Step 3: execute in the cloud
+claude --remote "Execute the plan in plans/migrate-timescaledb-*.md"
+```
+
+`/ultraplan` (v2.1.101) hands the plan off to a parallelised multi-agent cloud workflow for large, complex tasks. v2.1.47 fixed plan mode being lost after context compaction. v2.1.119 fixed `/plan open` not acting on the existing plan when re-entering plan mode.
+
+---
+
+## 31. Version Release Timeline
+
+Below is a condensed timeline of every major milestone. The complete, line-by-line changelog is at `code.claude.com/docs/en/changelog`.
+
+| Version | Date | Key Features |
+|---------|------|-------------|
+| v0.2.x | Feb–Apr 2025 | Initial research preview; core tool loop; `/init`, `/clear`, `/compact` |
+| v1.0.0 | May 2025 | GA with Claude 4; permission system; CLAUDE.md; Skills |
+| v1.0.x | May–Sep 2025 | 126+ patches: Bedrock/Vertex, MCP, hooks, subagents, GitHub Action v0→v1 |
+| v2.0.0 | Sep 29, 2025 | Major rebuild: native VS Code extension; checkpoint system (`/rewind`, Esc+Esc); background tasks (Ctrl+B); Agent SDK renamed; Sonnet 4.5 default |
+| v2.0.5 | ~Oct 2025 | IDE IME fix; OAuth expiration handling |
+| v2.0.x | Oct–Nov 2025 | 76 patches: plugin system preview, sandbox, 1M context, native binary distribution |
+| v2.1.0 | Dec 2025 | Plugin system stable; `context: fork` for skills |
+| v2.1.32 | Feb 5, 2026 | Agent Teams research preview GA (with Opus 4.6 launch) |
+| v2.1.34 | Feb 2026 | Sandbox `autoAllowBashIfSandboxed` Bash bypass fix |
+| v2.1.38 | Feb 2026 | `.claude/skills` write protection in sandbox |
+| v2.1.47 | ~Feb 2026 | Plan mode + compaction fix; image pasting WSL2; CJK wide chars; `alwaysThinkingEnabled` on Bedrock/Vertex |
+| v2.1.49 | Feb 2026 | Subagent `isolation: worktree` GA |
+| v2.1.50 | Feb 19, 2026 | `--worktree` CLI flag; `--tmux`; native worktree flow |
+| v2.1.51 | ~Mar 2026 | Remote Control launch |
+| v2.1.76 | ~Mar 2026 | MCP elicitation; ~600 tokens saved per `/resume` |
+| v2.1.77 | ~Mar 2026 | `/branch` (renames `/fork`); `allowRead` sandbox setting |
+| v2.1.79 | ~Mar 2026 | `--console`; turn-duration toggle; voice mode startup fix; `Ctrl+C` in `-p` mode |
+| v2.1.81 | ~Mar 2026 | `/btw` fix; recap improvements; Remote Control title/rename sync; MCP read/search collapsing |
+| v2.1.85–86 | Mar 26–27 | `CLAUDE_CODE_MCP_SERVER_NAME`/`URL` hooks env; memory leak fixes |
+| v2.1.89 | Apr 1, 2026 | PreToolUse `defer`; `PermissionDenied` hook; `TaskCreated` hook; autocompact thrash-loop guard; `--resume` cache-miss fix |
+| v2.1.90 | Apr 2, 2026 | SSE quadratic→linear fix; `.husky` protection; PowerShell hardening |
+| v2.1.91 | Apr 3, 2026 | MCP `_meta["anthropic/maxResultSizeChars"]` (500K); `disableSkillShellExecution`; plugin `bin/` on PATH |
+| v2.1.92 | Apr 4, 2026 | Bedrock setup wizard; `forceRemoteSettingsRefresh`; per-model cache-hit `/cost` breakdown; `/release-notes` interactive picker; `apply-seccomp` shipped; multiple `CLAUDE_CODE_PLUGIN_SEED_DIR` |
+| v2.1.94 | Apr 7, 2026 | `CLAUDE_CODE_USE_MANTLE`; default effort → high for API/Bedrock/Vertex/Team/Enterprise; `sessionTitle` hook output |
+| v2.1.97–98 | Apr 8–9, 2026 | Vertex setup wizard; Monitor tool; `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`; `CLAUDE_CODE_SCRIPT_CAPS`; `--exclude-dynamic-system-prompt-sections`; W3C TRACEPARENT in Bash; `workspace.git_worktree`; `clientInfo` LSP; major Bash security hardening |
+| v2.1.101 | Apr 10, 2026 | `/team-onboarding`; OS CA certificate trust by default; `/ultraplan` auto-creates cloud env; `mcp serve` `outputSchema` fix; subagent worktree read/edit fix; Bedrock SigV4 fix; `/resume` picker improvements |
+| v2.1.105 | Apr 13, 2026 | EnterWorktree `path` param; PreCompact hook block; plugin `monitors/`; skills description cap 250→1536; stalled-stream watchdog; WebFetch strips `<style>`/`<script>` |
+| v2.1.108 | Apr 14, 2026 | `ENABLE_PROMPT_CACHING_1H`; `/recap` + `CLAUDE_CODE_ENABLE_AWAY_SUMMARY`; `/undo` alias; built-in commands via Skill tool; pro cache-expiry footer hint |
+| v2.1.110 | Apr 15, 2026 | `/tui`; push notifications; `autoScrollEnabled`; SDK reads TRACEPARENT; `PermissionRequest` hook fixes |
+| v2.1.111 | Apr 16, 2026 | Opus 4.7 + xhigh effort; auto mode for Max + Opus 4.7; `/effort` slider; `/less-permission-prompts`; `/ultrareview`; `--enable-auto-mode` deprecated; PowerShell progressive rollout; `/plan` description arg; plans saved to `plans/` |
+| v2.1.113 | Apr 17, 2026 | Native binary via per-platform optional dep; `sandbox.network.deniedDomains`; Bash deny-rule wrapper matching; `find -exec` bypass fix; `Ctrl+A`/`Ctrl+E` multiline; macOS `/private/*` dangerous paths |
+| v2.1.114 | Apr 18, 2026 | Agent Teams teammate permission dialog crash fix |
+| v2.1.116 | Apr 20, 2026 | `/resume` 67% faster on 40MB+ sessions; deferred MCP `resources/templates/list`; thinking spinner inline; `/doctor` while responding; new CDN URL; Devanagari rendering fix; sandbox rm-safety bypass closed |
+| v2.1.117 | Apr 22, 2026 | `CLAUDE_CODE_FORK_SUBAGENT`; `--agent` loads mcpServers; native bfs/ugrep; `/model` persistence; OTEL `effort` attr; Opus 4.7 1M-context fix; default effort `high` for Pro/Max on Opus 4.6/Sonnet 4.6 |
+| v2.1.118 | Apr 23, 2026 | Vim visual mode; `/cost`+`/stats`→`/usage`; named themes; `mcp_tool` hooks; `DISABLE_UPDATES`; `wslInheritsWindowsSettings`; `"$defaults"` in autoMode; `claude plugin tag`; `/branch` writes pointers |
+| v2.1.119 | Apr 23, 2026 | `/config` persists to settings; `prUrlTemplate`; `CLAUDE_CODE_HIDE_CWD`; `--from-pr` multi-VCS; `--agent` honours `permissionMode`; PostToolUse `duration_ms`; OTEL `tool_use_id`/`tool_input_size_bytes`; MCP 500K result size; Write diff 60% faster; `apply-seccomp` npm+native |
+| v2.1.120 | Apr 28, 2026 | Windows PowerShell fallback shell; `claude ultrareview` non-interactive; `${CLAUDE_EFFORT}` in skills; `AI_AGENT` env; VS Code native `/usage` dialog |
+| v2.1.121 | Apr 28, 2026 | MCP `alwaysLoad`; `claude plugin prune`; `/skills` filter; PostToolUse `updatedToolOutput` all tools; SDK `mcp_authenticate` `redirectUri`; LSP diagnostics expand; OTEL `stop_reason`/`finish_reasons`; VS Code `/context` dialog; MCP retry 3× |
+| v2.1.122 | Apr 28, 2026 | `ANTHROPIC_BEDROCK_SERVICE_TIER`; PR URL paste in `/resume`; OTEL `at_mention` event |
+| v2.1.123 | Apr 29, 2026 | Hotfix: OAuth 401 retry loop with `DISABLE_EXPERIMENTAL_BETAS` |
+| v2.1.126 | May 1, 2026 | `/model` lists gateway models; `claude project purge`; expanded `--dangerously-skip-permissions` exemptions; WSL2/SSH OAuth code paste; Windows PowerShell 7 detection; `claude_code.skill_activated` OTEL event with `invocation_trigger`; managed sandbox enforcement fix |
+
+> **Note:** Versions not listed in the public changelog (e.g., v2.1.115, v2.1.124, v2.1.125) represent internal releases that did not ship publicly.
+
+---
+
+## 32. Notable Bug Fixes & Stability History
+
+This section highlights the most impactful fixes across the v2.x series.
+
+**Context & compaction:**
+Plan mode lost after context compaction (v2.1.47); Opus 4.7 sessions computing context against 200K instead of 1M (v2.1.117); `--resume` cache-miss chain recovery (v2.1.89); autocompact thrash-loop guard added (v2.1.89); `/compact` regression where first resume dropped cache prefix (v2.1.90); `/clear` dropping the session rename (v2.1.111).
+
+**Bash & permissions:**
+`Ctrl+Z` hanging terminal via npx/bun run wrappers (v2.1.116); Bash auto-allow bypass via backslash-escaping (v2.1.98); compound-command permission bypass (v2.1.98); env-var-prefix prompt bypass (v2.1.98); `find -exec`/`-delete` auto-approved by `Bash(find:*)` (v2.1.113); deny-rule wrappers (`env`, `sudo`, `watch`) not matched (v2.1.113); `permissions.deny` overridden by `PermissionRequest` hook's `updatedInput` (v2.1.101); `setMode: bypassPermissions` ignoring `disableBypassPermissionsMode` (v2.1.110); managed domain/read-path enforcement when sandbox block missing (v2.1.126).
+
+**MCP:**
+`claude mcp serve` outputSchema validation failure (v2.1.101); OAuth `authServerMetadataUrl` lost on token refresh (v2.1.97); subagents not inheriting dynamically-injected MCP tools (v2.1.101); MCP transient errors not retried — now 3× (v2.1.121); SSE quadratic complexity (v2.1.90).
+
+**Subagents & worktrees:**
+Subagents in isolated worktrees denied Read/Edit to own worktree files (v2.1.101); subagent MCP tool inheritance (v2.1.101); stale worktree reuse error (v2.1.118); worktree stale-directory "already exists" (v2.1.101); sandboxed `mktemp` failure (v2.1.101).
+
+**Remote Control:**
+Generic session title (v2.1.81); `/rename` not syncing (v2.1.81); web-set titles overwritten by auto-titles (v2.1.108); renames from claude.ai not persisting to CLI (v2.1.116); re-login prompt when session too old (v2.1.116).
+
+**Prompt caching:**
+Subscribers with `DISABLE_TELEMETRY` falling back to 5-min TTL (v2.1.108).
+
+**Windows & cross-platform:**
+CJK wide character rendering (v2.1.47); Devanagari rendering (v2.1.116); Japanese/Korean/Chinese on Windows no-flicker (v2.1.126); Bedrock SigV4 with custom `Authorization` header (v2.1.101); Kitty protocol Ctrl+_/Cmd+Left/Right (v2.1.116); WSL2 image pasting (v2.1.47).
+
+**IDE:**
+IME unintended Enter/Tab submission in VS Code (v2.0.5); voice mode not activating on startup (v2.1.79); `--bare` dropping MCP tools in interactive sessions (v2.1.86).
+
+---
+
+## 33. Best Practices & Optimization Patterns
+
+### 33.1 Project Setup
+
+Set up a thorough `CLAUDE.md` from the start. Run `/init` to generate a baseline, then refine it manually to add team conventions, "don't" rules, and architecture notes. Commit it to git so every team member benefits. Keep it under ~200 lines; move lengthy reference material to a `docs/` directory that Claude can load on demand via skill `references/`.
+
+### 33.2 Context Management
+
+Use `/clear` between unrelated tasks to start fresh. Run `/compact` proactively before the context reaches 80%, not reactively when Claude starts losing track. If you run CI/CD sessions, use `--no-session-persistence` for throwaway runs and `--exclude-dynamic-system-prompt-sections` to maximise cache hit rates across users.
+
+### 33.3 Using `@`-Mentions Instead of Paste
+
+When you want Claude to read a file, type `@filename.ts` rather than pasting the file contents. This is better in three ways: it preserves the audit log entry, honours permission deny rules on that path, and counts towards the prompt cache prefix rather than the dynamic portion.
+
+### 33.4 Model Selection Strategy
+
+Use **Haiku** for routing decisions, generating stubs, simple one-file edits, and skill execution. Use **Sonnet** for the majority of your day-to-day coding work. Reserve **Opus 4.7 at xhigh or max effort** for the hardest 10–15% of tasks: architectural decisions, debugging subtle concurrency issues, security analysis, and multi-file refactors that need global reasoning.
+
+### 33.5 Hooks for Code Quality
+
+The most powerful use of hooks is enforcing quality standards automatically:
+
+```jsonc
+"hooks": {
+  // Auto-format on every file write:
+  "PostToolUse": [
+    { "matcher": "Write|Edit|MultiEdit",
+      "hooks": [
+        { "type": "command",
+          "command": "npx prettier --write \"$CLAUDE_TOOL_INPUT_FILE_PATH\" 2>/dev/null || true" },
+        { "type": "command",
+          "command": "npx eslint --fix \"$CLAUDE_TOOL_INPUT_FILE_PATH\" 2>/dev/null || true" }
+      ]
+    }
+  ],
+  // Refuse to finish if tests fail:
+  "Stop": [
+    { "hooks": [
+        { "type": "command",
+          "command": "npm test --silent 2>&1 | tail -5; [ $? -eq 0 ] || (echo 'Tests failing — fix before finishing'; exit 2)" }
+      ]
+    }
+  ],
+  // Inject git status at session start:
+  "SessionStart": [
+    { "hooks": [
+        { "type": "command",
+          "command": "printf '## Current branch: '; git branch --show-current; printf '\\n## Uncommitted changes:\\n'; git status --short | head -20" }
+      ]
+    }
+  ]
+}
+```
+
+### 33.6 Sandboxing
+
+`/sandbox` reduces permission prompts by ~84% while providing OS-level isolation. Enable it at project setup, configure `allowedDomains` for the package registries your project uses, and add any required write paths to `sandbox.filesystem.allowWrite`. Combine sandbox with `permissions.deny` for defence in depth — the sandbox catches syscalls; deny rules catch tool-level requests.
+
+### 33.7 CI/CD with Print Mode
+
+```bash
+# Structured CI/CD usage:
+claude -p \
+  --output-format json \
+  --exclude-dynamic-system-prompt-sections \
+  --max-turns 20 \
+  --max-budget-usd 3.00 \
+  --allowedTools "Read,Grep,Glob,Bash(npm test),Bash(npm run lint)" \
+  "Run the full test suite, lint check, and fix any failures. Return a JSON summary."
+```
+
+For non-interactive code review in CI (v2.1.120+):
+
+```bash
+claude ultrareview "https://github.com/owner/repo/pull/123" --json > review.json
+```
+
+### 33.8 Pre-Baking Plugins in Containers
+
+```dockerfile
+FROM ubuntu:24.04
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-plugins
+COPY ./my-plugins /opt/claude-plugins
+```
+
+`CLAUDE_CODE_PLUGIN_SEED_DIR` mirrors `~/.claude/plugins`, letting you pre-install plugins at image build time and avoid marketplace fetches on every CI run.
+
+### 33.9 Parallel Development with Worktrees
+
+```bash
+# Open three worktrees in separate terminal tabs:
+# Tab 1:
+claude -w feature-payments "Implement Stripe webhook handling"
+
+# Tab 2:
+claude -w bugfix-auth "Fix the JWT expiry race condition"
+
+# Tab 3:
+claude -w refactor-db "Migrate from raw SQL to Prisma"
+```
+
+Each worktree is on its own branch in `.claude/worktrees/`. Claude Code sessions run independently with no risk of file conflicts.
+
+---
+
+## 34. Agent SDK
+
+The Agent SDK provides programmatic access to the Claude Code engine for building custom agents, CI/CD integrations, and multi-agent workflows.
+
+**Packages:** `pip install claude-agent-sdk` (Python) and `npm install @anthropic-ai/claude-agent-sdk` (TypeScript). The TypeScript package bundles the native Claude Code binary as an optional dependency — no separate install required.
+
+### 34.1 Python SDK
+
+```python
+import asyncio
+from claude_agent_sdk import (
+    query, ClaudeSDKClient, ClaudeAgentOptions,
+    AssistantMessage, ResultMessage, SystemMessage
+)
+
+# Simple query:
+async def run_analysis():
+    async for message in query(
+        prompt="Analyse the test failures in src/ and suggest fixes",
+        options=ClaudeAgentOptions(
+            allowed_tools=["Read", "Grep", "Glob", "Bash(npm test)"],
+            disallowed_tools=[],
+            max_turns=20,
+            max_budget_usd=2.00,
+            model="claude-sonnet-4-6",
+            effort="high",
+            permission_mode="acceptEdits",
+            # Load CLAUDE.md, skills, and hooks from the project:
+            setting_sources=["user", "project"],
+            # cwd defaults to os.getcwd()
+            sandbox={
+                "enabled": True,
+                "failIfUnavailable": False,
+                "network": {
+                    "allowLocalBinding": True,
+                    "allowedDomains": ["registry.npmjs.org"]
+                }
+            }
+        )
+    ):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if hasattr(block, "text"):
+                    print(block.text, end="", flush=True)
+        elif isinstance(message, ResultMessage):
+            print(f"\n\nCompleted in {message.num_turns} turns, cost: ${message.cost_usd:.4f}")
+
+asyncio.run(run_analysis())
+```
+
+**`ClaudeAgentOptions` — all fields:**
+
+- `tools` / `allowed_tools` / `disallowed_tools` — tool allowlists and denylists
+- `system_prompt` — string, or `{"type": "preset", "preset": "claude_code", "append": "..."}` to extend the built-in system prompt
+- `mcp_servers` — list of MCP server configs
+- `permission_mode` — `"acceptEdits"`, `"bypassPermissions"`, `"plan"`, `"default"`, `"dontAsk"`
+- `continue_conversation` / `resume` — session resumption
+- `max_turns`, `max_budget_usd`, `model`, `fallback_model`, `betas`, `effort`
+- `output_format` — `{"type": "json_schema", "schema": {...}}` for structured outputs
+- `cwd`, `cli_path`, `settings`, `add_dirs`, `env`, `extra_args`
+- `setting_sources` — `["user", "project", "local"]`; **defaults to `[]`** (CLAUDE.md/skills/commands are NOT auto-loaded unless you set this explicitly)
+- `agents`, `hooks`, `include_partial_messages`
+- `managed_settings` — dict to inject managed settings programmatically
+- `sandbox` — filesystem/network isolation config
+
+> **Critical:** `setting_sources` defaults to an empty list. If you want CLAUDE.md, skills, slash commands, and output styles to be loaded, you must explicitly set `setting_sources=["project"]` or `["user", "project"]`. This is the most common SDK pitfall.
+
+### 34.2 TypeScript SDK
+
+```typescript
+import { query, ClaudeSDKClient } from "@anthropic-ai/claude-agent-sdk";
+
+// Simple query:
+for await (const message of query({
+  prompt: "Fix all TypeScript errors in src/",
+  options: {
+    allowedTools: ["Read", "Grep", "Glob", "Edit", "Write"],
+    maxTurns: 30,
+    maxBudgetUsd: 5.00,
+    model: "claude-opus-4-7",
+    effort: "high",
+    permissionMode: "acceptEdits",
+    settingSources: ["user", "project"],
+    sandbox: { enabled: true, failIfUnavailable: false }
+  }
+})) {
+  // Clean up properly even on early exit:
+  // Use `await using` (TypeScript 5.2+) or explicit break handling
+  if (message.type === "result") {
+    console.log(`Done: ${message.result}`);
+    console.log(`Cost: $${message.costUsd.toFixed(4)}`);
   }
 }
 ```
 
-### Enterprise Plugin Distribution
+### 34.3 Stateful Client (Python)
 
-Enterprise admins can pre-install plugins via **managed-settings.d/** (v2.1.83) — a drop-in directory of JSON fragments that are merged at startup without overwriting user settings:
+The `ClaudeSDKClient` is the stateful alternative to the one-shot `query()` generator. It keeps the subprocess alive across multiple turns, which is more efficient for interactive multi-step workflows because it avoids subprocess startup overhead on every query.
 
+```python
+async with ClaudeSDKClient(options=ClaudeAgentOptions(
+    setting_sources=["project"],
+    permission_mode="acceptEdits"
+)) as client:
+    await client.connect()
+
+    # Send a prompt and iterate over response messages:
+    async for msg in client.query("Start by reading ARCHITECTURE.md"):
+        print(msg)
+
+    # Change the model mid-session (takes effect on the next query):
+    await client.set_model("claude-opus-4-7")
+
+    # Change permission mode mid-session:
+    await client.set_permission_mode("bypassPermissions")
+
+    # Continue with a follow-up:
+    async for msg in client.query("Now implement the proposed changes"):
+        print(msg)
+
+    # Interrupt a currently-running operation (e.g. from another coroutine):
+    await client.interrupt()
+
+    # Receive raw messages from the running session without awaiting a response:
+    async for msg in client.receive_messages():
+        print(msg)
+
+    # Await a single complete response (convenience wrapper over receive_messages):
+    response = await client.receive_response()
+
+    # Revert files modified in the last N turns (default 1), without rewinding conversation:
+    await client.rewind_files(turns=1)
+
+    # Check the connection status and tool list of all MCP servers:
+    status = await client.get_mcp_status()
+    # Returns: {"server_name": {"connected": True, "tools": ["tool_a", ...]}, ...}
+
+    # Reconnect a specific MCP server (e.g. after a network blip):
+    await client.reconnect_mcp_server("my-db-server")
 ```
-/etc/claude/managed-settings.d/
-├── 01-org-policy.json      # allow/deny rules
-├── 02-approved-plugins.json # auto-install list
-└── 03-mcp-servers.json     # shared MCP servers
+
+**Complete `ClaudeSDKClient` method reference:**
+
+| Method | Purpose |
+|--------|---------|
+| `connect()` | Establish the subprocess connection; must be called before any query |
+| `query(prompt)` | Send a prompt; returns `AsyncIterator[Message]` |
+| `receive_messages()` | Async iterator of raw messages from the running session |
+| `receive_response()` | Convenience: awaits a single complete response |
+| `interrupt()` | Signal the running operation to stop (equivalent to Ctrl+C) |
+| `set_model(model_id)` | Switch model for subsequent queries |
+| `set_permission_mode(mode)` | Change permission mode for subsequent queries |
+| `rewind_files(turns=1)` | Revert file changes from the last N turns without touching the conversation |
+| `get_mcp_status()` | Returns a dict of `{server_name: {connected, tools}}` for all MCP servers |
+| `reconnect_mcp_server(name)` | Force-reconnect a named MCP server after a failure |
+
+### 34.4 Message Types Reference
+
+Both `query()` and `ClaudeSDKClient.receive_messages()` yield typed message objects. Understanding these types is essential for robust SDK consumers:
+
+| Message Type | When It Appears | Key Fields |
+|---|---|---|
+| `SystemMessage` | First message in every session | `subtype` (`init` or `compact_boundary`); `init` carries `slash_commands` list |
+| `AssistantMessage` | When Claude produces text or calls tools | `content: list[TextBlock | ToolUseBlock | ToolResultBlock | ThinkingBlock]` |
+| `UserMessage` | When permission prompts or hook feedback are surfaced | `content` |
+| `ResultMessage` | Final message; session is done | `result: str`, `subtype`, `is_error: bool`, `cost_usd: float`, `duration_ms: int`, `num_turns: int`, `model_usage: dict` |
+| `StreamEvent` | Intermediate partial content (requires `include_partial_messages=True`) | `delta`, `index` |
+| `RateLimitEvent` | When the API is rate-limiting; client should back off | `retry_after_ms: int` |
+
+```python
+from claude_agent_sdk import (
+    query, ClaudeAgentOptions,
+    AssistantMessage, ResultMessage, SystemMessage,
+    UserMessage, StreamEvent, RateLimitEvent,
+    TextBlock, ToolUseBlock, ThinkingBlock
+)
+
+async for msg in query(prompt="...", options=ClaudeAgentOptions(
+    include_partial_messages=True  # required to receive StreamEvent
+)):
+    if isinstance(msg, RateLimitEvent):
+        # Back off before retrying:
+        await asyncio.sleep(msg.retry_after_ms / 1000)
+    elif isinstance(msg, AssistantMessage):
+        for block in msg.content:
+            if isinstance(block, TextBlock):
+                print(block.text, end="", flush=True)
+            elif isinstance(block, ThinkingBlock):
+                print(f"[thinking: {block.thinking[:100]}...]")
+    elif isinstance(msg, ResultMessage):
+        print(f"\nDone in {msg.num_turns} turns | cost ${msg.cost_usd:.4f}")
+        if msg.is_error:
+            raise RuntimeError(f"Session ended with error: {msg.result}")
 ```
 
-Each `.json` file follows the same schema as `settings.json`. Files are processed in lexicographic order. Managed settings take highest precedence and cannot be overridden by user or project settings.
+### 34.5 OAuth Authentication in SDK (v2.1.121)
 
-**Enterprise MDM delivery:**
-- **macOS:** `com.anthropic.claudecode` preference domain via `defaults write` or profiles
-- **Windows:** `HKLM\SOFTWARE\Anthropic\ClaudeCode` registry keys (v2.1.51)
-- **`forceRemoteSettingsRefresh`** policy (v2.1.92): forces pull of latest managed settings on every session start
+```typescript
+import { mcp_authenticate } from "@anthropic-ai/claude-agent-sdk";
 
----
+// Custom-scheme OAuth completion (for desktop apps):
+const token = await mcp_authenticate({
+  server: "my-mcp-server",
+  redirectUri: "myapp://oauth/callback"
+});
 
-## 24. Development Workflows
-
-### Core Workflow: Explore → Plan → Code → Commit
-
-```
-1. EXPLORE     "How does authentication work in this codebase?"
-      ↓
-2. PLAN        Shift+Tab ×2 → Plan mode → reviewable markdown
-      ↓
-3. CODE        Shift+Tab → Accept Edits or Default mode
-      ↓
-4. COMMIT      "commit my changes with a descriptive message"
-      ↓
-5. PR          "create a PR for this feature"
+// Uses claude.ai connectors for OAuth flows:
+// ENABLE_CLAUDEAI_MCP_SERVERS=1 must be set
 ```
 
-### TDD Pattern
-```
-"Write tests for the auth module first, then implement to make them pass"
-```
-- Give verification targets: test cases, screenshots, expected output
-- Test incrementally: one file at a time
-- Use `/debug` for structured debugging
+### 34.6 Cleanup Behaviour
 
-### Git Integration
-- Auto-staging, commit messages, branch creation, PR opening
-- `git diff main --name-only | claude -p "review changed files for security"`
-- `/install-github-app` for automated GitHub Actions
-- `claude --worktree feature-auth` for isolated parallel work
+The SDK properly cleans up subprocess and temp files when consumers break from `for await` or use `await using` (v2.1.101 fix). In Python:
 
-### Large Codebase Strategies
-- Install code intelligence plugins (LSP)
-- Use Explore subagents for investigation
-- Run `/init` to generate CLAUDE.md
-- Use `.claudeignore` to exclude irrelevant files
-- `/batch <instruction>` for 5-30 independent parallel units
-
----
-
-## 25. Troubleshooting
-
-### /doctor Checks
-- Installation type and version
-- Search functionality (ripgrep)
-- Keybinding configuration
-- System status
-- Performance metrics
-
-### Common Issues
-
-| Problem | Solution |
-|---------|----------|
-| `command not found: claude` | Add `~/.local/bin` to PATH |
-| `syntax error near '<'` | Install script returned HTML; use Homebrew |
-| `Killed` during install (Linux) | Add 2GB swap (needs 4GB RAM) |
-| TLS/SSL errors | Update CA certs; `NODE_EXTRA_CA_CERTS` for corporate proxies |
-| "organization disabled" with active sub | Check for `ANTHROPIC_API_KEY` env var overriding subscription |
-| Auto-compaction thrashing | Context ping-ponging; use `/clear` and start fresh |
-
-### Log Locations
-| Item | Path |
-|------|------|
-| User settings | `~/.claude/settings.json` |
-| Project settings | `.claude/settings.json` |
-| Debug logs | `~/.claude/debug/` |
-| Session data | `~/.claude/projects/` |
-| Binary (macOS/Linux) | `~/.local/bin/claude` |
-| Binary (Windows) | `%USERPROFILE%\.local\bin\claude.exe` |
-
----
-
-## 26. Complete Glossary
-
-| Term | Definition |
-|------|-----------|
-| **Agentic loop** | Core cycle: gather context → take action → verify results, repeated autonomously |
-| **Tool use** | Claude invoking system capabilities (Read, Write, Bash, etc.) |
-| **Subagent** | Specialized Claude instance via Agent tool with isolated context |
-| **Headless mode** | Non-interactive CLI via `-p` flag for automation/CI |
-| **Compact/Compaction** | Summarizing history to free context space |
-| **CLAUDE.md** | Markdown config files teaching Claude project conventions |
-| **Hooks** | Deterministic shell/HTTP/LLM commands at lifecycle points |
-| **MCP** | Model Context Protocol — open standard for external tool integration |
-| **Skills** | Modular SKILL.md packages with specialized knowledge |
-| **Rules** | Modular `.claude/rules/*.md` instruction files |
-| **Custom commands** | Legacy `.claude/commands/*.md` slash commands |
-| **Agent teams** | Multiple Claude instances with shared tasks and messaging |
-| **Plan mode** | Read-only mode — proposes without executing |
-| **Context window** | Total token budget (200K or 1M) |
-| **Worktree** | Isolated git worktree for parallel work |
-| **Cache hit** | Input matches cached prefix → 90% cost reduction |
-| **Permission mode** | One of six autonomy levels |
-| **Auto memory** | Automatic recording/recall across sessions |
-| **Checkpoint** | Auto-saved code state; rewind via `Esc+Esc` |
-| **Remote control** | Bridge connecting terminal to web/mobile |
-| **Sandbox** | OS-level filesystem/network isolation |
-| **Bare mode** | `--bare` flag for reproducible environments |
-| **Fast mode** | Quick responses on Opus 4.6 |
-| **Effort level** | Controls reasoning depth: low/medium/high/max/auto |
-| **Tool search** | Deferred MCP tool loading — names only at start |
-
----
-
-## 27. Power User Tips & Shortcuts
-
-### Essential Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Escape` | Cancel operation or clear input |
-| `Esc+Esc` (double) | Open rewind menu |
-| `Ctrl+C` | Stop response; double-tap = hard exit |
-| `Shift+Enter` | New line in input |
-| `Shift+Tab` | Cycle permission modes |
-| `Ctrl+R` | Search prompt history |
-| `Ctrl+G` | Open prompt in `$EDITOR` |
-| `Ctrl+B` | Move bash command to background |
-| `Alt+T` | Toggle extended thinking |
-| `Alt+P` | Open model picker |
-
-> **macOS Tip:** Configure Option as Meta key in terminal for Alt shortcuts.
-
-### High-Impact Techniques
-1. **`/btw` for side questions** — no context impact
-2. **Pipe data:** `cat error.log | claude -p "find root cause"`
-3. **Git worktrees:** `claude --worktree feature-name`
-4. **Let Claude interview you:** "I want to build X. Ask me clarifying questions."
-5. **Interrupt early** with `Escape` if heading wrong direction
-6. **Use `/compact` at logical breakpoints** instead of waiting for auto-compact
-
-### Cost Optimization Hierarchy
-1. Choose model strategically: Sonnet (most tasks), Opus (complex), Haiku (simple subagents)
-2. `/clear` between unrelated tasks; `/compact` at logical breakpoints
-3. Move specialized instructions from CLAUDE.md to skills (on-demand loading)
-4. `/effort low` for simple tasks
-5. Delegate verbose operations to subagents
-6. Be specific in prompts: "add input validation to auth.ts" > "improve this codebase"
-7. Disable unused MCP servers
-8. Install code intelligence plugins to reduce file reads
-
----
-
-## 28. Update Timeline
-
-### 2025
-| Date | Milestone |
-|------|-----------|
-| Feb 2025 | Launch as limited research preview |
-| May 22, 2025 | GA (v1.0.0): Opus 4, Sonnet 4, GH Actions, VS Code + JetBrains |
-| Sep 29, 2025 | Sonnet 4.5 (SWE 77.2%): checkpoints, subagents, hooks, Agent SDK |
-| Oct 2025 | Web version + iOS app; Agent Skills system (v2.0.12) + plugin marketplace |
-| Nov 1, 2025 | Opus 4.5 (SWE 80.9%); surpassed $1B ARR |
-| Dec 2025 | `.claude/rules/`, named sessions, agentskills.io |
-
-### 2026
-| Date | Milestone |
-|------|-----------|
-| Jan 2026 | SKILL.md hot-reload (v2.1.0), session forking, Claude Cowork |
-| Feb 5, 2026 | Opus 4.6 (SWE 80.8%, 1M beta), agent teams, auto memories, remote control |
-| Feb 28, 2026 | Task tool renamed to Agent tool (v2.1.63); HTTP hooks; `--worktree` flag |
-| Mar 2026 | Sonnet 4.6 (SWE 79.6%, 1M native), /loop (v2.1.71), effort simplified to low/medium/high (v2.1.72) |
-| Mar 2026 | 1M context for Opus 4.6 on Max/Team/Enterprise (v2.1.75); MCP elicitation (v2.1.76) |
-| Mar 2026 | `--channels` pub/sub flag (v2.1.80); `--bare` CI flag (v2.1.81); `managed-settings.d/` (v2.1.83) |
-| Mar 2026 | PowerShell tool opt-in preview for Windows (v2.1.84); `CLAUDE_CODE_NO_FLICKER` (v2.1.89); `/powerup` (v2.1.90) |
-| Apr 2026 | Bedrock setup wizard (v2.1.92); `forceRemoteSettingsRefresh` policy; default effort → high for professional tiers (v2.1.94) |
-| Apr 2026 | `CLAUDE_CODE_USE_MANTLE=1` for Bedrock-Mantle (v2.1.94); `refreshInterval` status line setting + W3C `TRACEPARENT` propagation to Bash subprocesses (v2.1.97) |
-| Apr 2026 | Monitor tool (v2.1.98); Vertex AI setup wizard; `CLAUDE_CODE_PERFORCE_MODE` |
-| Apr 12, 2026 | OS CA certificate store trusted by default (v2.1.104); `/team-onboarding` command |
-
-### Current Version: v2.1.104 (April 12, 2026)
-
-### Current Models
-
-| Model | SWE-bench | Context | Input / Output | Notes |
-|-------|-----------|---------|---------------|-------|
-| Opus 4.6 | 80.8% | 1M tokens (Max/Team/Enterprise) | $5 / $25 per MTok | Default for API/Bedrock/Vertex/Team/Enterprise (v2.1.94) |
-| Sonnet 4.6 | 79.6% | 1M tokens native | $3 / $15 per MTok | Default for Pro plan |
-| Haiku 4.5 | — | 200K tokens | Lowest tier | Fast mode subagents |
-
----
-
-## 29. Directory Map
-
-```
-YOUR PROJECT/
-├── CLAUDE.md                  # Project instructions (team-shared, VCS)
-├── CLAUDE.local.md            # Local override (gitignored)
-├── .claudeignore              # Files to exclude
-├── .mcp.json                  # MCP server config (project scope)
-└── .claude/
-    ├── CLAUDE.md              # Alt location for project instructions
-    ├── settings.json          # Project settings (team-shared)
-    ├── settings.local.json    # Local settings (gitignored)
-    ├── rules/                 # Modular instruction files
-    │   ├── code-style.md
-    │   ├── testing.md
-    │   └── api-standards.md
-    ├── skills/                # Custom skills
-    │   ├── deploy/
-    │   │   ├── SKILL.md
-    │   │   └── scripts/
-    │   └── db-migration/
-    │       └── SKILL.md
-    ├── agents/                # Custom subagents
-    │   ├── code-reviewer.md
-    │   └── security-auditor.md
-    └── commands/              # Legacy custom commands
-        └── fix-tests.md
-
-~/.claude/                     # User-level (all projects)
-├── CLAUDE.md                  # User instructions
-├── settings.json              # User settings
-├── rules/                     # User-level rules
-├── skills/                    # Personal skills
-├── agents/                    # Personal subagents
-├── debug/                     # Debug logs
-└── projects/<hash>/
-    └── memory/
-        ├── MEMORY.md          # Auto memory index
-        └── *.md               # Topic memory files
+```python
+# Explicit cleanup via context manager:
+async with query(prompt=..., options=...) as session:
+    async for message in session:
+        if should_stop:
+            break  # subprocess is cleaned up on exit
 ```
 
 ---
 
-## CCA-F Exam Focus Areas
+## 35. Documentation Gaps & Caveats
 
-For the Claude Certified Architect Foundations exam, prioritize understanding:
+This section is honest about what is and isn't officially documented.
 
-1. **Agentic Architecture & Orchestration:** The three-tier architecture (main → subagent → teams), agentic loop mechanics, how/when subagents spawn, agent team coordination
-2. **Claude Code Configuration & Workflows:** CLAUDE.md hierarchy and precedence, settings cascade, /init workflow, explore→plan→code→commit pattern
-3. **Prompt Engineering & Structured Output:** How CLAUDE.md instructions affect behavior, headless mode with --json-schema, effort levels
-4. **Tool Design & MCP Integration:** All built-in tools and permissions, MCP transport types, tool naming convention, .mcp.json configuration
-5. **Context Management & Reliability:** Context window structure, compaction triggers, cache economics, hooks for deterministic control, permission model (deny always wins)
+**Sparse or ambiguous in official docs:**
+
+- `SLASH_COMMAND_TOOL_CHAR_BUDGET` defaults (1%/8,000 chars) — widely cited by community sources but not stated as exact values in any Anthropic doc page.
+- Effort → token budget mapping — only the `output_config.effort` API parameter is documented; exact budget values are not published.
+- `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` allowlist — documented as scrubbing "sensitive env vars" but the exact allowlist is not published.
+- `.lsp.json` schema — referenced in changelog but not formally documented with a spec.
+- JSON Schema for `settings.json` — use `https://json.schemastore.org/claude-code-settings.json` (community-maintained). Issue #11795 requests an official Anthropic-hosted URL; it remains open as of May 2026.
+- CLAUDE.md team declaration syntax for Agent Teams — referenced in third-party content but not on the official `code.claude.com/docs/en/agent-teams` page.
+- Token cost multiplier for Agent Teams — Anthropic documents that each teammate is a full session but does not state an exact multiplier.
+- The exact set of paths protected under `--dangerously-skip-permissions` — evolves release by release; no canonical list page exists.
+- Routines full specification — the `/schedule` command and `CLAUDE_CODE_DISABLE_CRON` are observable, but a complete public spec for the Routines feature has not been published as of May 2026.
+- Checkpoint retention modes (chat-only / code-only / both) — observable via `/config` but not documented in the official reference pages.
+
+**Discrepancies across official sources:**
+
+- Subscriber prompt-cache TTL: some older docs only describe 5-minute TTL. The authoritative behaviour is 1-hour for subscribers (v2.1.108 fixed the regression for `DISABLE_TELEMETRY` users).
+- `defaultMode` enum: the schemastore JSON omits `"auto"` and `"dontAsk"` which are valid runtime values.
+- Effort ceiling naming: `xhigh` sits between `high` and `max` for Opus 4.7; some external mirrors simplify this to three levels.
+
+**Shelf life:** Claude Code ships 2–3 versions per week. Fine-grained details (env var names, bug-fix versions, individual setting keys) have a useful shelf life of days to weeks. Architectural facts (three-phase loop, sandbox primitives, permission evaluation order, plugin/skill/hook contracts, SDK structure) are stable across minor versions. A major version bump (v2→v3) historically introduces breaking SDK/plugin changes.
+
+**For production deployments:** always verify the current changelog at `code.claude.com/docs/en/changelog` before upgrading. Pin `claude-code-action` to a specific SHA rather than `@v1` for CI stability. Pre-bake plugins into container images via `CLAUDE_CODE_PLUGIN_SEED_DIR` to avoid marketplace fetch failures in air-gapped environments.
 
 ---
 
-*This guide is comprehensive as of April 2026. Claude Code evolves rapidly — always cross-reference with official docs at [code.claude.com/docs](https://code.claude.com/docs) and [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code).*
+*End of reference. For the latest patch details, run `claude --version` and then `/release-notes` inside the CLI, or check `code.claude.com/docs/en/changelog` directly.*

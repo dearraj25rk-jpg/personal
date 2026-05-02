@@ -11,7 +11,7 @@ Claude Code is Anthropic's AI-powered CLI that integrates directly into your dev
 
 | Page | What you'll learn |
 |---|---|
-| [Definitive Reference Guide](./claude-code-reference) | Architecture, slash commands, tools, hooks, MCP, agents, context management — complete command reference |
+| [CLI Technical Reference](./claude-code-reference) | Every officially documented feature through v2.1.126 — tools, slash commands, CLI flags, hooks, MCP, plugins, subagents, agent teams, worktrees, remote control, sandbox, permissions, models, pricing, GitHub Actions, and the Agent SDK |
 | [CLAUDE.md vs Skills vs Rules](./claude-code-config-guide) | When to use each configuration file, the full precedence hierarchy, and best practices |
 | [Every Markdown File — Catalog](./claude-code-all-markdown-files-catalog) | All 16 file types Claude Code recognizes: CLAUDE.md, `.claude/rules/`, skills, prompts, and more |
 | [Context, Cost & Token Efficiency](./claude-code-efficiency-reference) | Auto-compaction, token budgets, caching, effort levels, cost optimization strategies |
