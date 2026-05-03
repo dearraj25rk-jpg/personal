@@ -5,7 +5,7 @@ sidebar:
   order: 13
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 
 ## Production RAG vs Prototype RAG
 

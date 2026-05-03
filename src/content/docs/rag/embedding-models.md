@@ -5,7 +5,7 @@ sidebar:
   order: 5
 ---
 
-> **Benchmarks current as of April 2026.** MTEB scores evolve rapidly — always verify at [huggingface.co/spaces/mteb/leaderboard](https://huggingface.co/spaces/mteb/leaderboard) before choosing a model for production.
+> **Benchmarks current as of May 2026.** MTEB scores evolve rapidly — always verify at [huggingface.co/spaces/mteb/leaderboard](https://huggingface.co/spaces/mteb/leaderboard) before choosing a model for production.
 >
 > **Key shift (2025–2026):** Open-source models now lead MTEB benchmarks outright. The top five models by raw score are all open-weight or very cheap — commercial APIs are no longer the quality leaders.
 
@@ -459,7 +459,7 @@ print(f"Text-to-image similarity: {similarity:.4f}")
 
 ---
 
-## Large LLM-based Models (SOTA as of April 2026)
+## Large LLM-based Models (SOTA as of May 2026)
 
 These use decoder LLMs as backbone, achieving top MTEB scores at the cost of higher latency and GPU memory. Open-source models now lead the leaderboard outright.
 
@@ -593,7 +593,7 @@ np.save("corpus_embeddings.npy", all_embeddings)
 
 ---
 
-## Complete Model Comparison (April 2026)
+## Complete Model Comparison (May 2026)
 
 | Model | Dims | Max tokens | MTEB Score | Params | Cost | Self-host |
 |---|---|---|---|---|---|---|
@@ -627,7 +627,7 @@ np.save("corpus_embeddings.npy", all_embeddings)
 ## Choosing the Right Model
 
 ```
-  DECISION GUIDE (April 2026)
+  DECISION GUIDE (May 2026)
   ──────────────────────────────────────────────────────────────
 
   Prototype / dev:

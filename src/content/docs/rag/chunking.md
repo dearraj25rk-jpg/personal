@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 
 ## Why Chunking Matters
 

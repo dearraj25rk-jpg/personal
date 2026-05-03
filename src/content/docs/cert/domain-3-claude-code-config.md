@@ -854,11 +854,11 @@ Sandbox mode runs Claude Code's tool calls inside an isolated environment. File 
 
 **Use cases:** CI pipelines where you don't want Claude to affect the host, security-sensitive codebases, multi-tenant deployments.
 
-### Current Recommended Models (April 2026)
+### Current Recommended Models (May 2026)
 
 | Use Case | Model | Notes |
 |---|---|---|
-| Highest capability, complex reasoning | `claude-opus-4-7` | Latest Opus (April 2026) |
+| Highest capability, complex reasoning | `claude-opus-4-7` | Latest Opus (May 2026) |
 | Complex architecture, long docs | `claude-opus-4-6` | Previous Opus |
 | Standard development, agentic tasks | `claude-sonnet-4-6` | Best speed/quality balance |
 | Fast classification, grading | `claude-haiku-4-5` | Low latency, low cost |

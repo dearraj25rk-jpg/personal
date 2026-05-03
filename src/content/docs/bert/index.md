@@ -37,7 +37,7 @@ BERT (Bidirectional Encoder Representations from Transformers) is the foundation
 | ALBERT-base | 12 (shared) | 768 | 12 | 12 M | 512 |
 | DeBERTa-v3-base | 12 | 768 | 12 | 86 M | 512 |
 | **ModernBERT-base** | **22** | **768** | **12** | **149 M** | **8,192** |
-| **ModernBERT-large** | **28** | **1,024** | **16** | **395 M** | **8,192** |
+| **ModernBERT-large** | **28** | **1024** | **16** | **395 M** | **8,192** |
 
 **ModernBERT (Dec 2024 / ACL 2025) is the current recommended encoder** for new projects — 16× longer context, 2× faster, SOTA retrieval benchmarks.
 

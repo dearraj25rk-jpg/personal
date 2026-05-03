@@ -5,7 +5,7 @@ sidebar:
   order: 10
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 >
 > **LangChain 1.0 + LangGraph 1.0** released October 2025 — stable APIs, no breaking changes until 2.0. LangGraph 1.0 adds type-safe streaming (`version="v2"`) and is the default runtime for LangChain agents. Code in this guide is compatible with both `langgraph>=1.0` and `langchain>=1.0`.
 

@@ -5,7 +5,7 @@ sidebar:
   order: 6
 ---
 
-> **Current as of April 2026.** Ecosystem evolves quickly — verify version compatibility before production deployment.
+> **Current as of May 2026.** Ecosystem evolves quickly — verify version compatibility before production deployment.
 >
 > **Key 2026 trends:** Hybrid search (vector + keyword) is now the default expectation. Billion-vector deployments are common. Momentum is shifting toward extended relational databases (pgvector, pgvectorscale) instead of dedicated vector services for teams already running Postgres.
 

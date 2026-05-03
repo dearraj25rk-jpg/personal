@@ -3218,4 +3218,4 @@ os.environ["LANGCHAIN_PROJECT"] = "my-rag-project"
 
 *End of LangChain Deep Reference Guide - v1.1 - General Edition - Updated May 2026*
 
-*Next recommended study: LangSmith evaluation cookbook, Deep Agents v0.4 sandbox configuration, MultiVectorRetriever for Hierarchical RAG, and LangSmith Fleet deployment guide.*
+*Next recommended study: Fleet evaluation cookbook, Deep Agents v0.4 sandbox configuration, MultiVectorRetriever for Hierarchical RAG, and Fleet deployment guide.*
