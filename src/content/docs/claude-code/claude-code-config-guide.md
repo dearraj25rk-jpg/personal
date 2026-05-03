@@ -6,6 +6,8 @@ sidebar:
 
 # CLAUDE.md vs Skills vs Rules — Complete Architecture & Best Practices Guide
 
+> **Last updated: May 2026 — reflects Claude Code v2.1.121+**
+
 ## 1. The Core Problem These Three Files Solve
 
 When you launch Claude Code, it starts with zero knowledge of your project. It doesn't know your tech stack, your team's conventions, your testing commands, or your deployment workflow. Every session would require re-explaining all of this from scratch — burning tokens, wasting time, and producing inconsistent output.
@@ -58,6 +60,12 @@ Claude Code supports multiple CLAUDE.md files in a strict hierarchy, where highe
 **How recursive discovery works**: Claude Code starts from your current working directory (cwd) and walks upward toward the root directory `/`, loading every `CLAUDE.md` and `CLAUDE.local.md` it finds along the way. This means if you run Claude Code in `foo/bar/`, it will load memories from both `foo/CLAUDE.md` and `foo/bar/CLAUDE.md`.
 
 **Subtree (child directory) loading**: CLAUDE.md files nested in directories *below* your cwd are NOT loaded at startup. They are loaded **on demand** — only when Claude reads files in those subdirectories. This is a critical token-saving design.
+
+**HTML comment stripping**: Block-level HTML comments (`<!-- like this -->`) are stripped from ALL CLAUDE.md files before the content is injected into Claude's context. Comments inside code blocks are preserved. Use them for maintainer notes (dates, authors, review status) without paying token cost.
+
+**Compaction survival**: After `/compact`, Claude re-reads the **project-root** CLAUDE.md (`./CLAUDE.md` or `./.claude/CLAUDE.md`) from disk and re-injects it. All other CLAUDE.md files (user, subtree) do NOT automatically survive compaction — they reload the next time Claude encounters their directory.
+
+**Excluding specific CLAUDE.md files**: Use `claudeMdExcludes` in `.claude/settings.local.json` to skip files you don't want loaded for personal reasons. Managed (enterprise) CLAUDE.md files cannot be excluded.
 
 ### 2.3 The Import System
 
@@ -359,6 +367,8 @@ If deployment fails, see [rollback script](scripts/rollback.sh)
 | `disable-model-invocation` | Optional | If `true`, Claude won't auto-invoke this skill — it can only be triggered via `/slash-command`. | — |
 | `context` | Optional | Set to `fork` to run the skill in a separate subagent context (keeps main context clean). | — |
 | `agent` | Optional | Specifies which subagent to use (e.g., `Explore`, `Plan`, or a custom agent from `.claude/agents/`). | — |
+| `model` | Optional | Model override for this skill: alias (`sonnet`, `opus`, `haiku`) or full model ID (e.g., `claude-sonnet-4-6`). | — |
+| `hooks` | Optional | Lifecycle hooks scoped to this skill's active lifetime. Use `once: true` on a hook handler to run it once per session, then discard. | — |
 
 ### 4.5 How Skill Discovery & Invocation Works
 
@@ -776,141 +786,536 @@ During a session, start your input with `#` to quickly add a memory:
 # Always run prettier before committing
 ```
 
-Claude Code will prompt you to choose which memory file to store it in (CLAUDE.md, CLAUDE.local.md, user memory, etc.).
+Claude Code will prompt you to choose which memory file to store it in (CLAUDE.md, CLAUDE.local.md, user memory, auto-memory, etc.).
 
 ### 10.2 Plugin System (Complementary Mechanism)
 
-Introduced in Claude Code **v2.0.12+**, the Plugin System provides a package manager for bundling and distributing CLAUDE.md, rules, skills, MCP server configurations, and hooks as a single versioned artifact.
+The Plugin System provides a package manager for bundling and distributing skills, agents, output styles, MCP servers, hooks, monitors, themes, and LSP servers as a single versioned artifact.
+
+**Plugin components** (complete list as of 2026):
+- `commands/` or `skills/` — Slash commands and skills (namespaced `plugin-name:skill`)
+- `agents/` — Subagents (namespaced; hooks/mcpServers/permissionMode blocked for security)
+- `output-styles/` — Custom output styles
+- `monitors/` — Background watchers that deliver stdout to Claude as notifications (requires v2.1.105+)
+- `themes/` — Color themes available in `/theme`
+- `bin/` — Executables added to the Bash tool's PATH
+- `hooks/hooks.json` — Lifecycle hooks
+- `.mcp.json` — MCP server definitions
+- `.lsp.json` — Language server configurations
+- `settings.json` — Default settings applied at plugin enable time
+- `.claude-plugin/plugin.json` — Optional manifest (`name` is the only required field)
 
 **CLI commands:**
 ```bash
-claude plugin install <name-or-url>   # Install from registry or URL
-claude plugin list                    # List installed plugins
-claude plugin enable <name>           # Enable a plugin
-claude plugin disable <name>          # Disable a plugin
-claude plugin validate <dir>          # Validate local plugin structure
-claude plugin update                  # Update all installed plugins
+claude plugin install <name>[@marketplace]   # Install from marketplace
+claude plugin install <name> --scope project  # Install for team (writes to .claude/settings.json)
+claude plugin uninstall <name>               # Remove plugin
+claude plugin uninstall <name> --keep-data   # Remove but keep persistent data
+claude plugin prune                          # Remove orphaned auto-installed dependencies (v2.1.121+)
+claude plugin enable <name>                  # Enable a disabled plugin
+claude plugin disable <name>                 # Disable without uninstalling
+claude plugin update <name>                  # Update to latest version
+claude plugin list                           # List installed plugins
+claude plugin list --json --available        # Include marketplace listings
 ```
 
-**Plugin structure** (`plugin.json` manifest required):
+**Plugin manifest** (`.claude-plugin/plugin.json`) — optional but recommended:
 ```json
 {
   "name": "dotnet-azure-ops",
   "version": "1.2.0",
   "description": "Production .NET/Azure workflow pack",
-  "components": {
-    "claudeMd": "CLAUDE.md",
-    "rules": ["rules/"],
-    "skills": ["skills/"],
-    "mcp": {"azureDevOps": {"command": "npx", "args": ["@az/mcp"]}},
-    "hooks": {"PreToolUse": [{"matcher": "Bash", "type": "command", "command": "./validate.sh"}]}
+  "skills": "./skills/",
+  "agents": ["./agents/reviewer.md"],
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json",
+  "monitors": "./monitors/monitors.json",
+  "themes": "./themes/",
+  "userConfig": {
+    "api_endpoint": { "type": "string", "title": "API endpoint", "description": "Your staging URL" }
   }
 }
 ```
 
-**Enterprise distribution** (v2.1.51+): Use `managed-settings.d/` drop-in directory under `.claude/`. On macOS this is delivered via MDM plist; on Windows via Registry (`HKLM\SOFTWARE\Anthropic\ClaudeCode`). The `forceRemoteSettingsRefresh` policy (v2.1.92) triggers re-download on launch.
+**Plugin environment variables** (in hook commands, MCP/LSP configs, skill content):
+- `${CLAUDE_PLUGIN_ROOT}` — plugin's installation directory (changes on update — don't write here)
+- `${CLAUDE_PLUGIN_DATA}` — persistent data directory that survives updates (`~/.claude/plugins/data/<id>/`)
+- `${user_config.KEY}` — values from `userConfig` prompts; also exported as `CLAUDE_PLUGIN_OPTION_<KEY>`
 
-Use `/reload-plugins` inside a session to pick up plugin changes without restarting.
+**Enterprise managed plugins**: Administrators can force-enable plugins via `enabledPlugins` in `managed-settings.json`. Plugins force-enabled this way are exempt from `allowManagedHooksOnly` restrictions, allowing trusted hooks to run even when user/project hooks are blocked.
 
 ### 10.3 Hooks (Complementary Mechanism)
 
-Hooks are shell scripts that run automatically at specific lifecycle points (before/after commands, before/after responses). They are NOT the same as rules or skills — they are code execution triggers. Use hooks for mechanical checks (file exists? lint passes?) and rules/skills for nuanced judgment.
+Hooks are handlers that run automatically at specific lifecycle events. They are NOT the same as rules or skills — they are code execution triggers, not knowledge/instruction files. Use hooks for mechanical enforcement (lint check, secret scanning, policy validation) and rules/skills for nuanced judgment.
 
-### 10.4 Auto-Memory System (v2.1.59+)
+**Complete hook event list** (as of May 2026):
 
-Claude Code can **automatically save useful context to memory files** without you needing to explicitly ask. When Claude notices important project facts — architectural decisions, recurring conventions, key file paths — it may proactively write them to memory.
+| Category | Events |
+|----------|--------|
+| Session lifecycle | `SessionStart`, `Setup`, `SessionEnd` |
+| Turn level | `UserPromptSubmit`, `UserPromptExpansion`, `Stop`, `StopFailure`, `PostToolBatch`, `PostCompact`, `PreCompact` |
+| Tool execution | `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `PermissionDenied` |
+| Agents/subagents | `SubagentStart`, `SubagentStop`, `TeammateIdle` |
+| Tasks | `TaskCreated`, `TaskCompleted` |
+| File/environment | `CwdChanged`, `FileChanged`, `ConfigChange`, `WorktreeCreate`, `WorktreeRemove` |
+| User interaction | `Notification`, `Elicitation`, `ElicitationResult` |
+| Instructions | `InstructionsLoaded` |
 
-**How it works:**
-- Auto-memory is stored in `~/.claude/projects/<project-hash>/memory/` by default
-- Change the location with the `autoMemoryDirectory` setting (v2.1.74)
-- Memory filenames include a last-modified timestamp (v2.1.75) for freshness reasoning
-- Truncated at 200 lines / 25KB per file when injected into context
-- Managed via `/memory` command — view, edit, or toggle auto-memory
+**Hook handler types**: `command` (shell script), `http` (POST request), `mcp_tool` (call MCP server tool), `prompt` (LLM single-turn evaluation), `agent` (subagent with tools — experimental).
 
-**Configure the location:**
+**Key hook capabilities**:
+- `PreToolUse` → can block, allow, deny, ask, or defer tool calls; can modify tool input before execution
+- `Stop` / `SubagentStop` → can prevent Claude from stopping (force continuation)
+- `WorktreeCreate` → can replace default git behavior entirely (hook prints worktree path to stdout)
+- `asyncRewake: true` → hook runs in background; if it exits 2, wakes Claude with the failure message
+- `once: true` → only honored in skill/agent frontmatter; runs once per session then removed
+- `InstructionsLoaded` → observability-only; fires when any CLAUDE.md or rules file loads (session_start, nested_traversal, path_glob_match, include, compact)
+
+**Where hooks are defined** (all merge):
+1. `managed-settings.json` (organization-wide, unless `allowManagedHooksOnly` blocks non-managed)
+2. `.claude/settings.json` (project, git-tracked)
+3. `~/.claude/settings.json` (user, personal)
+4. `.claude/settings.local.json` (local overrides, gitignored)
+5. Skill frontmatter (scoped to skill lifetime)
+6. Agent/subagent frontmatter (scoped to agent lifetime)
+7. Plugin `hooks/hooks.json` (bundled with plugin)
+
+### 10.4 Auto-Memory System
+
+Claude Code has a **built-in persistent learning system** that saves project knowledge across sessions. When you ask Claude to "remember" something or Claude learns important context, it writes to `MEMORY.md` in the auto-memory directory.
+
+**Key facts:**
+- Storage: `~/.claude/projects/<project>/memory/MEMORY.md` (derived from git root)
+- All worktrees in the same git repo share **one** memory directory
+- Machine-local — not synced across machines; not shared with teammates
+- First **200 lines OR 25 KB** (whichever comes first) loaded at session start — hard cap, unlike CLAUDE.md files which load in full with no size limit
+- Can create satellite topic files (e.g., `database.md`, `deployment.md`) alongside `MEMORY.md`
+- This is **separate** from subagent MEMORY.md (which lives in `agent-memory/<name>/MEMORY.md`)
+
+**Configure:**
 ```json
-// ~/.claude/settings.json
+// ~/.claude/settings.json — user setting only, not valid in project settings
 {
-  "autoMemoryDirectory": "/path/to/shared/memory"
+  "autoMemoryDirectory": "~/my-memory-dir"
 }
 ```
 
-**Disable auto-memory:**
+**Disable:**
 ```bash
-export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
-# or in settings.json: (use /memory command to toggle in-session)
+CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude
 ```
 
-**Quick memory during session:** Type `#` at the start of input to immediately save a note to memory:
+**In-session control:** Run `/memory` to toggle, browse files, or open them in your editor. Type `#` at the start of input to immediately save a note:
 ```
 # Use vertical slice architecture, not Clean Architecture, in this project
 ```
 
-### 10.5 Enterprise Managed Settings (v2.1.51+)
+**What Claude saves**: Things you explicitly ask it to remember, recurring conventions it notices, architectural decisions, key file paths. You see "Writing memory" in the interface when it's active.
 
-For enterprise deployments, Claude Code supports **multiple managed settings delivery mechanisms** — all taking highest precedence, overriding user and project settings:
+### 10.5 Enterprise Managed Settings
+
+For enterprise deployments, Claude Code supports **multiple managed settings delivery mechanisms** — all taking the highest precedence, overriding user and project settings. Only **one managed source tier** is used at a time; they do not merge across tiers.
+
+**Precedence within managed tier** (highest to lowest):
+1. Server-managed (from Claude.ai admin console)
+2. MDM/OS-level (macOS plist, Windows HKLM Registry)
+3. File-based (`managed-settings.json` + `managed-settings.d/*.json`)
+4. HKCU Registry (Windows user-level — lowest managed tier)
 
 **File-based (all platforms):**
 ```
-~/.claude/managed-settings.json          # Single file
-~/.claude/managed-settings.d/           # Drop-in directory (v2.1.83)
-  ├── 01-org-policy.json                # Merged alphabetically
-  ├── 02-approved-plugins.json          # Independent team fragments
-  └── 03-mcp-servers.json
+macOS:   /Library/Application Support/ClaudeCode/managed-settings.json
+Linux:   /etc/claude-code/managed-settings.json
+Windows: C:\Program Files\ClaudeCode\managed-settings.json
 
-# Windows enterprise path:
-C:\Program Files\ClaudeCode\managed-settings.json
+Drop-in directory (alongside managed-settings.json):
+  managed-settings.d/
+  ├── 10-security.json       # Merged alphabetically on top of base
+  ├── 20-plugins.json        # Later files win on scalar values
+  └── 30-mcp-servers.json    # Arrays concatenate and deduplicate
 ```
 
-**macOS MDM delivery (v2.1.51+):**
+**macOS MDM delivery:**
 ```bash
-# Deploy via Munki, Mosyle, Jamf, or manual `defaults write`
+# Deploy via Jamf, Kandji (Iru), Mosyle — domain: com.anthropic.claudecode
 defaults write com.anthropic.claudecode permissions.allow -array "Read" "Grep" "Glob"
 defaults write com.anthropic.claudecode sandbox.enabled -bool true
 ```
 
-**Windows Registry (v2.1.51+):**
+**Windows Registry:**
 ```
-HKLM\SOFTWARE\Anthropic\ClaudeCode
-  ↳ Keys map 1:1 to settings.json fields
-  ↳ Deployed via Group Policy, SCCM, Intune
-```
-
-**Drop-in directory advantage (v2.1.83):** Separate teams can deploy independent policy fragments without overwriting each other. Files are merged alphabetically — prefix with numbers to control merge order:
-```json
-// 01-security-policy.json (Security team)
-{ "permissions": { "deny": ["Bash(rm -rf *)"] } }
-
-// 02-approved-models.json (Platform team)  
-{ "availableModels": ["claude-sonnet-4-6-*"] }
-
-// 03-mcp-servers.json (DevOps team)
-{ "mcpServers": { "internal-tools": { "..." } } }
+Admin:       HKLM\SOFTWARE\Policies\ClaudeCode  (Settings value, REG_SZ JSON)
+User-level:  HKCU\SOFTWARE\Policies\ClaudeCode  (only if no HKLM source)
+Deploy via:  Group Policy or Intune
 ```
 
-**Hook types (2026):** `command` (shell script), `http` (POST to webhook endpoint — v2.1.63), `prompt` (LLM evaluation), `agent` (full subagent with tool access).
+**WSL note**: Set `wslInheritsWindowsSettings: true` in the Windows HKLM registry key to make WSL Claude Code sessions read Windows managed settings too.
 
-**New events (2026):** `PermissionDenied` (v2.1.89 — fires when user denies a permission prompt), `StopFailure` (fires when the Stop hook itself fails or exits non-zero).
+**Drop-in directory merge rules (v2.1.83)**:
+- `managed-settings.json` merged first as base
+- `*.json` files in `managed-settings.d/` sorted alphabetically and merged on top
+- Scalar values: later files override earlier ones
+- Arrays: concatenated and de-duplicated
+- Objects: deep-merged
+- Use numeric prefixes to control order: `10-telemetry.json`, `20-security.json`
 
-### 10.4 MCP Servers (Complementary Mechanism)
+**Key managed-only settings**:
+- `allowManagedHooksOnly` — blocks all user/project/non-managed-plugin hooks
+- `allowManagedMcpServersOnly` — only allowlisted MCP servers apply
+- `allowManagedPermissionRulesOnly` — only managed allow/ask/deny rules apply
+- `strictKnownMarketplaces` — controls which plugin marketplaces users may add
+- `forceRemoteSettingsRefresh` — block startup until remote managed settings are fetched (fail-closed)
+- `companyAnnouncements` — messages shown at startup, cycled at random
+- `channelsEnabled` — allow message channel delivery (Team/Enterprise)
+
+### 10.6 MCP Servers (Complementary Mechanism)
 
 MCP (Model Context Protocol) servers add new tools Claude can use. Skills can reference MCP tools. Each MCP server adds ~500–2000 tokens of tool schema to your context, so disable unused servers with `/mcp` to conserve tokens.
 
-### 10.5 Subagents and Skills
+**MCP server scopes**: User scope in `~/.claude.json`; project scope in `.claude/.mcp.json`; managed scope in `managed-mcp.json` (same directory as `managed-settings.json`).
+
+### 10.7 Subagents and Skills
 
 Skills with `context: fork` run in a forked subagent with its own context window. This keeps your main conversation thread clean — the subagent does the work, summarizes results, and returns them. This is particularly valuable for research-heavy skills that would otherwise bloat your main context.
 
-### 10.6 The /memory Command
+**Subagent frontmatter** (full field reference):
+```yaml
+---
+name: agent-name           # Required
+description: ...           # Required — drives auto-delegation; include "use proactively" if desired
+model: inherit             # inherit | sonnet | opus | haiku | full model ID (e.g. claude-opus-4-7)
+effort: medium             # low | medium | high | xhigh — thinking budget
+maxTurns: 50               # Max agentic loop iterations before stopping
+tools: Read, Grep          # Allowlist — only these tools available
+disallowedTools: Write     # Denylist — block specific tools
+isolation: worktree        # "worktree" only — runs in isolated git worktree copy of repo
+background: true           # Run agent as background task (experimental)
+skills: [skill-name]       # Inject skills into agent context at startup (no discovery needed)
+memory:
+  scope: user              # user | project | local
+permissionMode: default    # default | plan | acceptEdits | auto | bypassPermissions
+hooks: ...                 # Lifecycle hooks, scoped to agent lifetime
+mcpServers: [...]          # Inline or reference already-connected MCP servers
+---
+```
 
-Run `/memory` at any time to see what memory files are currently loaded, verify path-scoped rules are activating correctly, and open any memory file for editing in your system editor.
+**Critical subagent constraint**: Subagents **cannot spawn other subagents**. The `Agent` tool is unavailable inside a subagent context. This is a hard architectural limit.
+
+**Session-wide subagent**: Use `claude --agent <name>` to run the entire session as a named subagent. For plugin agents: `claude --agent <plugin-name>:<agent-name>`. List all configured agents with `claude agents`.
+
+### 10.8 The /memory Command
+
+Run `/memory` at any time to see what memory files are currently loaded, verify path-scoped rules are activating correctly, toggle auto-memory on/off, and open any memory file for editing in your system editor.
 
 ---
 
 ## 11. Sources
 
-- Official Claude Code Memory Documentation: https://code.claude.com/docs/en/memory
-- Official Claude Code Skills Documentation: https://code.claude.com/docs/en/skills
-- Official Claude Code Settings: https://code.claude.com/docs/en/settings
-- Anthropic Engineering Blog on Agent Skills: https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills
-- Anthropic Skills Repository: https://github.com/anthropics/skills
-- Claude API Context Windows: https://platform.claude.com/docs/en/build-with-claude/context-windows
+All information sourced from official documentation as of May 2026:
+- Memory management: https://code.claude.com/docs/en/memory
+- Skills: https://code.claude.com/docs/en/skills
+- Subagents: https://code.claude.com/docs/en/sub-agents
+- Output styles: https://code.claude.com/docs/en/output-styles
+- Settings: https://code.claude.com/docs/en/settings
+- Plugins: https://code.claude.com/docs/en/plugins
+- Plugins reference: https://code.claude.com/docs/en/plugins-reference
+- Hooks reference: https://code.claude.com/docs/en/hooks
+- Best practices: https://code.claude.com/docs/en/best-practices
+- How Claude Code works: https://code.claude.com/docs/en/how-claude-code-worksude/settings.json` (project, git-tracked)
+3. `~/.claude/settings.json` (user, personal)
+4. `.claude/settings.local.json` (local overrides, gitignored)
+5. Skill frontmatter (scoped to skill lifetime)
+6. Agent/subagent frontmatter (scoped to agent lifetime)
+7. Plugin `hooks/hooks.json` (bundled with plugin)
+
+### 10.4 Auto-Memory System
+
+Claude Code has a **built-in persistent learning system** that saves project knowledge across sessions. When you ask Claude to "remember" something or Claude learns important context, it writes to `MEMORY.md` in the auto-memory directory.
+
+**Key facts:**
+- Storage: `~/.claude/projects/<project>/memory/MEMORY.md` (derived from git root)
+- All worktrees in the same git repo share **one** memory directory
+- Machine-local — not synced across machines; not shared with teammates
+- First **200 lines OR 25 KB** (whichever comes first) loaded at session start — hard cap, unlike CLAUDE.md files which load in full with no size limit
+- Can create satellite topic files (e.g., `database.md`, `deployment.md`) alongside `MEMORY.md`
+- This is **separate** from subagent MEMORY.md (which lives in `agent-memory/<name>/MEMORY.md`)
+
+**Configure:**
+```json
+// ~/.claude/settings.json — user setting only, not project
+{
+  "autoMemoryDirectory": "~/my-memory-dir"
+}
+```
+
+**Disable:**
+```bash
+CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude
+```
+
+**In-session control:** Run `/memory` to toggle, browse files, or open them in your editor. Type `#` at the start of input to immediately save a note:
+```
+# Use vertical slice architecture, not Clean Architecture, in this project
+```
+
+**What Claude saves**: Things you explicitly ask it to remember, recurring conventions it notices, architectural decisions, key file paths. You see "Writing memory" in the interface when it's active.
+
+### 10.5 Enterprise Managed Settings
+
+For enterprise deployments, Claude Code supports **multiple managed settings delivery mechanisms** — all taking the highest precedence, overriding user and project settings. Only **one managed source tier** is used at a time; they do not merge across tiers.
+
+**Precedence within managed tier** (highest to lowest):
+1. Server-managed (from Claude.ai admin console)
+2. MDM/OS-level (macOS plist, Windows HKLM Registry)
+3. File-based (`managed-settings.json` + `managed-settings.d/*.json`)
+4. HKCU Registry (Windows user-level — lowest managed tier)
+
+**File-based (all platforms):**
+```
+macOS:   /Library/Application Support/ClaudeCode/managed-settings.json
+Linux:   /etc/claude-code/managed-settings.json
+Windows: C:\Program Files\ClaudeCode\managed-settings.json
+
+Drop-in directory (alongside managed-settings.json):
+  managed-settings.d/
+  ├── 10-security.json       # Merged alphabetically on top of base
+  ├── 20-plugins.json        # Later files win on scalar values
+  └── 30-mcp-servers.json    # Arrays concatenate and deduplicate
+```
+
+**macOS MDM delivery:**
+```bash
+# Deploy via Jamf, Kandji (Iru), Mosyle, or manual `defaults write`
+# Managed plist domain: com.anthropic.claudecode
+defaults write com.anthropic.claudecode permissions.allow -array "Read" "Grep" "Glob"
+defaults write com.anthropic.claudecode sandbox.enabled -bool true
+```
+
+**Windows Registry:**
+```
+Admin:       HKLM\SOFTWARE\Policies\ClaudeCode  (Settings value, REG_SZ JSON)
+User-level:  HKCU\SOFTWARE\Policies\ClaudeCode  (only if no HKLM source)
+Deploy via:  Group Policy or Intune
+```
+
+**WSL note**: Set `wslInheritsWindowsSettings: true` in the Windows HKLM registry key to make WSL Claude Code sessions read Windows managed settings too.
+
+**Drop-in directory merge rules (v2.1.83)**:
+- `managed-settings.json` merged first as base
+- `*.json` files in `managed-settings.d/` sorted alphabetically and merged on top
+- Scalar values: later files override earlier ones
+- Arrays: concatenated and de-duplicated
+- Objects: deep-merged
+- Hidden files starting with `.` are ignored
+- Use numeric prefixes to control order: `10-telemetry.json`, `20-security.json`
+
+**Key managed-only settings**:
+- `allowManagedHooksOnly` — blocks all user/project/non-managed-plugin hooks
+- `allowManagedMcpServersOnly` — only allowlisted MCP servers apply
+- `allowManagedPermissionRulesOnly` — only managed allow/ask/deny rules apply
+- `strictKnownMarketplaces` — controls which plugin marketplaces users may add
+- `forceRemoteSettingsRefresh` — block startup until remote managed settings are fetched (fail-closed)
+- `companyAnnouncements` — messages shown at startup, cycled at random
+- `channelsEnabled` — allow message channel delivery (Team/Enterprise)
+
+### 10.6 MCP Servers (Complementary Mechanism)
+
+MCP (Model Context Protocol) servers add new tools Claude can use. Skills can reference MCP tools. Each MCP server adds ~500–2000 tokens of tool schema to your context, so disable unused servers with `/mcp` to conserve tokens.
+
+**MCP server scopes**: User scope in `~/.claude.json`; project scope in `.claude/.mcp.json`; managed scope in `managed-mcp.json`.
+
+### 10.7 Subagents and Skills
+
+Skills with `context: fork` run in a forked subagent with its own context window. This keeps your main conversation thread clean — the subagent does the work, summarizes results, and returns them. This is particularly valuable for research-heavy skills that would otherwise bloat your main context.
+
+**Subagent frontmatter** (full list for reference):
+```yaml
+---
+name: agent-name           # Required
+description: ...           # Required — drives auto-delegation
+model: inherit             # inherit | sonnet | opus | haiku | full model ID
+effort: medium             # low | medium | high | xhigh
+maxTurns: 50               # Max loop iterations
+tools: Read, Grep          # Allowlist
+disallowedTools: Write     # Denylist
+isolation: worktree        # Run in isolated git worktree copy
+background: true           # Background task (experimental)
+skills: [skill-name]       # Inject skills into agent context at startup
+memory:
+  scope: user              # user | project | local
+permissionMode: default    # default | plan | acceptEdits | auto | bypassPermissions
+hooks: ...                 # Lifecycle hooks (scoped to agent lifetime)
+mcpServers: [...]          # Inline or reference MCP servers
+---
+```
+
+**Critical subagent constraint**: Subagents **cannot spawn other subagents**. The `Agent` tool is unavailable inside a subagent context.
+
+### 10.8 The /memory Command
+
+Run `/memory` at any time to see what memory files are currently loaded, verify path-scoped rules are activating correctly, toggle auto-memory on/off, and open any memory file for editing in your system editor.
+
+---
+
+## 11. Sources
+
+All information sourced from official documentation as of May 2026:
+- Memory management: https://code.claude.com/docs/en/memory
+- Skills: https://code.claude.com/docs/en/skills
+- Subagents: https://code.claude.com/docs/en/sub-agents
+- Output styles: https://code.claude.com/docs/en/output-styles
+- Settings: https://code.claude.com/docs/en/settings
+- Plugins: https://code.claude.com/docs/en/plugins
+- Plugins reference: https://code.claude.com/docs/en/plugins-reference
+- Hooks reference: https://code.claude.com/docs/en/hooks
+- Best practices: https://code.claude.com/docs/en/best-practices
+- How Claude Code works: https://code.claude.com/docs/en/how-claude-code-works
+ude/settings.json` (project, git-tracked)
+3. `~/.claude/settings.json` (user, personal)
+4. `.claude/settings.local.json` (local overrides, gitignored)
+5. Skill frontmatter (scoped to skill lifetime)
+6. Agent/subagent frontmatter (scoped to agent lifetime)
+7. Plugin `hooks/hooks.json` (bundled with plugin)
+
+### 10.4 Auto-Memory System
+
+Claude Code has a **built-in persistent learning system** that saves project knowledge across sessions. When you ask Claude to "remember" something or Claude learns important context, it writes to `MEMORY.md` in the auto-memory directory.
+
+**Key facts:**
+- Storage: `~/.claude/projects/<project>/memory/MEMORY.md` (derived from git root)
+- All worktrees in the same git repo share **one** memory directory
+- Machine-local — not synced across machines; not shared with teammates
+- First **200 lines OR 25 KB** (whichever comes first) loaded at session start — hard cap, unlike CLAUDE.md files which load in full with no size limit
+- Can create satellite topic files (e.g., `database.md`, `deployment.md`) alongside `MEMORY.md`
+- This is **separate** from subagent MEMORY.md (which lives in `agent-memory/<name>/MEMORY.md`)
+
+**Configure:**
+```json
+// ~/.claude/settings.json — user setting only, not valid in project settings
+{
+  "autoMemoryDirectory": "~/my-memory-dir"
+}
+```
+
+**Disable:**
+```bash
+CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude
+```
+
+**In-session control:** Run `/memory` to toggle, browse files, or open them in your editor. Type `#` at the start of input to immediately save a note:
+```
+# Use vertical slice architecture, not Clean Architecture, in this project
+```
+
+**What Claude saves**: Things you explicitly ask it to remember, recurring conventions it notices, architectural decisions, key file paths. You see "Writing memory" in the interface when it's active.
+
+### 10.5 Enterprise Managed Settings
+
+For enterprise deployments, Claude Code supports **multiple managed settings delivery mechanisms** — all taking the highest precedence, overriding user and project settings. Only **one managed source tier** is used at a time; they do not merge across tiers.
+
+**Precedence within managed tier** (highest to lowest):
+1. Server-managed (from Claude.ai admin console)
+2. MDM/OS-level (macOS plist, Windows HKLM Registry)
+3. File-based (`managed-settings.json` + `managed-settings.d/*.json`)
+4. HKCU Registry (Windows user-level — lowest managed tier)
+
+**File-based (all platforms):**
+```
+macOS:   /Library/Application Support/ClaudeCode/managed-settings.json
+Linux:   /etc/claude-code/managed-settings.json
+Windows: C:\Program Files\ClaudeCode\managed-settings.json
+
+Drop-in directory (alongside managed-settings.json):
+  managed-settings.d/
+  ├── 10-security.json       # Merged alphabetically on top of base
+  ├── 20-plugins.json        # Later files win on scalar values
+  └── 30-mcp-servers.json    # Arrays concatenate and deduplicate
+```
+
+**macOS MDM delivery:**
+```bash
+# Deploy via Jamf, Kandji (Iru), Mosyle — domain: com.anthropic.claudecode
+defaults write com.anthropic.claudecode permissions.allow -array "Read" "Grep" "Glob"
+defaults write com.anthropic.claudecode sandbox.enabled -bool true
+```
+
+**Windows Registry:**
+```
+Admin:       HKLM\SOFTWARE\Policies\ClaudeCode  (Settings value, REG_SZ JSON)
+User-level:  HKCU\SOFTWARE\Policies\ClaudeCode  (only if no HKLM source)
+Deploy via:  Group Policy or Intune
+```
+
+**WSL note**: Set `wslInheritsWindowsSettings: true` in the Windows HKLM registry key to make WSL Claude Code sessions read Windows managed settings too.
+
+**Drop-in directory merge rules (v2.1.83)**:
+- `managed-settings.json` merged first as base
+- `*.json` files in `managed-settings.d/` sorted alphabetically and merged on top
+- Scalar values: later files override earlier ones
+- Arrays: concatenated and de-duplicated
+- Objects: deep-merged
+- Use numeric prefixes to control order: `10-telemetry.json`, `20-security.json`
+
+**Key managed-only settings**:
+- `allowManagedHooksOnly` — blocks all user/project/non-managed-plugin hooks
+- `allowManagedMcpServersOnly` — only allowlisted MCP servers apply
+- `allowManagedPermissionRulesOnly` — only managed allow/ask/deny rules apply
+- `strictKnownMarketplaces` — controls which plugin marketplaces users may add
+- `forceRemoteSettingsRefresh` — block startup until remote managed settings are fetched (fail-closed)
+- `companyAnnouncements` — messages shown at startup, cycled at random
+- `channelsEnabled` — allow message channel delivery (Team/Enterprise)
+
+### 10.6 MCP Servers (Complementary Mechanism)
+
+MCP (Model Context Protocol) servers add new tools Claude can use. Skills can reference MCP tools. Each MCP server adds ~500–2000 tokens of tool schema to your context, so disable unused servers with `/mcp` to conserve tokens.
+
+**MCP server scopes**: User scope in `~/.claude.json`; project scope in `.claude/.mcp.json`; managed scope in `managed-mcp.json` (same directory as `managed-settings.json`).
+
+### 10.7 Subagents and Skills
+
+Skills with `context: fork` run in a forked subagent with its own context window. This keeps your main conversation thread clean — the subagent does the work, summarizes results, and returns them. This is particularly valuable for research-heavy skills that would otherwise bloat your main context.
+
+**Subagent frontmatter** (full field reference):
+```yaml
+---
+name: agent-name           # Required
+description: ...           # Required — drives auto-delegation; include "use proactively" if desired
+model: inherit             # inherit | sonnet | opus | haiku | full model ID (e.g. claude-opus-4-7)
+effort: medium             # low | medium | high | xhigh — thinking budget
+maxTurns: 50               # Max agentic loop iterations before stopping
+tools: Read, Grep          # Allowlist — only these tools available
+disallowedTools: Write     # Denylist — block specific tools
+isolation: worktree        # "worktree" only — runs in isolated git worktree copy of repo
+background: true           # Run agent as background task (experimental)
+skills: [skill-name]       # Inject skills into agent context at startup (no discovery needed)
+memory:
+  scope: user              # user | project | local
+permissionMode: default    # default | plan | acceptEdits | auto | bypassPermissions
+hooks: ...                 # Lifecycle hooks, scoped to agent lifetime
+mcpServers: [...]          # Inline or reference already-connected MCP servers
+---
+```
+
+**Critical subagent constraint**: Subagents **cannot spawn other subagents**. The `Agent` tool is unavailable inside a subagent context. This is a hard architectural limit.
+
+**Session-wide subagent**: Use `claude --agent <name>` to run the entire session as a named subagent. For plugin agents: `claude --agent <plugin-name>:<agent-name>`. List all configured agents with `claude agents`.
+
+### 10.8 The /memory Command
+
+Run `/memory` at any time to see what memory files are currently loaded, verify path-scoped rules are activating correctly, toggle auto-memory on/off, and open any memory file for editing in your system editor.
+
+---
+
+## 11. Sources
+
+All information sourced from official documentation as of May 2026:
+- Memory management: https://code.claude.com/docs/en/memory
+- Skills: https://code.claude.com/docs/en/skills
+- Subagents: https://code.claude.com/docs/en/sub-agents
+- Output styles: https://code.claude.com/docs/en/output-styles
+- Settings: https://code.claude.com/docs/en/settings
+- Plugins: https://code.claude.com/docs/en/plugins
+- Plugins reference: https://code.claude.com/docs/en/plugins-reference
+- Hooks reference: https://code.claude.com/docs/en/hooks
+- Best practices: https://code.claude.com/docs/en/best-practices
+- How Claude Code works: https://code.claude.com/docs/en/how-claude-code-works
