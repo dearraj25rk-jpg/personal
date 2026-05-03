@@ -725,6 +725,29 @@ my-insurance-api/
 
 ## 8. Decision Framework — What Goes Where?
 
+### Decision Framework: Which File to Use?
+
+```
+You want to...
+      │
+      ├─► provide context for every session? ────────────────► CLAUDE.md
+      │
+      ├─► enforce rules conditionally (path/context)?  ──────► .claude/rules/*.md
+      │                                                         (YAML paths: glob)
+      │
+      ├─► create reusable, invokable capabilities? ──────────► .claude/skills/<name>/SKILL.md
+      │                                                         (auto-invoked via slash commands)
+      │
+      ├─► delegate a task to a specialized sub-agent? ───────► .claude/agents/<name>.md
+      │                                                         (invoked via Task tool)
+      │
+      ├─► control tool permissions? ──────────────────────────► .claude/settings.json
+      │                                                         (allowedTools, disabledTools)
+      │
+      └─► format responses differently? ──────────────────────► .claude/output-styles/<name>.md
+                                                                 (activate via /config)
+```
+
 When you have new instructions or knowledge to give Claude, use this decision tree:
 
 ```
