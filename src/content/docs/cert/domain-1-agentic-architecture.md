@@ -342,6 +342,59 @@ COMPLEX, OPEN-ENDED RESEARCH
            Right-size based on actual complexity.
 ```
 
+### Pattern 3: Parallel Fan-Out (Broadcast)
+
+Fan-out launches multiple specialist agents simultaneously for independent subtasks, then merges results. This is the pattern behind `/ultrareview` and multi-perspective analysis.
+
+```
+                    PARALLEL FAN-OUT PATTERN
+                    ─────────────────────────────────────────
+
+              User Request
+                    │
+                    ▼
+        ┌───────────────────────┐
+        │   ORCHESTRATOR        │
+        │                       │
+        │  1. Decompose task    │
+        │  2. Launch N agents   │
+        │     in parallel       │
+        │  3. Await all results │
+        │  4. Merge + synthesize│
+        └──────────┬────────────┘
+                   │
+       ┌───────────┼───────────┐
+       │           │           │
+       ▼           ▼           ▼
+  ┌─────────┐ ┌─────────┐ ┌─────────┐
+  │Agent A  │ │Agent B  │ │Agent C  │
+  │(domain 1│ │(domain 2│ │(domain 3│
+  │ specialist│ specialist│ specialist│
+  └────┬────┘ └────┬────┘ └────┬────┘
+       │           │           │
+       └───────────┼───────────┘
+                   │
+                   ▼
+        ┌──────────────────┐
+        │  MERGE / SYNTHESIS│
+        │  Deduplicate,     │
+        │  rank, format     │
+        └──────────────────┘
+                   │
+                   ▼
+               Final Result
+
+
+Key properties:
+  ✓ Each agent has FRESH context (no parent conversation)
+  ✓ Agents run concurrently → N× faster than sequential
+  ✓ Orchestrator aggregates, not individual agents
+  ✓ Use for: code review, multi-perspective research, parallel validation
+  ✗ Not for: tasks with dependencies between subtasks (use pipeline instead)
+```
+
+**Exam pattern:** Fan-out = fresh context per agent + parallel + merge. The exam tests that you know subagents NEVER inherit coordinator context.
+
 ---
 
 ## Task Statement 1.3: Subagent Invocation and Context Passing

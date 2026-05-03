@@ -120,6 +120,52 @@ TURN 7–20: Agent always has exact amounts/dates
 Result: Agent never says "as discussed earlier" — always uses exact values
 ```
 
+### Context Budget Management Flow
+
+```
+                    CONTEXT BUDGET MANAGEMENT
+                    ─────────────────────────────────────────────
+
+  Session starts:
+  ┌────────────────────────────────────────────────────────┐
+  │  Context budget: 200,000 tokens                        │
+  │  Used: 0 tokens (0%)                                   │
+  └────────────────────────────────────────────────────────┘
+  
+  As session progresses:
+  
+  ██████░░░░░░░░░░░░░░  30% used  →  Normal operation
+  
+  ████████████░░░░░░░░  60% used  →  Extract critical facts to persistent block
+                                     (before they get summarized away)
+  
+  ██████████████████░░  90% used  →  Decision point:
+  
+                          ┌──────────────────────────────────────────┐
+                          │  OPTION A: /compact                      │
+                          │  Summarize conversation, preserve facts  │
+                          │  Continue in same session                │
+                          │  ✓ Simple  ✗ Context degradation risk    │
+                          ├──────────────────────────────────────────┤
+                          │  OPTION B: Extract → New session         │
+                          │  1. Extract case facts (structured)      │
+                          │  2. Start fresh session                  │
+                          │  3. Inject facts as context              │
+                          │  ✓ Clean  ✓ No degradation  ✗ More work │
+                          ├──────────────────────────────────────────┤
+                          │  OPTION C: Escalate to human             │
+                          │  If task is too complex for remaining    │
+                          │  context, notify user                    │
+                          │  ✓ Reliable  ✗ Interrupts automation     │
+                          └──────────────────────────────────────────┘
+  
+  ████████████████████  100%  →  Auto-compaction triggered
+                               (may lose critical task context!)
+  
+  EXAM RULE: Extract case facts to a PERSISTENT block OUTSIDE the
+  summarized history. "Increase context window" is always wrong.
+```
+
 ### The "Lost in the Middle" Effect
 
 Models reliably process information at the **beginning** and **end** of long inputs. Information in the **middle** gets less attention:

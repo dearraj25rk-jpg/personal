@@ -253,3 +253,46 @@ These always point to the **lowest-effort, highest-leverage fix** — not the mo
 | **Context tools** | `/compact` (reduce), `/memory` (verify loaded config) |
 | **CI/CD** | `claude -p`, `--output-format json`, `--bare` (skip CLAUDE.md auto-discovery for reproducibility), independent sessions, prior findings |
 | **Context window** | Opus 4.6: 1M tokens (Max/Team/Enterprise); Sonnet 4.6: 1M native; Haiku 4.5: 200K |
+
+---
+
+## Quick Reference: Anti-Patterns to Eliminate Immediately
+
+Every distractor answer in the exam uses one of these anti-patterns. Recognize them instantly:
+
+```
+ANTI-PATTERN                    WHY IT'S WRONG                CORRECT APPROACH
+───────────────────────────────────────────────────────────────────────────────────
+"Add a mandatory instruction     Prompts = probabilistic.      Use a hook for
+ to the system prompt"           Can fail. Not deterministic.  guaranteed compliance.
+
+"Use sentiment analysis to        Brittle. Off-topic context    Use explicit structured
+ detect when to escalate"         triggers wrong escalation.    criteria (keywords, fields).
+
+"Same session self-review"        Reviewer shares the author's  Fresh session / independent
+                                  biases and blind spots.       instance for review.
+
+"Set CLAUDE_HEADLESS=true"        This flag does not exist.     Use -p flag for
+                                  Made-up distractor.           non-interactive CI mode.
+
+"Check if response text says      Text parsing is unreliable.   Check stop_reason field
+ 'task complete'"                 LLM may phrase differently.   == "end_turn".
+
+"Increase the context window"     Doesn't fix root cause.       Extract facts to persistent
+                                  Just defers the problem.      block before summarization.
+
+"Add few-shot examples first"     Tool descriptions come first. Fix tool description.
+ (when tool selection fails)      If desc is wrong, examples   Then add examples if needed.
+                                  can't fully compensate.
+
+"Cap iterations at N"             Arbitrary cap causes          Use completion signals:
+                                  incomplete tasks.             success/failure state.
+
+"Suppress retrieval errors        Silences real failures.       Return isError:true with
+ as empty results"                Downstream gets wrong data.   errorCategory for recovery.
+
+"Use tool_choice: auto when       Auto may choose not to        tool_choice: "any" forces
+ structured output required"      use a tool at all.            tool use, guarantees schema.
+```
+
+**Memory trick:** If the answer involves prompts for compliance, text parsing for routing, or same-session for review — it's wrong. Choose hooks, structured fields, and fresh sessions instead.

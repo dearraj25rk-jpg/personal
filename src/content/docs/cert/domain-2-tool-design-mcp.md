@@ -482,6 +482,62 @@ response = client.messages.create(
 
 ## Task Statement 2.4: MCP Server Integration
 
+### MCP Architecture Diagram
+
+```
+                    MODEL CONTEXT PROTOCOL (MCP) ARCHITECTURE
+                    ─────────────────────────────────────────────────────
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                     CLAUDE CODE / CLIENT                         │
+  │                                                                  │
+  │  ┌─────────────────────────────────────────────────────────┐    │
+  │  │  MCP Client (built into Claude Code)                    │    │
+  │  │  - Manages connections to MCP servers                   │    │
+  │  │  - Exposes server capabilities as tools                 │    │
+  │  │  - Handles OAuth for external services                  │    │
+  │  └───────────────────────┬─────────────────────────────────┘    │
+  └──────────────────────────┼───────────────────────────────────────┘
+                             │  JSON-RPC over stdio/SSE/HTTP
+                             │
+          ┌──────────────────┼──────────────────────┐
+          │                  │                      │
+          ▼                  ▼                      ▼
+  ┌──────────────┐  ┌──────────────┐      ┌──────────────────┐
+  │ MCP Server 1 │  │ MCP Server 2 │  ... │  MCP Server N    │
+  │  (filesystem)│  │  (database)  │      │  (custom tools)  │
+  │              │  │              │      │                  │
+  │  Resources:  │  │  Tools:      │      │  Prompts:        │
+  │  - files     │  │  - query     │      │  - templates     │
+  │  - dirs      │  │  - execute   │      │  - workflows     │
+  │              │  │  - schema    │      │                  │
+  └──────────────┘  └──────────────┘      └──────────────────┘
+          │                  │                      │
+          ▼                  ▼                      ▼
+  Local filesystem    PostgreSQL DB          GitHub API, etc.
+
+
+MCP Capabilities:
+  TOOLS      = functions Claude can call (side effects OK)
+  RESOURCES  = read-only data sources (files, DB records, URIs)
+  PROMPTS    = reusable prompt templates the client can request
+
+Configuration (.mcp.json):
+  {
+    "mcpServers": {
+      "filesystem": {
+        "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/src"],
+        "type": "stdio"
+      },
+      "postgres": {
+        "command": "npx", "args": ["-y", "@modelcontextprotocol/server-postgres"],
+        "env": {"DATABASE_URL": "postgresql://localhost/mydb"},
+        "type": "stdio"
+      }
+    }
+  }
+```
+
 ### Configuration Scopes
 
 ```
