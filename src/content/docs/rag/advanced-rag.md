@@ -5,7 +5,7 @@ sidebar:
   order: 9
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 
 ## What Is "Advanced RAG"?
 
@@ -819,6 +819,86 @@ def crag_retrieve(query: str) -> list[Document]:
         # Combine both
         return docs + web_search_retriever.invoke(query)
 ```
+
+---
+
+## Fragment-Level Evidence Selection (FES-RAG, 2025)
+
+Instead of retrieving whole chunks, FES-RAG selects atomic evidence fragments — sentences or image regions — using information gain, reducing noise and improving answer precision.
+
+**Core idea:** A document chunk may contain 5 sentences but only 1 is directly relevant. FES-RAG scores each sentence independently and forwards only the highest-gain fragments to the LLM.
+
+```
+STANDARD CHUNK RETRIEVAL             FES-RAG
+──────────────────────────           ─────────────────────────────
+                                      
+ Query: "What is the refund period?"  Query: "What is the refund period?"
+     │                                    │
+     ▼                                    ▼
+ Retrieve top-3 chunks               Retrieve top-10 chunks
+ (full text, ~512 tokens each)           │
+     │                                    ▼
+     │                                Fragment scoring (per-sentence IG)
+     │                                    │
+     │                                ┌───▼─────────────────────────────┐
+     │                                │ Chunk 1: "Our products are..."  │
+     │                                │  ✗ Sentence 1: [IG=0.12]       │
+     │                                │  ✓ Sentence 2: [IG=0.94] ◄─────┼── selected
+     │                                │  ✗ Sentence 3: [IG=0.08]       │
+     │                                └─────────────────────────────────┘
+     │                                    │
+     ▼                                    ▼ (only high-IG fragments)
+ LLM sees ~1,536 tokens              LLM sees ~300 tokens
+ (much noise)                        (high precision)
+```
+
+### Implementation Pattern
+
+```python
+from anthropic import Anthropic
+
+client = Anthropic()
+
+def score_fragment_relevance(query: str, fragment: str) -> float:
+    """Score a sentence fragment's relevance to the query using LLM."""
+    response = client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=10,
+        messages=[{
+            "role": "user",
+            "content": f"Score how directly this fragment answers the query.\nQuery: {query}\nFragment: {fragment}\nScore (0.0-1.0, just the number):"
+        }]
+    )
+    try:
+        return float(response.content[0].text.strip())
+    except ValueError:
+        return 0.0
+
+def fes_rag_retrieve(query: str, chunks: list[str], top_n_fragments: int = 5) -> str:
+    """Fragment-level evidence selection."""
+    all_fragments = []
+    for chunk in chunks:
+        sentences = chunk.split(". ")
+        for sent in sentences:
+            if len(sent.strip()) > 20:   # skip very short sentences
+                score = score_fragment_relevance(query, sent)
+                all_fragments.append((score, sent))
+    
+    # Sort by relevance score, take top N
+    all_fragments.sort(reverse=True)
+    top_fragments = [frag for _, frag in all_fragments[:top_n_fragments]]
+    
+    return "\n".join(top_fragments)
+```
+
+### When to Use FES
+
+| Situation | Benefit |
+|---|---|
+| Long documents with scattered answers | Dramatically reduces noise |
+| Token budget is tight | Extract only the relevant sentences |
+| Multi-document synthesis | Comparable to the best relevant sentences across all docs |
+| Multimodal RAG (images) | Extract only relevant image regions |
 
 ---
 

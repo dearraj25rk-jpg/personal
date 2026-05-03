@@ -5,7 +5,7 @@ sidebar:
   order: 18
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 
 ## Why Graphs for Retrieval?
 
@@ -883,6 +883,101 @@ Graph-R1 treats retrieval as a **multi-turn agent-environment interaction**, tra
 - **End-to-end training**: both graph construction and retrieval policy are jointly optimized
 
 Graph-R1 outperforms traditional GraphRAG in reasoning accuracy and retrieval efficiency, particularly on multi-hop reasoning benchmarks where static community summaries are insufficient.
+
+---
+
+## Hyper-RAG (2025)
+
+**Paper:** "Hyper-RAG: Combating LLM Hallucinations using Hypergraph-driven Retrieval-Augmented Generation" (2025)  
+**Key claim:** 12.3% accuracy improvement over direct LLM use; outperforms both GraphRAG and LightRAG on domain-specific tasks.
+
+### Why Hypergraphs?
+
+Standard graphs model **pairwise** relationships (A → B). Hypergraphs model **many-to-many** relationships — a single hyperedge can connect multiple entities simultaneously. This is critical for domains like medicine, law, and finance where facts involve multiple co-participants.
+
+```
+STANDARD GRAPH EDGE:          HYPEREDGE:
+Drug_A ──── interacts_with ──── Drug_B     Drug_A, Drug_B, Drug_C ──── "interact under condition X"
+(pairwise only)                            (all three implicated simultaneously)
+```
+
+### Architecture
+
+```
+                    HYPER-RAG PIPELINE
+                    ─────────────────────────────────────────
+
+ Documents
+     │
+     ▼ Entity + Relation Extraction (LLM)
+ ┌────────────────────────────────────────┐
+ │  HYPERGRAPH CONSTRUCTION               │
+ │                                        │
+ │  Nodes: entities (drugs, diseases,     │
+ │         companies, clauses, ...)       │
+ │                                        │
+ │  Hyperedges: relationships connecting  │
+ │  2+ entities simultaneously            │
+ │                                        │
+ │  Example hyperedge:                    │
+ │  {Metformin, Kidney_Disease, Elderly}  │
+ │   → "Avoid high doses in this group"  │
+ └────────────────┬───────────────────────┘
+                  │
+     ┌────────────▼────────────────┐
+     │   DUAL RETRIEVAL ENGINE     │
+     │                             │
+     │   1. Standard vector search │  ← finds relevant hyperedges by semantic similarity
+     │                             │
+     │   2. Hyperedge traversal    │  ← follows connected hyperedges (multi-entity paths)
+     └────────────┬────────────────┘
+                  │
+     ┌────────────▼────────────────┐
+     │   CONTEXT ASSEMBLY          │
+     │                             │
+     │   Merge retrieved hyperedge │
+     │   text + supporting chunks  │
+     └────────────┬────────────────┘
+                  │
+                  ▼
+           LLM Generation
+```
+
+### When to Use Hyper-RAG
+
+- **Medical / Pharmaceutical:** Drug interaction tables, contraindication reasoning
+- **Legal:** Multi-party contract clause analysis
+- **Financial compliance:** Rules that apply only when multiple conditions are met simultaneously
+
+### Python Quick Start
+
+```python
+# pip install hyperrag  (community package)
+from hyperrag import HyperRAGPipeline
+
+pipeline = HyperRAGPipeline(
+    llm_model="claude-opus-4-5",
+    embedding_model="BAAI/bge-large-en-v1.5",
+    hyperedge_extraction_prompt="Extract entities and multi-party relationships...",
+)
+
+# Index documents
+pipeline.index(documents)
+
+# Query
+result = pipeline.query("What drugs should be avoided in elderly patients with kidney disease?")
+print(result.answer)
+print(result.hyperedge_evidence)   # which hyperedges were used
+```
+
+### Benchmarks
+
+| System | MedQA Accuracy | HotpotQA F1 |
+|---|---|---|
+| Direct LLM | 68.2% | 71.4% |
+| GraphRAG | 74.1% | 78.2% |
+| LightRAG | 75.8% | 79.6% |
+| **Hyper-RAG** | **80.5%** | **82.3%** |
 
 ---
 

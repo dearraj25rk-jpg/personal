@@ -5,7 +5,7 @@ sidebar:
   order: 12
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 
 ## Why Evaluate RAG Systems?
 
@@ -106,6 +106,47 @@ results = evaluate(
 )
 print(results)
 # {'faithfulness': 0.97, 'answer_relevancy': 0.95, 'context_precision': 0.92, 'context_recall': 0.88}
+```
+
+### RAGAS Evaluation Pipeline
+
+```
+                    RAGAS EVALUATION FLOW
+                    ─────────────────────────────────────────────
+
+  Input:
+  ┌──────────────┐   ┌──────────────────────┐   ┌────────────────┐
+  │    Query     │   │  Retrieved Contexts  │   │ Ground Truth   │
+  │              │   │  (chunks from RAG)   │   │ (reference ans)│
+  └──────┬───────┘   └──────────┬───────────┘   └───────┬────────┘
+         │                      │                        │
+         └──────────────────────┼────────────────────────┘
+                                │
+                    ┌───────────▼───────────┐
+                    │    LLM-as-Judge       │
+                    │   (GPT-4 / Claude)    │
+                    └───────────┬───────────┘
+                                │
+              ┌─────────────────┼─────────────────────┐
+              │                 │                     │
+              ▼                 ▼                     ▼
+     ┌────────────────┐ ┌───────────────┐  ┌──────────────────┐
+     │  Faithfulness  │ │    Answer     │  │    Context       │
+     │                │ │   Relevancy   │  │  Precision /     │
+     │  "Does every   │ │               │  │    Recall        │
+     │  claim in the  │ │  "Does the    │  │                  │
+     │  answer appear │ │  answer       │  │  "Were the       │
+     │  in context?"  │ │  address the  │  │  right chunks    │
+     │                │ │  query?"      │  │  retrieved?"     │
+     │  Range: 0→1    │ │  Range: 0→1   │  │  Range: 0→1      │
+     └────────────────┘ └───────────────┘  └──────────────────┘
+              │                 │                     │
+              └─────────────────┼─────────────────────┘
+                                │
+                    ┌───────────▼───────────┐
+                    │  Aggregate RAGAS      │
+                    │  Score (avg)          │
+                    └───────────────────────┘
 ```
 
 ---

@@ -1,11 +1,11 @@
 ---
 title: Retrieval Strategies
-description: Complete 2025 guide to RAG retrieval — dense, BM25, hybrid RRF, HyDE, MMR, ColBERT v2 late interaction, FlashRank, RankGPT, Cohere Rerank v3, Voyage Reranker — with code examples and benchmarks.
+description: Complete 2026 guide to RAG retrieval — dense, BM25, hybrid RRF, HyDE, MMR, ColBERT v2 late interaction, FlashRank, RankGPT, Cohere Rerank v3, Voyage Reranker — with code examples and benchmarks.
 sidebar:
   order: 7
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 
 ## Retrieval Overview
 
