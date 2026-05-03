@@ -223,16 +223,34 @@ model = DebertaV2ForSequenceClassification.from_pretrained(
 
 ---
 
-## ModernBERT (2024) — The New Standard
+## ModernBERT (December 2024 / ACL 2025)
 
-**Paper:** Warner et al., "Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder for Fast, Memory Efficient, and Long Context Finetuning and Inference" (arXiv:2412.13663)  
-**By:** Answer.AI + LightOn  
+**Paper:** "Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder for Fast, Memory Efficient, and Long Document Understanding" (ACL 2025)  
+**By:** Answer.AI, LightOn, and collaborators (including Jeremy Howard)  
 **Released:** December 19, 2024  
 **HF Hub:** `answerdotai/ModernBERT-base` (149M), `answerdotai/ModernBERT-large` (395M)
 
-ModernBERT is the first true Pareto improvement over BERT since RoBERTa — better accuracy, better speed, and 16× longer context, all at once. It brings the architectural advances from modern LLMs (RoPE, Flash Attention 2, GLU activations) into the BERT-style encoder paradigm, trained on 2 trillion tokens including code.
+ModernBERT is the first true Pareto improvement over BERT since RoBERTa — better accuracy, better speed, and 16× longer context, all at once. It integrates 6 years of decoder-side improvements back into encoder architectures.
 
-### Why ModernBERT is a Major Leap
+### Why ModernBERT Matters
+
+Classic BERT:
+- 512 token context window
+- ~3.3 billion training tokens (Wikipedia + BooksCorpus)
+- Static absolute positional embeddings
+- Standard GELU activation
+- All tokens attend to all tokens (quadratic attention)
+- Token type IDs required for segment separation
+
+ModernBERT:
+- **8,192 token context window** (16× BERT)
+- **2 trillion training tokens** (web, code, science)
+- **Rotary Positional Embeddings (RoPE)** for long sequences
+- **GeGLU activation** (better throughput and performance)
+- **Alternating Attention** (efficient long-context)
+- **Padding-free inference** (skips computation for padded tokens)
+- **No Token Type IDs** (simpler, more generic)
+- **Bias removal + Pre-normalization** (stabler training)
 
 Previous encoder improvements always traded something off:
 
@@ -273,7 +291,7 @@ Layer 4:  Local  → attend to window of 128 tokens
 
 Replaces the original BERT's GeLU MLP layers with Gated Linear Units (GeGLU), as used in modern LLMs like PaLM. This consistently improves representational quality for equivalent parameter count.
 
-#### 4. Flash Attention 2 + Unpadding + Sequence Packing
+#### 4. Padding-Free Inference + Sequence Packing
 
 ModernBERT completely eliminates padding waste:
 
@@ -283,7 +301,15 @@ ModernBERT completely eliminates padding waste:
 
 Result: 10–20% speedup over previous unpadding methods. For variable-length real-world inputs, ModernBERT is **2–4× faster** than DeBERTa.
 
-#### 5. Hardware-Aware Model Design
+#### 5. No Token Type IDs
+
+ModernBERT removes the segment embedding (token type IDs) used by BERT for sentence-pair tasks. This simplifies the architecture and makes it more generic — no special handling needed when processing single sequences.
+
+#### 6. Bias Removal & Pre-Normalization
+
+Biases are removed from linear layers throughout the model, and layer normalization is applied before the attention/FFN blocks (Pre-LN) rather than after (Post-LN). This improves training stability, especially at large context lengths.
+
+#### 7. Hardware-Aware Model Design
 
 Embedding dimensions (768 base, 1024 large) are **identical to original BERT** — enabling drop-in replacement. Internal dimensions were tuned for inference efficiency on common GPUs (RTX 3090/4090, A10, T4, L4) rather than benchmark hardware.
 
@@ -372,7 +398,7 @@ model = SentenceTransformer("answerdotai/ModernBERT-large")
 embeddings = model.encode(["long document 1...", "long document 2..."])
 ```
 
-### Ecosystem Status (as of April 2026)
+### Ecosystem Status (as of May 2026)
 
 - **HuggingFace Transformers:** Full native support (v4.48+)
 - **Sentence Transformers:** Supported as backbone

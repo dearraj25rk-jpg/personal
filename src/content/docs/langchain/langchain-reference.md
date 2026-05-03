@@ -34,7 +34,7 @@ Most RAG applications primarily operate in the data and orchestration layers. Ag
 
 ## 2. Ecosystem & Package Architecture
 
-### The Package Split (v1.1 — Current as of March 2026)
+### The Package Split (v1.1 — Current as of May 2026)
 
 LangChain v1.0, released October 2025 (v1.1 March 2026), completed a major restructuring that had been underway since v0.1. Understanding this split is mandatory before writing any code, because importing from the wrong package is a frequent source of `ImportError` and unexpected behaviour.
 
@@ -101,7 +101,7 @@ You can verify the installed versions with `pip show langchain langchain-core la
 
 The old `LLMChain`, `SequentialChain`, `ConversationalRetrievalChain`, and `RetrievalQA` classes have been **moved to `langchain-classic`** as of v1.0. They are no longer in the main `langchain` package. Every guide that uses these is outdated — LCEL and `create_agent` replace all of them.
 
-### Recommended Model IDs (April 2026)
+### Recommended Model IDs (May 2026)
 
 | Task | Model | Package |
 |------|-------|--------|
@@ -113,7 +113,7 @@ The old `LLMChain`, `SequentialChain`, `ConversationalRetrievalChain`, and `Retr
 ```python
 from langchain.chat_models import init_chat_model
 
-# Standard pattern (April 2026)
+# Standard pattern (May 2026)
 sonnet = init_chat_model("anthropic:claude-sonnet-4-6", temperature=0.0)
 opus   = init_chat_model("anthropic:claude-opus-4-6",  temperature=0.0)
 haiku  = init_chat_model("anthropic:claude-haiku-4-5", temperature=0.0)
@@ -3099,6 +3099,123 @@ app = graph.compile()
 
 ---
 
-*End of LangChain Deep Reference Guide - v1.1 - General Edition - Updated April 2026*
+## 23. New in LangChain v1.1 (May 2026)
+
+### `create_agent` API — The New Standard
+
+LangChain v1.1 introduces `create_agent` as the idiomatic way to build agents, replacing the older `initialize_agent` and `AgentExecutor` constructs:
+
+```python
+from langchain.agents import create_agent
+from langchain_anthropic import ChatAnthropic
+from langchain_community.tools import DuckDuckGoSearchRun
+
+llm = ChatAnthropic(model="claude-sonnet-4-5")
+tools = [DuckDuckGoSearchRun()]
+
+# New clean API
+agent = create_agent(
+    llm=llm,
+    tools=tools,
+    system_message="You are a research assistant.",
+    middleware=[                          # NEW: composable middleware
+        "pii_redaction",                 # strip PII before LLM sees it
+        "human_approval",                # human-in-the-loop gate
+    ],
+)
+
+result = agent.invoke({"input": "What is the latest LangChain version?"})
+```
+
+**Migration from old API:**
+
+```python
+# OLD (v0.x / early v1.0) — deprecated
+from langchain.agents import initialize_agent, AgentType
+agent = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION)
+
+# NEW (v1.1) — preferred
+from langchain.agents import create_agent
+agent = create_agent(llm=llm, tools=tools)
+```
+
+### Model Profiles
+
+Every LLM/chat model now exposes a `.profile` attribute for programmatic capability introspection:
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+llm = ChatAnthropic(model="claude-sonnet-4-5")
+
+print(llm.profile.supports_vision)          # True
+print(llm.profile.supports_tool_calling)    # True
+print(llm.profile.context_window)           # 200000
+print(llm.profile.supports_streaming)       # True
+print(llm.profile.modalities)               # ["text", "image", "pdf"]
+```
+
+**Use case:** Write model-agnostic code that adapts at runtime:
+
+```python
+def build_pipeline(llm):
+    if llm.profile.supports_vision:
+        return multimodal_chain
+    else:
+        return text_only_chain
+```
+
+### Structured Content Blocks
+
+All model responses are now structured content blocks rather than plain strings:
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage
+
+llm = ChatAnthropic(model="claude-sonnet-4-5")
+response = llm.invoke([HumanMessage(content="What is Python?")])
+
+# v1.1 response structure
+print(response.content)          # list of content blocks
+# [{"type": "text", "text": "Python is..."}]
+
+# For tool calls:
+# [{"type": "tool_use", "id": "toolu_01", "name": "search", "input": {...}}]
+```
+
+### `langchain-classic` for Backward Compatibility
+
+Legacy chains and patterns moved to `langchain-classic`:
+
+```bash
+pip install langchain-classic    # old patterns, backward compat
+```
+
+```python
+# Accessing deprecated legacy chains
+from langchain_classic.chains import LLMChain, StuffDocumentsChain
+```
+
+### LangSmith → Fleet Rebranding
+
+LangSmith has been rebranded as **Fleet** with expanded features:
+
+```python
+import os
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+os.environ["LANGCHAIN_API_KEY"] = "your-fleet-api-key"
+os.environ["LANGCHAIN_PROJECT"] = "my-rag-project"
+
+# Fleet (formerly LangSmith) now includes:
+# - Experiment tracking with version comparison
+# - Cost tracking across all LLM calls
+# - On-prem / self-hosted deployment option
+# - A/B testing for prompt variants
+```
+
+---
+
+*End of LangChain Deep Reference Guide - v1.1 - General Edition - Updated May 2026*
 
 *Next recommended study: LangSmith evaluation cookbook, Deep Agents v0.4 sandbox configuration, MultiVectorRetriever for Hierarchical RAG, and LangSmith Fleet deployment guide.*

@@ -41,3 +41,12 @@ response = chain.invoke({"question": "What is LCEL?"})
 ```
 
 See the [full reference guide](/ai-lab/langchain/langchain-reference/) for chains, RAG pipelines, agents, and production deployment patterns.
+
+### What's New in LangChain v1.1 (May 2026)
+
+- **`create_agent` API** — cleaner agent construction replacing `initialize_agent`
+- **Model profiles** — `.profile` attribute on all LLMs for capability introspection
+- **Content blocks** — structured response objects instead of plain strings
+- **Composable middleware** — PII redaction, human approval as plug-and-play middleware
+- **Fleet** (formerly LangSmith) — rebranded observability with expanded features
+- **`langchain-classic`** — backward-compatible package for legacy chains
