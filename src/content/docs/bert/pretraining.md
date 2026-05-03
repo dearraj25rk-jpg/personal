@@ -84,6 +84,52 @@ Softmax → probabilities over vocabulary
 
 ---
 
+### MLM + NSP Visual Overview
+
+```
+                    BERT PRE-TRAINING OBJECTIVES
+                    ─────────────────────────────────────────────
+
+  MASKED LANGUAGE MODELING (MLM)
+  ──────────────────────────────
+  
+  Original sentence: "The cat sat on the mat"
+  
+  Step 1: Randomly select 15% of tokens
+          "The [MASK] sat on the [MASK]"
+                ↑               ↑
+           selected           selected
+  
+  Step 2: For each selected token:
+    80% → Replace with [MASK]   "The [MASK] sat on the [MASK]"
+    10% → Replace with random   "The dog sat on the apple"
+    10% → Keep original         "The cat sat on the mat"
+  
+  Step 3: BERT predicts the original token at masked positions
+  
+          Input:    [CLS] The [MASK] sat on the [MASK] [SEP]
+                                ↓                   ↓
+          Predict:           "cat"               "mat"
+                     (cross-entropy loss)
+
+
+  NEXT SENTENCE PREDICTION (NSP) — Removed in RoBERTa / ModernBERT
+  ─────────────────────────────────────────────────────────────────
+  
+  50% IsNext:    [CLS] Sentence A [SEP] Sentence B [SEP]  → label: IsNext
+                       "Dogs bark."      "They are loud."
+  
+  50% NotNext:   [CLS] Sentence A [SEP] Random B [SEP]    → label: NotNext
+                       "Dogs bark."      "Stars are distant."
+  
+  BERT's [CLS] output → binary classification head
+  
+  Note: NSP was found to be too easy (topic shift detection, not
+  discourse understanding). RoBERTa, ALBERT, ModernBERT all drop it.
+```
+
+---
+
 ## Next Sentence Prediction (NSP)
 
 ### The Idea

@@ -19,6 +19,7 @@ Retrieval-Augmented Generation (RAG) grounds LLM responses in your own documents
 | [Agentic RAG](./agentic-rag) | Self-RAG, CRAG, tool-calling, Adaptive RAG, LangGraph workflows |
 | [Evaluation](./evaluation) | RAGAS metrics, faithfulness, context precision/recall, BEIR benchmarks, CI/CD testing |
 | [Production RAG](./production-rag) | Semantic caching, async retrieval, observability, guardrails, cost optimization |
+| [Multimodal RAG](./multimodal-rag) | CLIP embeddings, PDF parsing, late fusion, visual hallucination checks — 2025–2026 |
 
 ## Vectorless RAG — Beyond Vector Similarity
 
@@ -30,6 +31,7 @@ When vector search isn't enough — structured documents, exact-match needs, ent
 | [Contextual Retrieval](./contextual-retrieval) | Anthropic Nov 2024: LLM-generated context prepended to every chunk + BM25 hybrid → 67% fewer retrieval failures |
 | [BM25 & Sparse Retrieval](./bm25-sparse-retrieval) | BM25 math explained step-by-step, SPLADE learned sparse, PostgreSQL FTS, Elasticsearch, hybrid RRF |
 | [GraphRAG & Knowledge Graphs](./graph-rag) | Microsoft GraphRAG (2024) Leiden communities, LightRAG (2024), Neo4j Cypher QA — entity relationships + global synthesis |
+| [Hyper-RAG](./graph-rag#hyper-rag-2025) | Hypergraph-driven retrieval — reduces hallucinations 12.3% in high-stakes domains (medicine, law) |
 
 ## Interactive Courses & Visual Guides
 

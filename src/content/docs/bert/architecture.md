@@ -60,6 +60,84 @@ BERT uses **learned** (not sinusoidal) absolute position embeddings for position
 
 ---
 
+## BERT Architecture Diagram
+
+```
+                    BERT ARCHITECTURE (BERT-base: 12 layers)
+                    ─────────────────────────────────────────
+
+  Input Text: "The cat sat on the mat"
+       │
+       ▼ WordPiece Tokenization
+  [CLS] The  cat  sat  on  the  mat  [SEP]
+    │    │    │    │    │    │    │    │
+    ▼    ▼    ▼    ▼    ▼    ▼    ▼    ▼
+  ┌─────────────────────────────────────────┐
+  │       INPUT EMBEDDING LAYER             │
+  │  E_token + E_segment + E_position       │
+  │  → H = 768 dims per token               │
+  └───────────────────┬─────────────────────┘
+                      │ 8 token vectors, each 768-dim
+                      ▼
+  ┌─────────────────────────────────────────┐
+  │         ENCODER BLOCK 1 of 12           │
+  │                                         │
+  │  ┌───────────────────────────────────┐  │
+  │  │   MULTI-HEAD SELF-ATTENTION (12h) │  │
+  │  │                                   │  │
+  │  │  Q = W_Q · x  (768 → 768)        │  │
+  │  │  K = W_K · x  (768 → 768)        │  │
+  │  │  V = W_V · x  (768 → 768)        │  │
+  │  │                                   │  │
+  │  │  head_i = Attention(QW_i, KW_i, VW_i)│
+  │  │  → each head: 768/12 = 64 dims   │  │
+  │  │                                   │  │
+  │  │  Attention(Q,K,V) =               │  │
+  │  │    softmax(QK^T / √64) · V        │  │
+  │  │                                   │  │
+  │  │  MultiHead = concat(h1...h12)W_O │  │
+  │  └──────────────────┬────────────────┘  │
+  │                     │                   │
+  │  ┌──────────────────▼────────────────┐  │
+  │  │   ADD & LAYER NORM                │  │
+  │  │   x = LayerNorm(x + attention)    │  │
+  │  └──────────────────┬────────────────┘  │
+  │                     │                   │
+  │  ┌──────────────────▼────────────────┐  │
+  │  │   FEED-FORWARD NETWORK            │  │
+  │  │   FFN(x) = GELU(xW_1 + b_1)W_2   │  │
+  │  │   768 → 3,072 → 768               │  │
+  │  └──────────────────┬────────────────┘  │
+  │                     │                   │
+  │  ┌──────────────────▼────────────────┐  │
+  │  │   ADD & LAYER NORM                │  │
+  │  │   x = LayerNorm(x + FFN(x))       │  │
+  │  └──────────────────┬────────────────┘  │
+  └─────────────────────┼───────────────────┘
+                        │ Repeat × 12
+                        ▼
+  ┌─────────────────────────────────────────┐
+  │      OUTPUT: CONTEXTUALIZED VECTORS     │
+  │                                         │
+  │  [CLS] → 768-dim → classification head  │
+  │  The   → 768-dim → token-level tasks    │
+  │  cat   → 768-dim → NER, QA, etc.        │
+  │  sat   → 768-dim                        │
+  │  ...                                    │
+  └─────────────────────────────────────────┘
+
+  Key dimensions (BERT-base):
+  ─────────────────────────────
+  H (hidden size)     = 768
+  A (attention heads) = 12
+  d_k (per head)      = 768 / 12 = 64
+  FFN intermediate    = 4 × 768 = 3,072
+  Max positions       = 512
+  Vocabulary          = 30,522 tokens
+```
+
+---
+
 ## Encoder Stack
 
 BERT stacks L identical encoder layers. Each layer has two sub-layers:
