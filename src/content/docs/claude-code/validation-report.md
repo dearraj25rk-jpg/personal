@@ -59,7 +59,7 @@ changelog. Automated checks are run via the
 | `/rename` names sessions for retrieval | ✅ Verified | Confirmed in official docs |
 | `/teleport` pulls a remote session into the terminal | ⚠️ Partial | Present in changelog but limited public documentation |
 | `/desktop` hands off to Desktop app | ⚠️ Partial | Mentioned in release notes; behavior depends on installation |
-| `/output-style` configures response formatting | ✅ Verified | Confirmed in output-styles reference |
+| Output styles are activated via `/config` (NOT via a `/output-style` slash command) | ✅ Verified | Confirmed in output-styles reference — changes take effect next session |
 | `/bashes` shows running background processes | ⚠️ Partial | Present in some changelog entries; not in all docs |
 | `/todos` displays current task items | ✅ Verified | Confirmed in official docs |
 | `/changelog` shows release notes | ✅ Verified | Confirmed as a slash command |
@@ -87,11 +87,11 @@ changelog. Automated checks are run via the
 
 | Claim | Status | Notes |
 |-------|--------|-------|
-| CLI flags highest priority | ✅ Verified | Confirmed in settings hierarchy docs |
-| `.claude/settings.local.json` second priority | ✅ Verified | Confirmed in settings docs |
-| `.claude/settings.json` third priority | ✅ Verified | Confirmed in settings docs |
-| `~/.claude/settings.json` fourth priority | ✅ Verified | Confirmed in settings docs |
-| Enterprise managed settings lowest | ✅ Verified | Confirmed in enterprise policy docs |
+| Enterprise managed settings **highest** (four tiers: server-managed > MDM/OS > file-based > Windows HKCU) | ✅ Verified | Confirmed in enterprise policy docs — overrides everything including CLI flags |
+| CLI flags next highest (after enterprise managed) | ✅ Verified | Confirmed in settings hierarchy docs |
+| `.claude/settings.local.json` next | ✅ Verified | Confirmed in settings docs |
+| `.claude/settings.json` next | ✅ Verified | Confirmed in settings docs |
+| `~/.claude/settings.json` (user) lowest standard scope | ✅ Verified | Confirmed in settings docs |
 | CLAUDE.md load order: project root → subdirs → `~/.claude/CLAUDE.md` | ✅ Verified | Confirmed in memory docs |
 | Auto Memory writes to `~/.claude/projects/<project>/memory/MEMORY.md` | ✅ Verified | Confirmed in memory management docs |
 | `/memory` command to edit memory manually | ✅ Verified | Confirmed in memory docs |
@@ -100,7 +100,7 @@ changelog. Automated checks are run via the
 
 | Claim | Status | Notes |
 |-------|--------|-------|
-| 200K token context window | ✅ Verified | Confirmed for Claude 3+ models |
+| 200K standard / **1M** extended context window (Opus 4.7, Opus 4.6, Sonnet 4.6; GA at standard pricing since March 2026) | ✅ Verified | Confirmed in context window docs |
 | Response buffer reserves ~4K tokens | ⚠️ Partial | Approximation; actual buffer varies by model/version |
 | Quality degrades noticeably past 75% utilisation | ⚠️ Partial | Community-reported heuristic; not an official Anthropic number |
 | `/compact` at 70%, not at 98% | ⚠️ Partial | Best-practice recommendation; thresholds are approximate |
@@ -132,7 +132,7 @@ changelog. Automated checks are run via the
 
 | Claim | Status | Notes |
 |-------|--------|-------|
-| 12+ hook events | ✅ Verified | Official docs list ≥12 events |
+| 30+ hook events | ✅ Verified | Official docs list 30+ events including SubagentStart, TaskCreated, PostToolUseFailure, etc. |
 | **PreToolUse** — before any tool executes, can block | ✅ Verified | Confirmed in hooks reference |
 | **PostToolUse** — after tool completes, can block | ✅ Verified | Confirmed in hooks reference |
 | **UserPromptSubmit** — before Claude processes input, exit 2 blocks | ✅ Verified | Confirmed in hooks reference |
@@ -146,7 +146,7 @@ changelog. Automated checks are run via the
 | All matching hooks run in parallel | ✅ Verified | Confirmed in hooks reference |
 | Exit 0 = success, exit 2 = blocking error, other = non-blocking warning | ✅ Verified | Confirmed in hooks reference |
 | Hooks snapshot at session start; need restart or `/hooks` to reload | ✅ Verified | Confirmed in hooks reference |
-| Three hook types: command, prompt, agent | ✅ Verified | Confirmed in hooks reference |
+| Five hook handler types: command, prompt, agent, http (v2.1.63), mcp_tool (v2.1.118) | ✅ Verified | Confirmed in hooks reference |
 | Prompt hooks use Haiku model for fast, cheap assessment | ✅ Verified | Confirmed in hooks reference |
 | Agent hooks can read files, run tests (up to 50 turns) | ✅ Verified | Confirmed in hooks reference |
 
@@ -250,7 +250,7 @@ changelog. Automated checks are run via the
 | Output styles in `~/.claude/output-styles/` | ✅ Verified | Confirmed in output-styles reference |
 | CLAUDE.local.md auto-added to `.gitignore` | ✅ Verified | Confirmed in memory docs |
 | Rules in `.claude/rules/*.md` with optional `paths:` frontmatter | ✅ Verified | Confirmed in rules reference |
-| Subagent MEMORY.md — first 200 lines injected at agent invocation | ✅ Verified | Confirmed in memory docs |
+| Subagent MEMORY.md — first 200 lines OR 25KB (whichever comes first) injected at agent invocation | ✅ Verified | Confirmed in memory docs — both limits apply |
 | Memory scopes: user, project, local | ✅ Verified | Confirmed in memory docs |
 | Plugin commands namespaced: `hello.md` in `my-plugin` → `/my-plugin:hello` | ✅ Verified | Confirmed in plugins reference |
 | @import max depth: 5 recursive hops | ✅ Verified | Confirmed in import system docs |
@@ -306,7 +306,7 @@ Results are written to `concept-validation-results.json` (gitignored).
 
 | Category | Verified | Partial | Unverifiable | Total |
 |----------|----------|---------|--------------|-------|
-| CLI & Configuration | 34 | 5 | 0 | 39 |
+| CLI & Configuration | 36 | 4 | 0 | 40 |
 | Agent Teams | 12 | 1 | 1 | 14 |
 | Hooks System | 17 | 0 | 0 | 17 |
 | MCP Servers | 12 | 0 | 1 | 13 |
@@ -314,10 +314,10 @@ Results are written to `concept-validation-results.json` (gitignored).
 | RAG & Architecture | 5 | 3 | 2 | 10 |
 | CI/CD & Workflows | 7 | 0 | 1 | 8 |
 | Enterprise Architecture | 7 | 1 | 2 | 10 |
-| **Total** | **101** | **11** | **7** | **119** |
+| **Total** | **103** | **10** | **7** | **120** |
 
-**85%** of claims are fully verified against official Anthropic documentation or
-independent public sources. **9%** are broadly accurate with caveats or where
+**86%** of claims are fully verified against official Anthropic documentation or
+independent public sources. **8%** are broadly accurate with caveats or where
 only approximations are available. **6%** cannot be independently verified from
 public sources (primarily vendor case-study figures and marketing statistics).
 
@@ -325,3 +325,5 @@ No claims were found to be factually incorrect. The unverifiable items are
 either vendor-reported performance metrics, specific version numbers that
 predate the public changelog, or statistics whose source could not be traced
 to a primary document.
+
+> **Last reviewed:** May 3, 2026 — verified against official Claude Code documentation through v2.1.126.

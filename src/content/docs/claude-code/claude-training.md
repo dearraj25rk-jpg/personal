@@ -102,28 +102,27 @@ claude plugin validate <dir>          # Validate plugin structure before publish
 claude plugin update                  # Pull latest versions of all plugins
 ```
 
-**plugin.json manifest** (required at plugin root):
+**plugin.json manifest** (`.claude-plugin/plugin.json` at plugin root — only `name` is required):
 ```json
 {
   "name": "dotnet-azure-ops",
   "version": "2.0.0",
-  "components": {
-    "claudeMd": "CLAUDE.md",
-    "rules": ["rules/"],
-    "skills": ["skills/"],
-    "mcp": { "azureDevOps": { "command": "npx", "args": ["@az/mcp"] } },
-    "hooks": {
-      "PostToolUse": [{ "matcher": "Edit|Write", "type": "command", "command": "./validate.sh" }]
-    }
-  }
+  "description": "Build validation and Azure deployment tools for .NET projects",
+  "author": { "name": "Platform Team" },
+  "userConfig": [
+    { "name": "envName", "type": "string", "required": false,
+      "description": "Deployment environment (staging/production)" }
+  ]
 }
 ```
+
+Plugin directory layout (`skills/`, `agents/`, `hooks/hooks.json`, `monitors/`, `themes/`, `output-styles/`, `bin/`, `.mcp.json`, `settings.json`) is auto-discovered by naming convention — you don't list them in `plugin.json`. Use `${CLAUDE_PLUGIN_ROOT}` for paths that must survive plugin updates and `${CLAUDE_PLUGIN_DATA}` for persistent data that survives updates.
 
 Use `/reload-plugins` inside a session to pick up changes without restarting. For enterprise rollout: drop plugin configs into `.claude/managed-settings.d/` (v2.1.83 — a drop-in directory where separate teams can deploy independent policy fragments, merged alphabetically) and deliver via MDM plist (macOS, `com.anthropic.claudecode` preference domain) or Windows Registry (`HKLM\SOFTWARE\Anthropic\ClaudeCode`, v2.1.51). The `forceRemoteSettingsRefresh` policy (v2.1.92) triggers re-download on session start.
 
 ### Context window mastery
 
-The **200K token context window** is your standard resource. Opus 4.6 on Max/Team/Enterprise tiers unlocks **1M token context** — use `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` to opt out if needed. Use `/context` to see the colored usage grid and `/cost` to monitor spending. The formula: `Context = System + CLAUDE.md + Rules + Skills + History + Tools + MCP schemas`. Response buffer reserves ~4K tokens.
+**1M token context** is available at standard pricing (no surcharge since March 2026) on `claude-opus-4-7`, `claude-opus-4-6`, and `claude-sonnet-4-6` across all Pro/Max/Team/Enterprise plans. `claude-haiku-4-5` uses 200K. Disable 1M with `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` if needed. Use `/context` to see the colored usage grid and `/usage` to monitor spending (v2.1.118 — merged `/cost` + `/stats`). The formula: `Context = System + CLAUDE.md + Rules + Auto-memory + Skills + History + Tools + MCP schemas`. Reserved buffer: ~33K–45K tokens for system overhead.
 
 **Token budgeting strategies**: Never exceed **75% utilization** — quality degrades noticeably past this point. Use `/compact focus on [topic]` proactively at 70%, not reactively at 95% when auto-compact triggers. Between distinct tasks, prefer `/clear` over `/compact`. Use `--max-turns` and `--max-budget-usd` flags in automation to prevent runaway costs.
 
@@ -212,7 +211,7 @@ Hooks transform Claude Code from an interactive assistant into a **governed deve
 
 ### Hook event types and lifecycle
 
-Claude Code provides **25+ hook events** spanning the full session lifecycle:
+Claude Code provides **30+ hook events** spanning the full session lifecycle:
 
 | Event | When | Can Block? | Version |
 |-------|------|-----------|---------|
@@ -674,6 +673,6 @@ Five core HITL patterns from Google Cloud's architecture guidance: **Approval Ga
 
 This program traces a deliberate arc from mastering Claude Code's full control surface through designing enterprise-grade AI systems. The key insight across all eight modules is that **constraint drives quality**: concise CLAUDE.md files outperform verbose ones, bounded agents outperform monolithic ones, proactive context management outperforms reactive compaction, and explicit planning phases prevent the most expensive failure mode — implementing the wrong solution.
 
-Three capabilities distinguish elite-level practitioners. First, **architectural thinking about context** — treating the 200K token window as a strategic resource, using subagents for isolation, hooks for verification, and MCP servers for reach. Second, **multi-agent orchestration literacy** — knowing when a SubAgent suffices versus when Agent Teams are worth the 5x token cost, and designing agent specializations that produce emergent quality. Third, **production hardening instincts** — security scanning hooks on every tool use, hybrid search in RAG pipelines, HITL gates on destructive operations, and observability via OpenTelemetry from day one.
+Three capabilities distinguish elite-level practitioners. First, **architectural thinking about context** — treating the up-to-1M token context window as a strategic resource, using subagents for isolation, hooks for verification, and MCP servers for reach. Second, **multi-agent orchestration literacy** — knowing when a SubAgent suffices versus when Agent Teams are worth the 5x token cost, and designing agent specializations that produce emergent quality. Third, **production hardening instincts** — security scanning hooks on every tool use, hybrid search in RAG pipelines, HITL gates on destructive operations, and observability via OpenTelemetry from day one.
 
-The field is moving from prescriptive prompting toward lightweight heuristic guidance and autonomous context management. Opus 4.6's adaptive reasoning already deprecates fixed thinking budgets. Agent teams will mature from Research Preview to production-grade. The practitioners who thrive will be those who internalize the principles behind the tools, not just the current syntax — because the syntax will change quarterly, but the architecture patterns endure.
+The field is moving from prescriptive prompting toward lightweight heuristic guidance and autonomous context management. Opus 4.7's adaptive reasoning supersedes fixed thinking budgets; `xhigh` effort unlocks its full reasoning depth. Agent teams will mature from Research Preview to production-grade. The practitioners who thrive will be those who internalize the principles behind the tools, not just the current syntax — because the syntax will change quarterly, but the architecture patterns endure.

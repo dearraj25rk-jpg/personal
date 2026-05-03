@@ -773,7 +773,7 @@ priority: high
 
 `/init` analyses your build system, test framework, and code patterns and writes a starter `CLAUDE.md`. Use `CLAUDE_CODE_NEW_INIT=1` for an interactive flow that asks which files to generate (CLAUDE.md, skills, hooks). After generating, refine it and commit it to git.
 
-**Auto memory** scans sessions and proposes new durable facts (build insights, debugging patterns) to save into `CLAUDE.md` automatically. It is scoped per-project and available on all tiers including free. Entries are truncated at 25KB / 200 lines per v2.1.85. Memory is stored in `~/.claude/memory/`.
+**Auto memory** scans sessions and proposes new durable facts (build insights, debugging patterns) to save into `CLAUDE.md` automatically. It is scoped per-project and available on all tiers including free. Entries are truncated at **25KB / 200 lines** (whichever comes first, per v2.1.85). Memory is stored in `~/.claude/projects/<project-hash>/memory/MEMORY.md` (machine-local; all worktrees for the same project share one directory). Satellite topic files can live alongside MEMORY.md in the same folder. Edit manually with `/memory`, or tell Claude to remember a fact and it writes the entry automatically.
 
 ### 8.5 Recap
 
@@ -1170,22 +1170,6 @@ You can also declare plugin entries **inline in `settings.json`** without a sepa
       "plugins": [
         { "name": "deploy-toolkit", "version": "2.1.0",
           "path": "/opt/claude-plugins/deploy-toolkit" }
-      ]
-    }
-  }
-}
-```
-
-You can also declare plugin entries **inline in `settings.json`** using `source: 'settings'` as the marketplace source — useful for managed deployments where you want a plugin present without pointing to an external marketplace URL:
-
-```jsonc
-{
-  "extraKnownMarketplaces": {
-    "internal-tools": {
-      "source": "settings",
-      "plugins": [
-        { "name": "deploy-toolkit", "version": "1.0.0",
-          "path": "/opt/company-plugins/deploy-toolkit" }
       ]
     }
   }
@@ -1705,7 +1689,7 @@ The `/resume` picker offers to summarise stale large sessions before reloading (
 
 **Brief mode in focus mode:** Claude writes more self-contained summaries since it knows only the final message is visible (v2.1.97).
 
-**Auto memory:** durable facts are extracted from sessions and proposed for addition to `CLAUDE.md`. Available on all tiers. Stored in `~/.claude/memory/`; truncated at 25KB / 200 lines (v2.1.85).
+**Auto memory:** durable facts are extracted from sessions and proposed for addition to `CLAUDE.md`. Available on all tiers. Stored in `~/.claude/projects/<project-hash>/memory/MEMORY.md` (machine-local; satellite topic files supported); truncated at 25KB / 200 lines, whichever comes first (v2.1.85). The `/memory` command opens the memory editor directly.
 
 ### 21.1 Checkpoint System
 
