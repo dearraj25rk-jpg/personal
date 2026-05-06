@@ -7,6 +7,27 @@ sidebar:
 
 Claude Code is Anthropic's AI-powered CLI that integrates directly into your development environment. This section covers everything from core architecture and configuration hierarchy through advanced agent orchestration, context efficiency, and CI/CD integration.
 
+## What's New (v2.1.108–v2.1.126)
+
+| Version | Feature | What changed |
+|---------|---------|-------------|
+| v2.1.126 | Latest stable (May 2026) | See [CLI Reference](./claude-code-reference) for full list |
+| v2.1.122 | Bedrock service tiers | `default`, `flex`, `priority` tier selection |
+| v2.1.121 | Vertex Workload Identity Federation | WIF support for GCP auth |
+| v2.1.120 | `${CLAUDE_EFFORT}` in skills | Skills can reference session effort level |
+| v2.1.119 | `/config` persistence | Settings saved to `settings.json` via the UI |
+| v2.1.118 | `DISABLE_UPDATES` + `mcp_tool` hooks | Block all updates; hooks targeting specific MCP tools |
+| v2.1.117 | Opus 4.7 default `xhigh` effort | Default effort level elevated; 1M context fix |
+| v2.1.116 | `/terminal-setup` command | Configure scroll sensitivity, clipboard, iTerm2 |
+| v2.1.113 | Native binary (no Node.js) | `Glob`/`Grep` replaced with embedded `bfs`/`ugrep` |
+| v2.1.108 | Cache TTL fix | 1-hour cache TTL now works for `DISABLE_TELEMETRY` users |
+| v2.1.105 | `/doctor` auto-fix | Health check with `f`-key auto-repair |
+| v2.1.104 | `/team-onboarding` | Generate teammate ramp-up guide |
+| v2.1.98 | Monitor tool | Stream background process output |
+| v2.1.92 | `--bare` mode | CI-optimized mode (14% faster, skips non-essential) |
+| v2.1.89 | Compaction circuit breaker | Prevents thrash loop in auto-compaction |
+| v2.1.84 | Rules `paths:` scoping | Rules load conditionally by file glob |
+
 ## Reference Guides
 
 | Page | What you'll learn |
@@ -122,3 +143,19 @@ Send back to API
 ```
 
 **Core rule:** always route on `stop_reason`, never on parsed assistant text.
+
+## Getting Started
+
+**New to Claude Code?**
+1. Start with [CLI Technical Reference](./claude-code-reference) — Sections 1-4 cover installation, the agentic loop, and built-in tools
+2. Set up your first [CLAUDE.md](./claude-code-config-guide) — keep it under 200 lines
+3. Run `/doctor` to verify your setup
+
+**Already using Claude Code?**
+- [Context & Cost Efficiency](./claude-code-efficiency-reference) — cut costs 60-85% with proven strategies
+- [Training Program](./claude-training) — 8-module curriculum from CLI mastery to enterprise architecture
+- [Compass Research Notes](./compass-research-notes) — deep dives into hooks, MCP, and Agent SDK internals
+
+**Preparing for CCA-F exam?**
+- [Compass Research Notes](./compass-research-notes) — all 5 domains with gap-fill reference
+- [Concept Validation Report](./validation-report) — 120+ claims verified against official docs

@@ -302,11 +302,30 @@ Results are written to `concept-validation-results.json` (gitignored).
 
 ---
 
+## 11. Additional Verified Claims (v2.1.108–v2.1.126)
+
+| Claim | Status | Notes |
+|-------|--------|-------|
+| Opus 4.7 default effort = `xhigh` (changed v2.1.117) | ✅ Verified | Confirmed in release notes v2.1.117 |
+| Opus 4.7 tokenizer produces ~1.35× more tokens vs prior models | ✅ Verified | Confirmed in Opus 4.7 release docs |
+| 1M context window: GA at standard pricing since March 2026 | ✅ Verified | Confirmed in Claude Code 1M context announcement |
+| `DISABLE_UPDATES=1` blocks all updates including `claude update` (v2.1.118) | ✅ Verified | Confirmed in v2.1.118 release notes |
+| `/config` UI now persists changes to `~/.claude/settings.json` (v2.1.119) | ✅ Verified | Confirmed in v2.1.119 release notes |
+| `${CLAUDE_EFFORT}` variable usable in skills (v2.1.120) | ✅ Verified | Confirmed in skills reference |
+| Google Vertex AI Workload Identity Federation support (v2.1.121) | ✅ Verified | Confirmed in v2.1.121 release notes |
+| `mcp_tool` hook handler type (v2.1.118) | ✅ Verified | Confirmed in hooks reference |
+| Monitor tool for streaming background processes (v2.1.98) | ✅ Verified | Confirmed in built-in tools reference |
+| Cache TTL regression (DISABLE_TELEMETRY) fixed in v2.1.108 | ✅ Verified | Confirmed in v2.1.108 release notes |
+| Bedrock service tiers: default/flex/priority (v2.1.122) | ✅ Verified | Confirmed in Bedrock configuration docs |
+| ToolSearch deferred schemas go to conversation history, not prefix | ✅ Verified | Confirmed in ToolSearch architecture docs |
+
+---
+
 ## Overall Authenticity Assessment
 
 | Category | Verified | Partial | Unverifiable | Total |
 |----------|----------|---------|--------------|-------|
-| CLI & Configuration | 36 | 4 | 0 | 40 |
+| CLI & Configuration | 48 | 4 | 0 | 52 |
 | Agent Teams | 12 | 1 | 1 | 14 |
 | Hooks System | 17 | 0 | 0 | 17 |
 | MCP Servers | 12 | 0 | 1 | 13 |
@@ -314,11 +333,11 @@ Results are written to `concept-validation-results.json` (gitignored).
 | RAG & Architecture | 5 | 3 | 2 | 10 |
 | CI/CD & Workflows | 7 | 0 | 1 | 8 |
 | Enterprise Architecture | 7 | 1 | 2 | 10 |
-| **Total** | **103** | **10** | **7** | **120** |
+| **Total** | **115** | **10** | **7** | **132** |
 
-**86%** of claims are fully verified against official Anthropic documentation or
+**87%** of claims are fully verified against official Anthropic documentation or
 independent public sources. **8%** are broadly accurate with caveats or where
-only approximations are available. **6%** cannot be independently verified from
+only approximations are available. **5%** cannot be independently verified from
 public sources (primarily vendor case-study figures and marketing statistics).
 
 No claims were found to be factually incorrect. The unverifiable items are
@@ -326,4 +345,4 @@ either vendor-reported performance metrics, specific version numbers that
 predate the public changelog, or statistics whose source could not be traced
 to a primary document.
 
-> **Last reviewed:** May 3, 2026 — verified against official Claude Code documentation through v2.1.126.
+> **Last reviewed:** May 6, 2026 — verified against official Claude Code documentation through v2.1.126 (May 6, 2026).

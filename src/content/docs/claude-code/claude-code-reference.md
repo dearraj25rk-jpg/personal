@@ -20,10 +20,10 @@ head:
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
-lastUpdated: 2026-05-02
+lastUpdated: 2026-05-06
 ---
 
-> **Document scope:** All officially documented Claude Code features from February 2025 through **v2.1.126 (May 1, 2026)**. Sources: `code.claude.com/docs`, `github.com/anthropics/claude-code` (CHANGELOG.md), official Anthropic news posts, and the Agent SDK repos. Every version number cited maps to a real entry in the public CHANGELOG. Where official documentation is sparse, that is explicitly flagged.
+> **Document scope:** All officially documented Claude Code features from February 2025 through **v2.1.126 (May 6, 2026)**. Sources: `code.claude.com/docs`, `github.com/anthropics/claude-code` (CHANGELOG.md), official Anthropic news posts, and the Agent SDK repos. Every version number cited maps to a real entry in the public CHANGELOG. Where official documentation is sparse, that is explicitly flagged.
 
 ---
 
@@ -192,11 +192,76 @@ Claude Code operates as a self-directed agent across three phases:
 
 The model self-drives the loop turn by turn. You control it with prompts, permissions, hooks, and stop conditions (`--max-turns`, `--max-budget-usd`).
 
+### 3.1.1 Agentic Loop — Visual Flow
+
+```
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                     CLAUDE CODE AGENTIC LOOP                   │
+  └─────────────────────────────────────────────────────────────────┘
+
+  Your Prompt ──────────────────────────────────────────────────────►
+                                                                    │
+  ┌─────────────────────────────────────────────────────────────────▼──────┐
+  │ PHASE 1: GATHER CONTEXT                                                 │
+  │  Read files · Run git status · Search with Glob/Grep                    │
+  │  Fetch URLs · Query MCP servers · Read test output                      │
+  └────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ PHASE 2: PLAN & ACT                                                      │
+  │  Edit code · Run shell commands · Write files · Run tests                │
+  │  Open PRs · Invoke subagents · Commit changes                            │
+  └─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ PHASE 3: VERIFY RESULTS                                                  │
+  │  Re-run tests · Re-read modified files · Check diagnostics               │
+  │  ──► If issues found: loop back to Phase 2                               │
+  │  ──► If complete: return result to user                                  │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  Control Mechanisms:
+  --max-turns N          Stop after N agentic turns
+  --max-budget-usd N     Stop when cost exceeds $N
+  Hook: Stop             Fires when Claude returns end_turn
+  Hook: PreToolUse       Block or modify any tool before execution
+```
+
 ### 3.2 Context Window
 
 The default context window is **200K tokens**. **1M tokens** is GA (no beta header required) for `claude-sonnet-4-6`, `claude-opus-4-6`, and `claude-opus-4-7` on Pro/Max/Team/Enterprise plans. Disable the 1M window with `CLAUDE_CODE_DISABLE_1M_CONTEXT=true`.
 
 v2.1.117 fixed Opus 4.7 sessions that were computing context usage against 200K instead of the native 1M, causing premature autocompact.
+
+### 3.2.1 Context Window Composition
+
+```
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │                   200K TOKEN CONTEXT WINDOW                         │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │  RESERVED (non-negotiable)                                           │
+  │  ├── Response buffer             ~40-45K tokens                      │
+  │  ├── Built-in tools schema       ~5-8K tokens                        │
+  │  └── System prompt               ~5-10K tokens                       │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │  CONFIGURABLE OVERHEAD                                               │
+  │  ├── CLAUDE.md (project)         up to 200 lines ≈ 3-8K             │
+  │  ├── Rules (path-scoped)         per-rule ≈ 0.5-2K each             │
+  │  ├── MCP tools (if loaded)       up to 20K tokens                    │
+  │  └── Auto-memory (MEMORY.md)     up to 25KB ≈ 8-10K                 │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │  CONVERSATION HISTORY (grows per turn)                               │
+  │  ├── Your prompts                                                    │
+  │  ├── Claude's responses                                              │
+  │  └── Tool results (files read, commands run, etc.)                   │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │  EXTENDED: 1M TOKENS (GA for Pro/Max/Team/Enterprise)                │
+  │  Enable: default for supported models                                │
+  │  Disable: CLAUDE_CODE_DISABLE_1M_CONTEXT=true                        │
+  └──────────────────────────────────────────────────────────────────────┘
+```
 
 ### 3.3 Context Compaction
 
@@ -856,6 +921,51 @@ Since v2.1.108, the Skill tool can discover and invoke built-in slash commands l
 
 Hooks are deterministic processes — shell commands, LLM prompts, subagents, MCP tools, or HTTP endpoints — that fire at lifecycle events. They are **guarantees**, not suggestions: if a hook returns a block decision, the action does not proceed.
 
+### Hook Execution Lifecycle — Visual Flow
+
+```
+  Claude Code Session Lifecycle with Hook Injection Points
+
+  Session Start
+       │
+       ▼
+  ┌──────────────┐      fires: SessionStart, Setup
+  │  INIT PHASE  │ ──── hooks can inject context, set env vars
+  └──────────────┘
+       │
+       ▼
+  ┌───────────────────────────────────────────────────────────┐
+  │                   AGENTIC LOOP                            │
+  │                                                           │
+  │   User Prompt ──► UserPromptSubmit hook (can block)       │
+  │        │                                                  │
+  │        ▼                                                  │
+  │   Claude thinks                                           │
+  │        │                                                  │
+  │        ▼                                                  │
+  │   Tool call ──► PreToolUse hook (can block/modify)        │
+  │        │                                                  │
+  │        ▼                                                  │
+  │   Tool executes                                           │
+  │        │                                                  │
+  │        ▼                                                  │
+  │   Tool result ──► PostToolUse hook (can augment)          │
+  │        │                                                  │
+  │        ▼                                                  │
+  │   Claude response ──► Stop hook (exit 2 = force continue) │
+  └───────────────────────────────────────────────────────────┘
+       │
+       ▼
+  ┌──────────────────┐    fires: SessionEnd, PreCompact (if compacting)
+  │  CLEANUP PHASE   │
+  └──────────────────┘
+
+  Hook Exit Codes:
+  exit 0  = success, continue normally
+  exit 2  = blocking — prevent tool execution / force continuation
+  other   = non-blocking warning logged to Claude's context
+```
+
 ### 10.1 All Hook Events
 
 | Event | Fires When | Can Block? | Notes |
@@ -1242,6 +1352,34 @@ Agent Teams coordinate **multiple Claude Code sessions** on a shared project, wi
 
 ```bash
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+```
+
+### Agent Team Topology — Visual Overview
+
+```
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                     AGENT TEAM ARCHITECTURE                        │
+  └─────────────────────────────────────────────────────────────────────┘
+
+        ┌──────────────┐
+        │  LEAD AGENT  │  (primary Claude Code session)
+        │  Opus 4.7    │  Orchestrates, coordinates, synthesizes
+        └──────┬───────┘
+               │  TeamCreate / TaskCreate / SendMessage / TeamDelete
+               │  filesystem mailbox: ~/.claude/teams/{name}/inboxes/
+     ┌─────────┼─────────────────────────┐
+     │         │                         │
+     ▼         ▼                         ▼
+┌──────────┐ ┌──────────┐         ┌──────────┐
+│Teammate 1│ │Teammate 2│   ...   │Teammate N│
+│Sonnet 4.6│ │Haiku 4.5 │         │Sonnet 4.6│
+│(frontend)│ │(testing) │         │(backend) │
+└──────────┘ └──────────┘         └──────────┘
+
+  vs. SubAgent (Task tool):
+  Lead ──── Task(prompt, tools) ────► SubAgent
+             one-way, fire-and-forget   returns single result
+             new context, no inheritance
 ```
 
 ### 14.1 Architecture

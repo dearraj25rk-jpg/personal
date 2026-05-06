@@ -1893,3 +1893,64 @@ Research shows verbalized confidence (asking the model to state a number) often 
 ## Conclusion: the five highest-yield study areas
 
 The exam weights **agentic architecture at 27%**, making the Agent SDK's `query()` loop, permission pipeline (`disallowedTools` → `allowedTools` → hooks → `canUseTool` → `permissionMode`), and session management the single most important study area. The **tool_use five-step flow** and **structured outputs** (GA with `output_config.format` and `strict: true`) together dominate Domain 4's 20% weight — memorize the exact JSON structures and the three complexity limits (20 strict tools, 24 optional params, 16 union-typed params). For Domain 3's configuration questions, the SKILL.md frontmatter fields and their interaction with `context: fork`/`inherit` and the invocation control matrix are the most likely testable specifics. In Domain 2, the MCP error duality (protocol-level in `error` field vs tool-level with `isError: true`) is a classic exam distinction. Finally, Domain 5's crash recovery pattern — progress files, feature lists, git checkpoints, and the initializer/coder agent split — represents Anthropic's official recommended architecture for production agents.
+
+---
+
+## Appendix: Claude Code v2.1.x Quick Revision Summary (May 2026)
+
+This appendix captures the most significant v2.1.x changes relevant to the CCA-F exam and daily Claude Code usage.
+
+### Key v2.1.x Features by Category
+
+| Version | Feature | CCA Domain | Impact |
+|---------|---------|-----------|--------|
+| v2.1.32 | Agent Teams (experimental) | D1 | Persistent peer-to-peer agents via filesystem mailbox |
+| v2.1.50 | isolation: worktree for subagents | D1 | Parallel file modifications in separate git worktrees |
+| v2.1.63 | HTTP hook handler type | D1 | Webhooks can now be hook targets |
+| v2.1.74 | Adaptive thinking (effort-aware) | D4 | Effort level auto-adjusts thinking depth |
+| v2.1.76 | MCP Elicitation | D2 | Structured interactive input dialogs in MCP tools |
+| v2.1.84 | Rules path-scoping (paths: frontmatter) | D3 | Rules load conditionally by file glob |
+| v2.1.84 | Tool description 2KB cap | D2 | Tool descriptions truncated at 2KB |
+| v2.1.85 | MCP OAuth (RFC 9728) | D2 | OAuth discovery for MCP servers |
+| v2.1.89 | Auto-compaction circuit breaker | D5 | Prevents thrash loop during compaction |
+| v2.1.91 | Large MCP tool results (500K chars) | D2 | Via _meta["anthropic/maxResultSizeChars"] |
+| v2.1.92 | --bare mode for CI | D3 | Skips hooks, LSP, plugins, MCP for 14% faster start |
+| v2.1.94 | Bedrock Mantle support | D3 | Bedrock via Mantle backend |
+| v2.1.98 | Monitor tool (background process streaming) | D1 | Stream output from background processes |
+| v2.1.98 | /setup-vertex wizard | D3 | Guided Vertex AI configuration |
+| v2.1.101 | SDK cleanup fix (await using) | D1 | Proper subprocess cleanup on early exit |
+| v2.1.104 | /team-onboarding command | D1 | Generate team ramp-up guide |
+| v2.1.105 | /doctor with auto-fix | D3 | Health check with f-key auto-repair |
+| v2.1.108 | Cache TTL fix (DISABLE_TELEMETRY) | D5 | 1-hour cache TTL now works for telemetry-off users |
+| v2.1.113 | Native binary via optional deps | D3 | Removes Node.js requirement |
+| v2.1.116 | /terminal-setup command | D3 | Configure scroll, clipboard, iTerm2 |
+| v2.1.117 | Opus 4.7 default effort=xhigh | D4 | Default effort level changed |
+| v2.1.117 | Opus 4.7 1M context fix | D5 | Was computing against 200K instead of 1M |
+| v2.1.118 | DISABLE_UPDATES env var | D3 | Blocks all update paths |
+| v2.1.118 | /cost and /stats shortcuts | D3 | Shortcuts for /usage |
+| v2.1.118 | mcp_tool hook handler | D2 | Hooks can target specific MCP tools |
+| v2.1.119 | /config UI persistence | D3 | Config saved to settings.json |
+| v2.1.120 | ${CLAUDE_EFFORT} in skills | D3 | Skills can reference effort level |
+| v2.1.121 | Vertex Workload Identity Federation | D3 | WIF support for GCP |
+| v2.1.121 | SDK OAuth (mcp_authenticate) | D1 | Custom-scheme OAuth in Agent SDK |
+| v2.1.122 | Bedrock service tiers | D3 | default/flex/priority tiers |
+| v2.1.126 | Latest stable release (May 1, 2026) | All | See CHANGELOG for specifics |
+
+### Five Most-Tested Concepts in Recent CCA Exams (Community Reports)
+
+1. **stop_reason routing** — Always route on `stop_reason`, never parse text. Values: `end_turn`, `tool_use`, `max_tokens`, `stop_sequence`, `refusal`, `pause_turn`, `model_context_window_exceeded`
+2. **Structured output guarantees syntax, not semantics** — JSON schema constrains format but the model can still produce semantically wrong data
+3. **Subagent context isolation** — Subagents start with a fresh context; they do NOT inherit the parent's conversation history
+4. **Hooks are deterministic, prompts are probabilistic** — Use hooks when you need guaranteed enforcement
+5. **Access failure vs. valid empty result** — An empty array `[]` is a valid result; an exception/error requires different handling
+
+### Common CCA Exam Traps
+
+| Trap | Wrong Answer | Correct Answer |
+|------|-------------|----------------|
+| ToolSearch placement | "ToolSearch results go in the system prompt" | Discovered tool schemas go in conversation history, NOT the prefix |
+| Cache TTL for subscribers | "5 minutes for all users" | 1 hour for Pro/Max subscribers (fixed v2.1.108) |
+| Default effort for Opus 4.7 | "medium" | xhigh (changed v2.1.117) |
+| SubAgent vs Agent Teams | "Both share context" | SubAgents get fresh context; Agent Teams use lateral messaging |
+| Path-scoped rules | "Rules always load at session start" | Rules with paths: frontmatter load only when matching files are touched |
+| Output style activation | "/output-style command" | Activated via /config (NOT a slash command) |

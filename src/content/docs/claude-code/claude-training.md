@@ -14,6 +14,42 @@ The program assumes foundational Claude Code familiarity and jumps directly into
 
 ## Module 1: Claude Code CLI — the complete operator's reference
 
+### Learning Objectives
+
+By the end of this module you will be able to:
+- Navigate Claude Code's full keyboard shortcut map without looking them up
+- Invoke any slash command with the correct parameters
+- Choose the right built-in tool for every task type
+- Structure a production-ready CLAUDE.md under 200 lines
+- Deploy and manage plugins for team-wide configuration distribution
+- Monitor context utilisation and manage sessions across interruptions
+
+### Module 1 — Visual Orientation
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                 CLAUDE CODE CLI — CONTROL SURFACE                   │
+├─────────────────────────┬───────────────────────────────────────────┤
+│  KEYBOARD SHORTCUTS     │  SLASH COMMANDS                           │
+│  (muscle-memory layer)  │  (conversation layer)                     │
+│                         │                                           │
+│  Shift+Tab  mode cycle  │  /compact   /clear    /model              │
+│  Ctrl+B     background  │  /config    /hooks    /mcp                │
+│  Ctrl+R     history     │  /agents    /skills   /memory             │
+│  Esc×2      rewind      │  /rewind    /branch   /todos              │
+│  !          bash mode   │  /resume    /rename   /usage              │
+│  @          file hint   │  (60+ commands total)                     │
+├─────────────────────────┴───────────────────────────────────────────┤
+│  BUILT-IN TOOLS (always prefer over shell equivalents)             │
+│  Read  Edit  MultiEdit  Write  Glob  Grep  WebFetch                │
+│  TodoWrite  Task  Bash  PowerShell  Monitor  SendMessage            │
+├─────────────────────────────────────────────────────────────────────┤
+│  CONFIGURATION LAYERS (highest → lowest precedence)                │
+│  Enterprise MDM → CLI flags → settings.local.json → settings.json  │
+│  → user settings.json → CLAUDE.md hierarchy → Rules → Skills        │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 Mastering Claude Code begins with internalizing every keyboard shortcut, slash command, and tool at your disposal. The difference between a competent user and an elite operator is **muscle-memory fluency** with the full control surface.
 
 ### Keyboard shortcuts that define your workflow speed
@@ -23,6 +59,24 @@ The three shortcuts that matter most are mode cycling, backgrounding, and histor
 Beyond these, the complete shortcut map includes: **Tab** toggles extended thinking on/off, **Esc×2** (double-tap Escape) opens the rewind menu, **!** at line start enters bash mode, **@** triggers file path autocomplete, and **Ctrl+S** screenshots stats to clipboard. For multiline input, use **Option+Enter** (macOS), **Shift+Enter** (after `/terminal-setup`), or **backslash+Enter** universally. In agent teams mode, **Shift+Up/Down** cycles through teammates.
 
 Claude Code now supports full keybinding customization via `~/.claude/keybindings.json` — run `/keybindings` to create the file. Bindings support key chords (e.g., `ctrl+k ctrl+s`), context-specific mappings, and uppercase letters implying Shift.
+
+**Complete Keyboard Shortcut Reference:**
+
+| Shortcut | Action | When to use |
+|----------|--------|-------------|
+| `Shift+Tab` | Cycle Normal → Auto-Accept → Plan Mode | Switch supervision level |
+| `Ctrl+B` | Background running Bash command | Long builds, slow tests |
+| `Ctrl+R` | Reverse history search | Recall previous prompts |
+| `Tab` | Toggle extended thinking | Harder problems |
+| `Esc×2` | Open rewind menu | Undo last code change |
+| `!` (line start) | Enter bash mode | Direct shell commands |
+| `@` | File path autocomplete | Reference files by name |
+| `Ctrl+S` | Screenshot stats to clipboard | Share session metrics |
+| `Option+Enter` (macOS) | Multiline input | Multi-paragraph prompts |
+| `Shift+Enter` (after `/terminal-setup`) | Multiline input | Alternative multiline |
+| `Backslash+Enter` | Multiline input | Universal fallback |
+| `Shift+Up/Down` | Cycle agent teammates | Agent Teams mode |
+| Custom via `keybindings.json` | Any action | Team-standardized bindings |
 
 ### Slash commands: the complete 2026 inventory
 
@@ -89,6 +143,23 @@ CQRS with MediatR. Vertical slice per feature folder.
 
 Keep CLAUDE.md **ruthlessly concise**. Research from HumanLayer shows Claude's system prompt already contains ~50 instructions, and frontier models can follow roughly 150-200. Every instruction in CLAUDE.md must justify its token cost. Never put in CLAUDE.md what a linter or `.editorconfig` can enforce deterministically.
 
+**CLI Flags Quick Reference (headless and automation use):**
+
+| Flag | Purpose | Example |
+|------|---------|---------|
+| `-p "prompt"` / `--print` | Non-interactive (headless) mode | `claude -p "review this file" --allowedTools Read` |
+| `--model` | Override model | `--model claude-sonnet-4-6` |
+| `--permission-mode plan` | Read-only (no edits/writes) | Used for CI code review |
+| `--max-turns N` | Stop after N agentic turns | `--max-turns 10` |
+| `--max-budget-usd N` | Stop when cost exceeds $N | `--max-budget-usd 0.50` |
+| `--allowedTools list` | Whitelist specific tools | `--allowedTools "Read,Grep,Glob"` |
+| `--output-format json` | Structured JSON output | CI pipelines, automation |
+| `--json-schema path` | Enforce output JSON schema | Structured data extraction |
+| `-c` / `--continue` | Resume most recent session | `claude -c` |
+| `-r` / `--resume` | Interactive session picker | `claude -r` |
+| `--bare` | Minimal mode for CI (v2.1.92) | Skips hooks, MCP, plugins; 14% faster |
+| `--dangerously-skip-permissions` | Skip all permission prompts | Fully automated pipelines only |
+
 ### Plugin System — package and distribute configurations
 
 Introduced in **v2.0.12+**, plugins bundle CLAUDE.md, rules, skills, MCP server configs, and hooks as a single versioned artifact. This is the preferred mechanism for sharing team-wide configurations.
@@ -120,6 +191,18 @@ Plugin directory layout (`skills/`, `agents/`, `hooks/hooks.json`, `monitors/`, 
 
 Use `/reload-plugins` inside a session to pick up changes without restarting. For enterprise rollout: drop plugin configs into `.claude/managed-settings.d/` (v2.1.83 — a drop-in directory where separate teams can deploy independent policy fragments, merged alphabetically) and deliver via MDM plist (macOS, `com.anthropic.claudecode` preference domain) or Windows Registry (`HKLM\SOFTWARE\Anthropic\ClaudeCode`, v2.1.51). The `forceRemoteSettingsRefresh` policy (v2.1.92) triggers re-download on session start.
 
+### Module 1 — Common Mistakes
+
+| Mistake | Why it hurts | Fix |
+|---------|-------------|-----|
+| Verbose CLAUDE.md (500+ lines) | Burns ~15K tokens every session; instructions at the end are ignored | Target 100-150 lines; move domain rules to `.claude/rules/` |
+| Putting secrets in CLAUDE.md | CLAUDE.md is committed to git | Use `.env` or secrets manager; reference via `${VAR}` |
+| Using `cat`/`grep`/`find` via Bash | Slower, wastes context, misses native tool features | Use `Read`/`Grep`/`Glob` built-in tools |
+| Ignoring `/compact` until 95% | Auto-compaction is lossy and unpredictable | Run `/compact` at 70% with a focus directive |
+| Running sensitive commands in Auto-Accept | No human oversight on destructive operations | Stay in Normal mode for writes; Plan Mode for analysis |
+| Not using `--max-turns` in automation | Runaway sessions cost money and time | Always set `--max-turns` and `--max-budget-usd` in CI |
+| Overloading a single session | Long sessions = context dilution | Use `/clear` between unrelated tasks |
+
 ### Context window mastery
 
 **1M token context** is available at standard pricing (no surcharge since March 2026) on `claude-opus-4-7`, `claude-opus-4-6`, and `claude-sonnet-4-6` across all Pro/Max/Team/Enterprise plans. `claude-haiku-4-5` uses 200K. Disable 1M with `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` if needed. Use `/context` to see the colored usage grid and `/usage` to monitor spending (v2.1.118 — merged `/cost` + `/stats`). The formula: `Context = System + CLAUDE.md + Rules + Auto-memory + Skills + History + Tools + MCP schemas`. Reserved buffer: ~33K–45K tokens for system overhead.
@@ -131,6 +214,44 @@ Use `/reload-plugins` inside a session to pick up changes without restarting. Fo
 ---
 
 ## Module 2: Agent teams — orchestrating collaborative AI systems
+
+### Learning Objectives
+
+By the end of this module you will be able to:
+- Choose between SubAgents and Agent Teams based on task requirements
+- Configure and enable Agent Teams with the correct settings
+- Design custom agent definitions with appropriate YAML frontmatter
+- Implement the filesystem mailbox communication pattern
+- Optimize agent team costs with model selection strategy
+- Identify and work around current Research Preview limitations
+
+### Agent Team Topology — Visual Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     AGENT TEAMS vs SUBAGENTS                       │
+├─────────────────────────┬───────────────────────────────────────────┤
+│    SUBAGENTS (Task)     │    AGENT TEAMS (TeammateTool)             │
+│    fire-and-forget      │    persistent collaboration               │
+├─────────────────────────┼───────────────────────────────────────────┤
+│   Lead                  │         Lead (Opus 4.7)                   │
+│    │ Task()             │          │ TeamCreate                     │
+│    ▼                    │          │                                 │
+│   SubAgent              │    ┌─────┼─────────────────┐             │
+│   (fresh context)       │    │     │                 │             │
+│    │                    │   ▼     ▼                 ▼             │
+│    └── returns result   │ Mate1  Mate2  ...       MateN            │
+│                         │ (Sonnet)(Haiku)         (Sonnet)          │
+│   1× cost               │  SendMessage peer-to-peer               │
+│   No context inherit    │  ~/.claude/teams/{name}/inboxes/         │
+│   One-way output        │  shared task queue                       │
+│                         │  3-7× cost; true parallel work           │
+└─────────────────────────┴───────────────────────────────────────────┘
+
+When to use which:
+  SubAgent  → isolated research, code review, verification, report generation
+  TeamTool  → competing hypotheses, QA swarms, cross-domain work, live coordination
+```
 
 Agent teams represent **the most significant Claude Code capability of 2026**: fully independent Claude Code instances that communicate peer-to-peer, share task lists, and collaborate on complex problems. Launched February 5, 2026 alongside Opus 4.6 as a "Research Preview."
 
@@ -199,13 +320,99 @@ Use the Monitor tool to watch for new files in ./queue/ and process them as they
 
 **Cost optimization pattern**: Use Opus for the lead (strategic decisions) and Sonnet for teammates (execution work). This cuts costs by 60-70% with minimal quality loss on implementation tasks.
 
+### Agent Teams — Core Tool Reference
+
+| Tool | Purpose | Key parameters |
+|------|---------|---------------|
+| `TeamCreate` | Spin up a new named team | `name`, `description`, `members[]` |
+| `TaskCreate` | Add a task to the shared queue | `title`, `description`, `assignee` (optional) |
+| `TaskUpdate` | Change task state | `task_id`, `status: "in_progress"\|"completed"` |
+| `TaskList` | List all tasks and their states | `team_name` |
+| `SendMessage` | Send typed message to a teammate | `to`, `message_type`, `content` |
+| `TeamDelete` | Tear down team and clean up mailboxes | `name` |
+
+**Message types for SendMessage:**
+- `message` — direct peer-to-peer communication
+- `broadcast` — send to all teammates at once
+- `shutdown_request` — politely stop a teammate
+- `shutdown_response` — teammate acknowledges shutdown
+- `plan_approval_response` — respond to a plan review request
+
 ### Current limitations to know
 
 Session resumption does not restore teammates — after `/resume`, spawn new ones. No nested teams (teammates cannot create their own teams). One team per session. The lead role cannot transfer. Delegate mode restrictions pass to teammates, which can cause stalling. These are Research Preview constraints likely to improve.
 
+### Module 2 — Common Mistakes
+
+| Mistake | Why it hurts | Fix |
+|---------|-------------|-----|
+| Using Agent Teams for simple parallelism | 5-7× cost for no benefit | Use SubAgents with Task tool instead |
+| All teammates on Opus 4.7 | $$$: each is a full Opus session | Lead on Opus; teammates on Sonnet/Haiku |
+| No task decomposition before TeamCreate | Teammates idle waiting for direction | Pre-define tasks; claim-and-execute pattern |
+| Forgetting `isolation: worktree` | Teammates conflict on same files | Add `isolation: worktree` to all teammates |
+| Building on Agent Teams for production | Research Preview = breaking changes | Prototype only; not GA yet |
+
 ---
 
 ## Module 3: The hooks system — programmatic quality gates
+
+### Learning Objectives
+
+By the end of this module you will be able to:
+- Identify every hook event and when it fires in the session lifecycle
+- Write command, HTTP, prompt, and agent hook handlers
+- Use exit codes correctly (0/2/other) and understand their effects
+- Block dangerous operations programmatically using PreToolUse
+- Verify Claude's output quality using Stop hooks
+- Debug hook failures and reload hooks without restarting
+
+### Hook Lifecycle — Visual Sequence
+
+```
+  Claude Code Session — Hook Injection Points
+
+  ┌─── Session Start ────────────────────────────────────────────────┐
+  │  hooks: SessionStart (inject context), Setup (–-maintenance)     │
+  └──────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+  ┌─── Per Turn ─────────────────────────────────────────────────────┐
+  │                                                                   │
+  │  [User types prompt] ──► UserPromptSubmit hook                   │
+  │        exit 2 = block prompt                                     │
+  │                    │                                             │
+  │                    ▼ Claude reasons                              │
+  │                                                                  │
+  │  [Claude calls tool] ──► PreToolUse hook                         │
+  │        exit 2 = deny tool call                                   │
+  │        return updatedInput = modify tool arguments               │
+  │                    │                                             │
+  │                    ▼ Tool executes                               │
+  │                                                                  │
+  │  [Tool returns result] ──► PostToolUse hook                      │
+  │        can augment result, add context                           │
+  │                    │                                             │
+  │                    ▼ Claude responds                             │
+  │                                                                  │
+  │  [Claude says "done"] ──► Stop hook                              │
+  │        exit 2 + reason = force continuation                      │
+  │                                                                  │
+  └───────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+  ┌─── Special Events ───────────────────────────────────────────────┐
+  │  FileChanged, CwdChanged, WorktreeCreate, WorktreeRemove         │
+  │  PreCompact / PostCompact (before/after context compaction)      │
+  │  InstructionsLoaded (after CLAUDE.md + rules loaded)             │
+  │  SubagentStop, TeammateIdle, TaskCompleted                       │
+  │  PermissionDenied, Notification (alerts, permission prompts)     │
+  └──────────────────────────────────────────────────────────────────┘
+
+  Hook exit codes:
+  exit 0  → success, proceed normally
+  exit 2  → blocking error; stderr text is fed back to Claude
+  exit 1+ → non-blocking warning; logged but does not stop execution
+```
 
 Hooks transform Claude Code from an interactive assistant into a **governed development system** with automated validation, security enforcement, and zero-hallucination verification.
 
@@ -343,9 +550,89 @@ fi
 
 **Critical implementation detail**: hooks snapshot at session start. Config edits require a session restart or use `/hooks` to reload. All matching hooks run in parallel. Exit code 0 = success, exit code 2 = blocking error (stderr fed to Claude), any other exit = non-blocking warning.
 
+### Hook Debugging Checklist
+
+When a hook isn't working as expected:
+
+```bash
+# 1. Verify hook config is valid JSON
+cat .claude/settings.json | jq '.hooks'
+
+# 2. Test hook script standalone (stdin = simulated tool_use event)
+echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}' \
+  | bash .claude/hooks/my-hook.sh
+
+# 3. Check exit code
+echo $?  # should be 0, 2, or other
+
+# 4. Reload hooks without restarting
+# Run /hooks inside Claude Code session
+
+# 5. Enable hook debug logging
+CLAUDE_CODE_HOOK_DEBUG=1 claude
+```
+
+### Module 3 — Common Mistakes
+
+| Mistake | Why it hurts | Fix |
+|---------|-------------|-----|
+| Blocking hook takes 60+ seconds | Claude waits; session feels hung | Add `"timeout": 30` to hook config |
+| Using `exit 1` instead of `exit 2` | Error is logged but doesn't stop Claude | Use `exit 2` for blocking errors |
+| Hook reads from disk at every turn | Performance overhead accumulates | Cache expensive checks; use `"once": true` for one-time setup |
+| Forgetting to reload after editing | Old hook behaviour persists | Run `/hooks` or restart session |
+| Hooks running in session start | Not all hooks fire at session start | Check which events you actually need |
+
 ---
 
 ## Module 4: MCP servers — extending Claude's tool reach
+
+### Learning Objectives
+
+By the end of this module you will be able to:
+- Explain the MCP Host → Client → Server architecture
+- Configure MCP servers across all three scope levels (local/project/user)
+- Build a custom MCP server in your preferred language
+- Apply security hardening to prevent tool injection and data exfiltration
+- Manage context overhead from MCP tool definitions
+- Use ToolSearch for automatic deferral of large tool sets
+
+### MCP Architecture — Visual Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     MCP ARCHITECTURE                                │
+└─────────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────┐
+  │  HOST: Claude Code                   │
+  │  Manages multiple MCP clients        │
+  └───────────┬──────────────────────────┘
+              │ JSON-RPC 2.0
+      ┌───────┼───────────────────┐
+      │       │                   │
+      ▼       ▼                   ▼
+  ┌───────┐ ┌───────┐         ┌───────┐
+  │Client │ │Client │   ...   │Client │
+  └───┬───┘ └───┬───┘         └───┬───┘
+      │         │                 │
+      ▼         ▼                 ▼
+  ┌──────────┐ ┌──────────┐ ┌──────────┐
+  │ MCP      │ │ MCP      │ │ MCP      │
+  │ Server   │ │ Server   │ │ Server   │
+  │ (stdio)  │ │ (HTTP)   │ │ (custom) │
+  │ GitHub   │ │ Azure    │ │ Internal │
+  └──────────┘ └──────────┘ └──────────┘
+
+  Each server exposes 3 primitives:
+  • Tools    → functions Claude can invoke (most common)
+  • Resources → structured data Claude can read
+  • Prompts  → templates that appear as slash commands
+
+  Transport options:
+  • stdio  → local process on same machine (most common)
+  • HTTP   → remote service over HTTPS (recommended for cloud)
+  • SSE    → deprecated (migrate to HTTP)
+```
 
 The Model Context Protocol gives Claude Code access to **any external system** through a standardized JSON-RPC 2.0 interface. With 10,000+ active servers and first-class support across Claude, ChatGPT, Cursor, Gemini, and VS Code, MCP is the universal integration layer for AI tooling.
 
@@ -437,9 +724,109 @@ MCP security is non-negotiable in enterprise settings. Real-world incidents in 2
 
 **MCP headers (v2.1.85):** Use `headersHelper` scripts in `.mcp.json` to generate dynamic auth headers. `CLAUDE_CODE_MCP_SERVER_NAME` and `CLAUDE_CODE_MCP_SERVER_URL` env vars are injected into helper scripts.
 
+### Building MCP Servers — Language Examples
+
+**TypeScript (official SDK):**
+```typescript
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+
+const server = new McpServer({ name: "my-tools", version: "1.0.0" });
+
+server.tool("run_tests", "Run the test suite", {
+  pattern: z.string().optional().describe("Test file pattern"),
+}, async ({ pattern }) => {
+  // implementation
+  return { content: [{ type: "text", text: "Tests passed" }] };
+});
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+**Python (official SDK):**
+```python
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp.types import Tool, TextContent
+import asyncio
+
+app = Server("my-tools")
+
+@app.list_tools()
+async def list_tools():
+    return [Tool(name="run_tests", description="Run test suite",
+                 inputSchema={"type": "object", "properties": {}})]
+
+@app.call_tool()
+async def call_tool(name: str, arguments: dict):
+    return [TextContent(type="text", text="Tests passed")]
+
+async def main():
+    async with stdio_server() as (read, write):
+        await app.run(read, write, app.create_initialization_options())
+
+asyncio.run(main())
+```
+
+### Module 4 — Common Mistakes
+
+| Mistake | Why it hurts | Fix |
+|---------|-------------|-----|
+| Enabling 10+ MCP servers always | 20K+ token overhead per session | Use project-scoped `.mcp.json`; disable unused servers via `/mcp` |
+| stdio server uses `CreateDefaultBuilder` | Non-JSON output corrupts protocol | Use `CreateEmptyApplicationBuilder` (C#) or stdio transport only |
+| No input validation in tool handlers | SQL injection, path traversal | Validate and sanitize all inputs; use parameterized queries |
+| Secrets in `.mcp.json` plaintext | Exposed in version control | Use `${VAR}` env expansion; secrets in `.env` |
+| Using SSE transport | Deprecated, unstable | Migrate to HTTP transport |
+
 ---
 
 ## Module 5: Advanced prompt engineering — from practitioner to architect
+
+### Learning Objectives
+
+By the end of this module you will be able to:
+- Structure prompts with XML tags for reliable parsing and attention
+- Use extended thinking triggers appropriately for different problem types
+- Apply multi-shot anchoring with cached examples
+- Choose the right agentic pattern (ReAct, chaining, routing, etc.) for a task
+- Use the Spec-Driven Development workflow for complex projects
+- Identify and fix the six most common prompt engineering anti-patterns
+
+### Prompt Structure Best Practices
+
+A well-structured Claude Code prompt follows the **RICS** pattern:
+
+```
+Role:        Who Claude is for this task
+Instructions: What to do, how to do it
+Context:     What Claude needs to know (files, constraints, history)
+Schema:      What the output should look like
+
+Example prompt structure:
+┌─────────────────────────────────────────────────────────────┐
+│ <instructions>                                               │
+│   You are a security reviewer. Analyze the attached API     │
+│   endpoint for vulnerabilities.                             │
+│ </instructions>                                             │
+│                                                             │
+│ <context>                                                   │
+│   Stack: .NET 10 / EF Core / SQL Server                    │
+│   This endpoint handles user authentication.                │
+│ </context>                                                  │
+│                                                             │
+│ <constraints>                                               │
+│   - Only report confirmed vulnerabilities                   │
+│   - Include CVSS severity score                             │
+│   - Reference specific line numbers                         │
+│ </constraints>                                              │
+│                                                             │
+│ <output_format>                                             │
+│   Markdown table: File | Line | Severity | Description | Fix │
+│ </output_format>                                            │
+└─────────────────────────────────────────────────────────────┘
+```
 
 The shift from "prompt engineering" to **context engineering** is the defining evolution of 2025-2026. Anthropic now frames the discipline as: "What configuration of context is most likely to generate the desired behavior?" The goal is finding the **smallest possible set of high-signal tokens** that maximize output quality.
 
@@ -506,9 +893,94 @@ The dominant framework for complex Claude Code work:
 
 Save plans as `PLAN.md` files. Use Plan Mode (`Shift+Tab` twice or `--permission-mode plan`) for read-only analysis. This workflow prevents the most common failure mode: Claude jumping into implementation before understanding the problem space.
 
+### Prompt Anti-Patterns to Avoid
+
+| Anti-pattern | Problem | Fix |
+|-------------|---------|-----|
+| "Write me a function that..." | No context, no constraints | Include: stack, existing patterns, test requirements |
+| Vague acceptance criteria | Claude decides what "done" means | Specify: "Tests pass, linter clean, PR description written" |
+| Asking Claude to review its own work | Confirmation bias; self-review fails | Use independent subagent: `Task("review this code")` |
+| "Fix all the bugs" | Unbounded scope; hallucinations | Scope: "Fix the null-reference in UserService.GetById" |
+| Chaining many tasks in one prompt | Context mixing; partial completion | Break into sequential, verified steps |
+| Dynamic content in system-equivalent position | Breaks prompt cache | Keep CLAUDE.md static; dynamic context in user turn |
+
+### Module 5 — Common Mistakes
+
+| Mistake | Why it hurts | Fix |
+|---------|-------------|-----|
+| Using "ultrathink" for every task | 32K thinking tokens = expensive | Reserve for architecture decisions; use "think" for routine |
+| No examples in few-shot prompts | Inconsistent output format | Include 3-5 diverse examples in `<examples>` tags |
+| Asking Claude to generate and review its own output | Self-review = confirmation bias | Use second Claude instance or subagent as reviewer |
+| Putting variable data in CLAUDE.md | Breaks prompt caching | Only static instructions in CLAUDE.md |
+| Skipping the EXPLORE phase | Claude implements the wrong thing | Always: Explore → Plan → Code → Commit |
+
 ---
 
 ## Module 6: RAG systems and enterprise AI architecture
+
+### Learning Objectives
+
+By the end of this module you will be able to:
+- Classify RAG architectures (Naive, Advanced, Modular, Agentic, GraphRAG)
+- Select the right vector database for your performance and scale requirements
+- Implement hybrid search (BM25 + vector) with RRF fusion
+- Apply the five-layer security model for production RAG
+- Evaluate RAG performance beyond simple accuracy metrics
+- Choose chunking and embedding strategies for different content types
+
+### RAG Pipeline — Visual Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     RAG PIPELINE ARCHITECTURE                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+  INDEXING (offline, run once or on document update):
+  ┌──────────────┐
+  │  Raw Docs    │
+  │ (PDF, DOCX,  │
+  │  HTML, etc.) │
+  └──────┬───────┘
+         │ Chunking strategy
+         ▼ (fixed-size, semantic, hierarchical, page-level)
+  ┌──────────────┐
+  │    Chunks    │──► Embedding model ──► Vector store (index)
+  │ + metadata   │                        (BM25 index for hybrid)
+  └──────────────┘
+
+  RETRIEVAL (online, per query):
+  ┌──────────────┐
+  │  User Query  │──► Query rewriting (optional)
+  └──────┬───────┘
+         │
+    ┌────┴────────────────────────────┐
+    │ Vector search     BM25 search   │
+    │ (semantic match)  (keyword match)│
+    └────┬─────────────┬──────────────┘
+         │             │
+         ▼             ▼
+    ┌─────────────────────────┐
+    │   RRF Fusion            │ ← Reciprocal Rank Fusion
+    │   (combine rankings)    │
+    └────────────┬────────────┘
+                 │
+                 ▼ Re-ranking (optional: cross-encoder)
+    ┌────────────────────────┐
+    │  Top-K chunks          │
+    └────────────┬───────────┘
+                 │
+  GENERATION:    ▼
+  ┌──────────────────────────┐
+  │  LLM (Claude)            │
+  │  Prompt: context + query │──► Answer + citations
+  └──────────────────────────┘
+
+  Evaluation metrics:
+  • Faithfulness: answer grounded in retrieved context?
+  • Answer relevance: answers the question asked?
+  • Context precision: retrieved chunks actually used?
+  • Context recall: all relevant chunks retrieved?
+```
 
 RAG has evolved from a simple retrieve-then-generate pipeline into a family of sophisticated architectures. The right choice depends on query complexity, corpus size, and accuracy requirements.
 
@@ -551,9 +1023,80 @@ Microsoft's **Agentic Retrieval** (preview) is the recommended approach for new 
 
 Implement defense in depth: **Input Layer** (sanitization, malicious encoding blocking) → **Prompt Layer** (structured templates with trust boundaries separating system instructions from user data) → **Retrieval Layer** (RBAC on vector stores, vetted documents only) → **Model Layer** (resource constraints, monitoring) → **Output Layer** (PII scanning, hallucination checks). The `<thinking>` + `<answer>` tag architecture improves both accuracy and injection resistance by separating reasoning from user-facing output.
 
+### Vector Database Comparison
+
+| Database | Best for | Strengths | Avoid when |
+|----------|---------|-----------|-----------|
+| **Azure AI Search** | .NET/Azure teams | Native Azure integration, hybrid search, RRF | Not on Azure |
+| **Qdrant** | Metadata-heavy filtering | Fastest metadata filters, Rust performance | Need managed service without Qdrant Cloud |
+| **Milvus** | Billion-scale | GPU acceleration, multi-tenancy | Small corpus (<1M vectors) |
+| **Weaviate** | Multi-modal | Text + image + video in one index | Pure text RAG |
+| **Pinecone** | Quick start, managed | Serverless, zero ops | Cost at scale; vendor lock-in |
+| **pgvector** | Existing PostgreSQL stack | No new infra, SQL joins | >10M vectors or high QPS |
+| **ChromaDB** | Prototyping only | Simple Python API | Any production use |
+
+### Module 6 — Common Mistakes
+
+| Mistake | Why it hurts | Fix |
+|---------|-------------|-----|
+| Fixed-size chunking always | Splits sentences, destroys context | Use semantic chunking for prose; fixed for code |
+| Vector-only search | Misses product codes, proper nouns | Always add BM25 for hybrid search |
+| Aggregate accuracy metric only | 97% overall may hide 85% on one document type | Stratified evaluation by document type |
+| No re-ranking step | Top-20 retrieval quality degrades fast | Add cross-encoder re-ranker (e.g., Cohere) |
+| Embedding everything together | Mixes structured and unstructured retrieval | Separate indexes by content type |
+
 ---
 
 ## Module 7: Production workflows and CI/CD integration
+
+### Learning Objectives
+
+By the end of this module you will be able to:
+- Apply the Battle Plan protocol to complex multi-step tasks
+- Prevent context dilution across long sessions
+- Integrate Claude Code into GitHub Actions and Azure DevOps pipelines
+- Use the Agent SDK for fully programmatic Claude workflows
+- Set up cost controls and monitoring for production usage
+- Structure modular rules for path-scoped CI enforcement
+
+### CI/CD Integration Flow
+
+```
+  Developer Workflow with Claude Code:
+
+  ┌────────────┐     /plan      ┌─────────────┐
+  │  You type  │ ──────────►   │ Plan Mode   │
+  │  a task    │               │ (read-only) │
+  └────────────┘               │ Explore →   │
+                               │ Plan →      │
+                               │ Pause ◄─────┼── You review & approve
+                               └──────┬──────┘
+                                      │ approved
+                                      ▼
+  ┌─────────────────────────────────────────────────┐
+  │  IMPLEMENTATION PHASE (Normal/Auto-Accept mode) │
+  │  Claude: Read → Edit → Test → Fix → Repeat      │
+  └──────────────────────────┬──────────────────────┘
+                             │
+                             ▼ pre-commit hook (local)
+  ┌─────────────────────────────────────────────────┐
+  │  GIT PUSH                                       │
+  └──────────────────────────┬──────────────────────┘
+                             │
+                             ▼ GitHub Actions / Azure DevOps
+  ┌─────────────────────────────────────────────────┐
+  │  CI PIPELINE                                    │
+  │  • anthropics/claude-code-action@v1 (PR review) │
+  │  • claude -p "..." --permission-mode plan        │
+  │  • --output-format json for structured output   │
+  └─────────────────────────────────────────────────┘
+
+  Cost controls in CI:
+  --max-turns 5           # Limit agentic turns
+  --max-budget-usd 0.10   # Cap per-run cost
+  --bare                  # Skip hooks/MCP/plugins (14% faster)
+  --allowedTools "Read,Grep,Glob"  # Read-only analysis
+```
 
 ### The Battle Plan protocol
 
@@ -630,9 +1173,102 @@ globs: ["src/Api/**/*.cs", "src/**/Controllers/**/*.cs"]
 - CORS must be restrictive
 ```
 
+### Agent SDK — Programmatic Workflow Example
+
+```typescript
+import { query, ClaudeAgentOptions } from "@anthropic-ai/claude-agent-sdk";
+
+// Fully automated code review pipeline
+async function reviewPR(prDiff: string): Promise<ReviewResult> {
+  const options: ClaudeAgentOptions = {
+    model: "claude-sonnet-4-6",
+    permissionMode: "plan",        // read-only
+    maxTurns: 5,
+    maxBudgetUsd: 0.25,
+    allowedTools: ["Read", "Grep", "Glob"],
+    outputFormat: "json",
+  };
+
+  const messages = [];
+  for await (const msg of query({
+    prompt: `Review this PR diff for security issues and code quality.
+    Output JSON: { issues: [{file, line, severity, description, fix}] }
+    
+    <diff>${prDiff}</diff>`,
+    options,
+  })) {
+    messages.push(msg);
+  }
+  
+  const result = messages.find(m => m.type === "result");
+  return JSON.parse(result?.result || "{}");
+}
+```
+
+### Module 7 — Common Mistakes
+
+| Mistake | Why it hurts | Fix |
+|---------|-------------|-----|
+| No `--max-turns` in CI | Runaway session; pipeline hangs | Always set `--max-turns 5-10` in automation |
+| Wide tool permissions in CI | Security risk | Use `--allowedTools "Read,Grep,Glob"` for review tasks |
+| Skipping Plan phase for complex tasks | Wrong implementation; expensive rework | Always Explore → Plan → Approve → Implement |
+| Not using `--bare` in CI | Extra 14% startup time per run | Add `--bare` to CI pipelines |
+| Inline secrets in pipeline YAML | Exposed in logs | Use GitHub Secrets / Azure Key Vault references |
+
 ---
 
 ## Module 8: Architecture patterns for AI-augmented enterprise development
+
+### Learning Objectives
+
+By the end of this module you will be able to:
+- Apply the Council of Sub-Agents pattern for multi-agent QA
+- Select the right multi-agent framework (LangGraph, CrewAI, Semantic Kernel, AutoGen)
+- Design agentic CI/CD pipelines with appropriate HITL gates
+- Choose stateful serverless hosting for production agent workloads
+- Implement the five Human-in-the-Loop patterns
+- Scope and plan enterprise AI rollouts with realistic metrics
+
+### Multi-Agent Architecture Decision Map
+
+```
+  What type of task do you have?
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ Single-step, bounded task                                       │
+  │ (read, analyze, summarize, generate)                           │
+  │ → Single Claude Code session                                   │
+  └─────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ Multiple independent subtasks                                   │
+  │ (parallelize: research, test, review)                          │
+  │ → SubAgents via Task tool                                       │
+  │   Lead orchestrates, subagents return summaries                │
+  └─────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ Competing hypotheses / real-time collaboration                  │
+  │ (QA swarms, cross-domain review, competing implementations)    │
+  │ → Agent Teams (experimental Research Preview)                  │
+  │   Lead + N teammates via filesystem mailbox                    │
+  └─────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ Complex stateful workflow with human checkpoints                │
+  │ (multi-day project, approval gates, compliance)                │
+  │ → LangGraph (Python) or Semantic Kernel + Durable Functions    │
+  │   State machine with HITL interrupts                           │
+  └─────────────────────────────────────────────────────────────────┘
+
+  Framework selection:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ LangGraph     → complex stateful flows, HITL, streaming      │
+  │ CrewAI        → rapid prototyping, role-based delegation     │
+  │ Semantic Kernel → .NET/Azure, Durable Functions hosting      │
+  │ AutoGen       → dialogue-intensive, conversation-heavy apps  │
+  └──────────────────────────────────────────────────────────────┘
+```
 
 ### Multi-agent QA: the Council of Sub-Agents pattern
 
@@ -667,6 +1303,16 @@ AI has compressed **underwriting decisions from 3-5 days to 12.4 minutes** for s
 
 Five core HITL patterns from Google Cloud's architecture guidance: **Approval Gates** (pause at checkpoints for human review), **Escalation on Failure** (auto-escalate to human on stuck/failed agents), **Confidence-Based Routing** (below-threshold confidence → human), **Asynchronous Oversight** (agent acts, human reviews afterward), and **Evaluator/Critic Loops** (generator + critic iterate, human intervenes on persistent failures). In Claude Code, implement these through hooks (Stop hooks that verify completion criteria), permission modes (Plan Mode for read-only analysis requiring approval), and the Agent SDK's structured output for downstream human review workflows.
 
+### Module 8 — Common Mistakes
+
+| Mistake | Why it hurts | Fix |
+|---------|-------------|-----|
+| "Super agent" does everything | Monolithic agents fail on complex tasks | Specialize: each agent owns one phase |
+| No HITL gates on destructive operations | Unrecoverable mistakes in production | Add Stop hooks + Plan Mode before any write |
+| Ignoring agent error propagation | Silent failures cascade | Structured error context; always check agent result |
+| Testing multi-agent systems manually | Expensive, slow, unreliable | Unit test each agent prompt independently |
+| Measuring only end-to-end accuracy | Hides which agent is the bottleneck | Instrument each agent phase separately |
+
 ---
 
 ## Conclusion: from operator to architect
@@ -674,5 +1320,26 @@ Five core HITL patterns from Google Cloud's architecture guidance: **Approval Ga
 This program traces a deliberate arc from mastering Claude Code's full control surface through designing enterprise-grade AI systems. The key insight across all eight modules is that **constraint drives quality**: concise CLAUDE.md files outperform verbose ones, bounded agents outperform monolithic ones, proactive context management outperforms reactive compaction, and explicit planning phases prevent the most expensive failure mode — implementing the wrong solution.
 
 Three capabilities distinguish elite-level practitioners. First, **architectural thinking about context** — treating the up-to-1M token context window as a strategic resource, using subagents for isolation, hooks for verification, and MCP servers for reach. Second, **multi-agent orchestration literacy** — knowing when a SubAgent suffices versus when Agent Teams are worth the 5x token cost, and designing agent specializations that produce emergent quality. Third, **production hardening instincts** — security scanning hooks on every tool use, hybrid search in RAG pipelines, HITL gates on destructive operations, and observability via OpenTelemetry from day one.
+
+The most important mindset shift is thinking of Claude Code as a **governed system**, not a chat interface. Hooks enforce invariants that prompts cannot. Skills package expertise that CLAUDE.md cannot carry. Subagents provide isolation that a single context window cannot achieve. The practitioner who masters these boundaries will build systems that are faster, cheaper, safer, and more reliable than those who treat Claude as an advanced autocomplete.
+
+### Next Steps
+
+| What to read next | Why |
+|------------------|-----|
+| [CLI Technical Reference](./claude-code-reference) | Every documented feature through v2.1.126 — tools, flags, hook events, MCP, Agent SDK |
+| [CLAUDE.md vs Skills vs Rules](./claude-code-config-guide) | The configuration architecture that makes agents reliable |
+| [Every Markdown File — Catalog](./claude-code-all-markdown-files-catalog) | All 23 file types Claude Code recognises |
+| [Context & Cost Efficiency](./claude-code-efficiency-reference) | Token budgets, caching, effort levels, and the /advisor command |
+| [Compass Research Notes](./compass-research-notes) | Deep dives into Agent SDK internals, hooks, MCP for CCA-F exam prep |
+| [Concept Validation Report](./validation-report) | 132 claims verified against official Anthropic documentation |
+
+**Recommended practice projects (ascending difficulty):**
+
+1. Create a CLAUDE.md + 3 rules + 1 skill for your current project
+2. Build a PostToolUse hook that runs your linter after every file edit
+3. Add a custom MCP server for a REST API you use regularly
+4. Create a SubAgent orchestration for a multi-step analysis workflow
+5. Implement the full Council pattern for end-to-end test generation in your stack
 
 The field is moving from prescriptive prompting toward lightweight heuristic guidance and autonomous context management. Opus 4.7's adaptive reasoning supersedes fixed thinking budgets; `xhigh` effort unlocks its full reasoning depth. Agent teams will mature from Research Preview to production-grade. The practitioners who thrive will be those who internalize the principles behind the tools, not just the current syntax — because the syntax will change quarterly, but the architecture patterns endure.

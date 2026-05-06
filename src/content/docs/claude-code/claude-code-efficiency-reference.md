@@ -1,11 +1,14 @@
 ---
 title: "Claude Code: Context, Cost & Token Efficiency — Reference"
 description: "Complete reference for context management, prompt caching, token budgets, model selection, effort controls, hooks, environment variables, and the advisor tool in Claude Code v2.1.126+. Covers all five CCA-F exam domains."
+lastUpdated: 2026-05-06
 sidebar:
   order: 5
 ---
 
 # Claude Code: Context, Cost & Token Efficiency — Complete Reference
+
+> **Last updated:** May 6, 2026
 
 ---
 
@@ -35,7 +38,34 @@ Reserved buffer: 33K–45K tokens for system overhead
 - Average API cost: **~$13/developer/active day** (90th percentile under $30; $150-250/month)
 - Input tokens account for **85–92%** of total API costs in typical coding sessions
 
-### 1.2 Hidden Token Costs
+### 1.2 Context Assembly Order
+
+Understanding how Claude assembles context helps you predict token costs:
+
+```
+  ┌──────────────────────────────────────────────────────────────────┐
+  │              CONTEXT ASSEMBLY (in order, lowest → highest)      │
+  ├──────────────────────────────────────────────────────────────────┤
+  │  Position  │ Content                        │ Cache eligible?   │
+  ├──────────────────────────────────────────────────────────────────┤
+  │  1st        │ Tool schemas (built-in)        │ YES (prefix)      │
+  │  2nd        │ MCP tool schemas               │ YES (prefix)      │
+  │  3rd        │ System prompt                  │ YES (prefix)      │
+  │  4th        │ CLAUDE.md (all levels)         │ YES (prefix)      │
+  │  5th        │ Rules (global)                 │ YES (prefix)      │
+  │  6th        │ Auto-memory (MEMORY.md)        │ YES (prefix)      │
+  │  7th        │ Path-scoped rules              │ Sometimes         │
+  │  8th        │ Skill content                  │ Sometimes         │
+  │  9th        │ Conversation history           │ YES (up to TTL)   │
+  │  10th       │ Tool results (in-turn)         │ NO (ephemeral)    │
+  └──────────────────────────────────────────────────────────────────┘
+
+  Cache hit = 0.1× cost (90% savings)
+  Everything in "prefix" = stable across turns → high cache hit rate
+  Conversation history = 5-min TTL (default) or 1-hour (Pro/Max subscribers)
+```
+
+### 1.3 Hidden Token Costs
 
 These are the costs developers most frequently underestimate:
 
@@ -46,7 +76,7 @@ These are the costs developers most frequently underestimate:
 | Redundant file re-reads | 40–60% of all Read tokens | Studies show most Read tokens are re-reads |
 | System overhead buffer | 33K–45K tokens | Effective usable space is smaller than raw window |
 
-### 1.3 Monitoring Commands
+### 1.4 Monitoring Commands
 
 | Command | What it shows | Scope |
 |---------|--------------|-------|
@@ -107,7 +137,39 @@ The two write tiers exist because Anthropic optimizes differently depending on h
 
 **Practical implication:** If `/cost` shows unexpectedly high `cache_write` tokens relative to `cache_read` tokens mid-session — especially after a pause — the 5-minute TTL has fired and the cache went cold. Use `/context` to verify, and consider `/compact` before long idle periods rather than after.
 
-### 2.3 The `--resume` Cache Regression (v2.1.69 → v2.1.90)
+### 2.3 Cache Hit/Miss Flow
+
+```
+  Every API request:
+  
+  Claude API receives request
+         │
+         ▼
+  Is the prefix (tools + system + CLAUDE.md + rules) identical to a cached version?
+         │
+    ┌────┴────┐
+    │         │
+   YES        NO
+    │         │
+    ▼         ▼
+  CACHE HIT  CACHE MISS
+  0.1× cost  1.25× cost (writes new cache entry)
+  (read 90%  (standard input pricing + 25% write surcharge)
+   cheaper)
+         │
+         ▼
+  Response generated using cached KV state
+  (same quality as non-cached — the model never "sees" the cache)
+
+  What breaks cache hits (avoid these):
+  ✗ Switching models mid-session
+  ✗ Modifying CLAUDE.md between turns
+  ✗ Adding/removing MCP servers mid-session
+  ✗ Dynamic date in system prompt
+  ✗ Using FORCE_PROMPT_CACHING_5M=1 with long sessions
+```
+
+### 2.4 The `--resume` Cache Regression (v2.1.69 → v2.1.90)
 
 Between v2.1.69 and v2.1.90, `--resume` sessions suffered a critical bug causing a **~20× cost increase** per message. Only the internal system prompt (~14.5K tokens) was cached; all conversation history rebuilt from scratch on every turn.
 
@@ -115,7 +177,7 @@ Between v2.1.69 and v2.1.90, `--resume` sessions suffered a critical bug causing
 
 **Fixed in v2.1.90 (April 1, 2026).** This bug connects three CCA-F domains: D4 (ToolSearch's deferred_tools_delta), D5 (prompt caching prefix sensitivity), and D2 (session management with --resume).
 
-### 2.4 Rules for Maximizing Cache Hits
+### 2.5 Rules for Maximizing Cache Hits
 
 | Rule | Why it matters | Cost of violation |
 |------|---------------|-------------------|
@@ -585,6 +647,45 @@ claude --model opus
 
 **Auto-memory:** Stored in `~/.claude/projects/<project>/memory/MEMORY.md`. Truncated at 200 lines / 25KB at session start. Memory timestamps (March 2026) enable freshness reasoning.
 
+### Compaction Decision Logic
+
+```
+  Every turn, Claude Code evaluates context usage:
+
+  Context usage check
+         │
+         ▼
+  Is usage > 83.5% of context window?
+         │
+    ┌────┴────┐
+    │         │
+   YES        NO ──► Continue normally
+    │
+    ▼
+  AUTO-COMPACTION triggers
+  (v2.1.89+ circuit breaker prevents thrash loop)
+         │
+         ▼
+  PreCompact hook fires (optional — capture state before)
+         │
+         ▼
+  Conversation summarized to ~20-30% of original size
+  (CLAUDE.md sections survive intact — they reload fresh)
+         │
+         ▼
+  Session continues with reduced context
+         │
+         ▼
+  PostCompact hook fires (optional)
+
+  Manual triggers:
+  /compact              ──► immediate compaction
+  /compact [focus]      ──► compaction with summary hint
+  /rewind               ──► roll back without compacting
+
+  Best practice: /compact at 70%, not 83.5% (keeps quality high)
+```
+
 ---
 
 ## 10. Batch Processing & Scheduled Tasks
@@ -646,6 +747,30 @@ Subscribes to GitHub PR events. CI failure → investigate → fix → push → 
 | 10 | `--bare` for CI/scripts | ~14% faster, minimal overhead | `claude -p '...' --bare` | D2 |
 | 11 | PostToolUse hooks for data filtering | Pre-filter large outputs before Claude sees them; community reports 40–70% cost reduction | `.claude/settings.json` hooks | D4 |
 | 12 | Advisor before architecture decisions | Prevents costly rework from wrong approaches; call once before design, once before done | `advisor()` in session | D1 |
+
+### 11.1 Cost Impact Visualization
+
+```
+  Cumulative savings by applying optimizations (approximate):
+
+  Baseline: Opus 4.7 default, no caching, no optimization
+  ─────────────────────────────────────────────────────────
+  
+  +1 Use Sonnet 4.6 for most tasks           → -40% total cost
+  +2 MAX_THINKING_TOKENS=10000               → -42% of thinking cost
+  +3 /clear between unrelated tasks          → -15% by reducing history size
+  +4 Use Haiku 4.5 for subagents             → -93% per subagent call
+  +5 opusplan alias (Opus plan, Sonnet impl) → -30% per planning-heavy session
+  +6 CLAUDE.md under 200 lines              → -5% overhead
+  +7 ToolSearch auto-deferred               → -85% on tool schema tokens
+  +8 PostToolUse hooks (output pruning)     → -40-70% on tool results
+  +9 Cache-friendly session structure       → -90% on cached prefix reads
+  ─────────────────────────────────────────────────────────
+  Total achievable: 60-85% cost reduction vs naive usage
+  
+  Reality check: you won't apply all 9 to every session.
+  Sonnet + caching alone achieves ~55% reduction for most teams.
+```
 
 ---
 
@@ -1216,4 +1341,4 @@ The exam rewards **programmatic enforcement over prompt-based guidance** — hoo
 
 ---
 
-*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Introducing Claude Opus 4.7](https://www.anthropic.com/news/claude-opus-4-7), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated May 2, 2026 (v2.1.126).*
+*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Introducing Claude Opus 4.7](https://www.anthropic.com/news/claude-opus-4-7), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated May 6, 2026 (v2.1.126).*

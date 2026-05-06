@@ -6,7 +6,7 @@ sidebar:
 
 # Every Markdown File Claude Code Recognizes — Complete Catalog
 
-> **Last updated: May 2026 — reflects Claude Code v2.1.121+**
+> **Last updated: May 6, 2026 — reflects Claude Code v2.1.121+**
 > All information sourced from official `code.claude.com` documentation.
 
 ---
@@ -111,6 +111,39 @@ PLUGINS
 
 IMPORTED FILES (via @path syntax in any CLAUDE.md)
 └── any *.md referenced with @                  ← 23. Imported Files
+```
+
+---
+
+### Configuration Layers — Visual Precedence Map
+
+```
+  HIGHEST PRECEDENCE
+  ══════════════════════════════════════════════════════════════
+  ▲ Enterprise Managed Settings (MDM/Group Policy/Registry)
+  │  └── Enterprise CLAUDE.md (system-level)
+  ══════════════════════════════════════════════════════════════
+  ▲ CLI Flags & Environment Variables
+  ══════════════════════════════════════════════════════════════
+  ▲ .claude/settings.local.json  (project local, git-ignored)
+  ══════════════════════════════════════════════════════════════
+  ▲ .claude/settings.json  (project, committed to git)
+  ══════════════════════════════════════════════════════════════
+  ▲ ~/.claude/settings.json  (user-global preferences)
+  ══════════════════════════════════════════════════════════════
+  ▲ ~/.claude/CLAUDE.md  (user-global context/instructions)
+  ══════════════════════════════════════════════════════════════
+  ▲ CLAUDE.md (project root)  →  subdirectory CLAUDE.md files
+  ══════════════════════════════════════════════════════════════
+  ▲ CLAUDE.local.md  (personal project overrides, git-ignored)
+  ══════════════════════════════════════════════════════════════
+  ▲ .claude/rules/*.md  (path-scoped, conditional)
+  ══════════════════════════════════════════════════════════════
+  ▲ Skills / Output Styles  (on-demand)
+  ══════════════════════════════════════════════════════════════
+  ▲ Auto-Memory MEMORY.md  (~/.claude/projects/<hash>/memory/)
+  LOWEST PRECEDENCE (but always injected into context)
+  ══════════════════════════════════════════════════════════════
 ```
 
 ---
@@ -1106,6 +1139,21 @@ These are **not** markdown files but are core to the Claude Code configuration e
 | 21 | Plugin Monitors | `<plugin>/monitors/monitors.json` | Session start (or first skill invoke) | Background process | Automatic | Via plugin | Background stdout → notifications |
 | 22 | Plugin Themes | `<plugin>/themes/*.json` | When selected | UI level | `/theme` | Via plugin | UI only |
 | 23 | @Imported files | Anywhere — referenced via `@path` | When parent CLAUDE.md loads | Same as parent CLAUDE.md | Automatic | Varies | Adds to parent's cost |
+
+### Token Budget Summary by Load Tier
+
+Understanding which files load when helps you budget token costs:
+
+| Load Tier | Files | Approx. Tokens | Optimization |
+|-----------|-------|----------------|--------------|
+| Always (session start) | Enterprise + User + Project CLAUDE.md | 1K–8K | Keep under 200 lines each |
+| Always | Global rules (no paths: frontmatter) | 0.5K–2K per rule | Use paths: to make conditional |
+| Always | Auto-memory (MEMORY.md) | up to 25KB/~8K | Auto-managed, 200 line cap |
+| On demand | Path-scoped rules | 0.5K–2K each | Only when matching files touched |
+| On demand | Skills | 0.5K–5K each | Only when Claude invokes |
+| On demand | Subtree CLAUDE.md | 1K–8K each | Lazy loaded by directory |
+| Built-in (always) | Tool schemas | 5K–8K | Use ToolSearch to defer (–85%) |
+| Built-in (optional) | MCP tool schemas | 1K–20K | Scope MCP per-agent |
 
 ---
 

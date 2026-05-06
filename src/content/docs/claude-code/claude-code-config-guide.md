@@ -7,6 +7,7 @@ sidebar:
 # CLAUDE.md vs Skills vs Rules — Complete Architecture & Best Practices Guide
 
 > **Last updated: May 2026 — reflects Claude Code v2.1.121+**
+> **Document scope:** Complete configuration reference for CLAUDE.md, Rules, Skills, Plugins, Hooks, MCP, and enterprise settings through v2.1.126 (May 6, 2026).
 
 ## 1. The Core Problem These Three Files Solve
 
@@ -19,6 +20,40 @@ Claude Code solves this with three distinct configuration mechanisms that serve 
 | **CLAUDE.md** | `CLAUDE.md`, `CLAUDE.local.md` | Your project's **constitution** — always in force | Always at session start | Persistent project memory, conventions, and identity |
 | **Rules** | `.claude/rules/*.md` | **Modular bylaws** — targeted regulations | Always at session start (or path-scoped on demand) | Organized, domain-specific instructions that decompose what would be a bloated CLAUDE.md |
 | **Skills** | `.claude/skills/*/SKILL.md` | **Specialist consultants** — called on demand | Only when Claude decides to invoke them (or via `/slash` commands) | On-demand, task-specific expertise with supporting scripts and templates |
+
+### Visual Architecture Overview
+
+```
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                CLAUDE CODE CONFIGURATION ARCHITECTURE               │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ALWAYS LOADED AT SESSION START (token cost is unavoidable):
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ Enterprise CLAUDE.md  →  User CLAUDE.md  →  Project CLAUDE.md      │
+  │ (highest precedence)     (personal)          (team-shared)          │
+  │                                                                     │
+  │ + CLAUDE.local.md (personal project overrides, git-ignored)        │
+  │ + .claude/rules/*.md WITHOUT paths: frontmatter                    │
+  │ + Auto-Memory MEMORY.md (≤200 lines / 25KB)                        │
+  └─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+  LOADED ON DEMAND (only when needed — saves tokens):
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ .claude/rules/*.md WITH paths: frontmatter  (when files match)     │
+  │ .claude/skills/<name>/SKILL.md              (when invoked)         │
+  │ subdirectory CLAUDE.md files                (when cwd changes)     │
+  │ Plugin components                           (when plugin active)   │
+  └─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+  SETTINGS (merged, highest-priority wins):
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ Enterprise (MDM) > CLI flags > .claude/settings.local.json          │
+  │  > .claude/settings.json  >  ~/.claude/settings.json               │
+  └─────────────────────────────────────────────────────────────────────┘
+```
 
 The key architectural insight is that **CLAUDE.md and Rules are "always-on" memory**, while **Skills are "on-demand" expertise**. This distinction directly impacts your token budget and how you should architect your Claude Code configuration.
 
@@ -234,7 +269,38 @@ paths: src/api/**/*.ts
 
 **Rules without `paths:` frontmatter** apply globally — they are loaded every session, just like content in CLAUDE.md.
 
-### 3.4 Token & Context Impact
+### 3.4 Path-Scoping Decision Map
+
+```
+  When should a rule be path-scoped?
+
+  Does the rule apply to ALL files in the project?
+      │
+      ├── YES ──► No paths: frontmatter (global rule)
+      │           Example: "Always run tests before committing"
+      │
+      └── NO ──► Add paths: frontmatter
+                  │
+                  ├── Applies to specific file types?
+                  │   paths: ["**/*.ts", "**/*.tsx"]
+                  │
+                  ├── Applies to a directory?
+                  │   paths: ["src/api/**"]
+                  │
+                  └── Applies to specific filenames?
+                      paths: ["**/migrations/*.sql"]
+
+  Examples:
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ typescript-rules.md: paths: ["**/*.ts", "**/*.tsx"]                 │
+  │ sql-rules.md:        paths: ["**/*.sql", "**/migrations/**"]        │
+  │ test-rules.md:       paths: ["**/*.test.*", "**/*.spec.*"]          │
+  │ api-rules.md:        paths: ["src/api/**", "src/routes/**"]         │
+  │ security-rules.md:   (no paths — applies everywhere)               │
+  └─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.5 Token & Context Impact
 
 Rules have a nuanced token story compared to CLAUDE.md:
 
@@ -256,7 +322,7 @@ Session Start Token Budget:
 └────────────────────────────────────────────────┘
 ```
 
-### 3.5 When to Use Rules vs. CLAUDE.md
+### 3.6 When to Use Rules vs. CLAUDE.md
 
 | Put in CLAUDE.md | Put in Rules |
 |------------------|-------------|
@@ -266,7 +332,7 @@ Session Start Token Budget:
 | Key file paths and directory structure | Testing requirements for different test types |
 | Things Claude needs on literally every interaction | Anything that only matters when working on specific files |
 
-### 3.6 Best Practices for Rules
+### 3.7 Best Practices for Rules
 
 1. **Start with CLAUDE.md, split into rules as it grows.** Don't over-engineer from day one. When CLAUDE.md exceeds ~120 lines, extract domain-specific sections into rule files.
 
@@ -356,6 +422,35 @@ If deployment fails, see [rollback script](scripts/rollback.sh)
 - Verify health check: `curl https://api.example.com/health`
 - Monitor logs for 15 minutes
 ```
+
+### 4.3.1 SKILL.md Frontmatter — Complete Field Reference
+
+```
+  ---
+  name: deploy-api                     # Required: slug (lowercase, hyphens)
+  description: |                       # Required: what this skill does
+    Deploys the API service to the
+    target environment with health
+    checks and rollback on failure.
+  argument-hint: "[environment]"       # Optional: shown in /skills list
+  context: fork                        # Optional: fork | inline (default: inline)
+  agent: false                         # Optional: run as separate subagent
+  allowed-tools:                       # Optional: restrict tools available
+    - Bash
+    - Read
+    - Edit
+  model: claude-sonnet-4-6             # Optional: override default model
+  hooks:                               # Optional: lifecycle hooks for this skill
+    PreToolUse: [./hooks/pre-tool.sh]
+  disable-model-invocation: false      # Optional: require explicit /skill-name
+  ---
+```
+
+  Key decisions:
+  • Use context: fork when the skill modifies many files in isolation
+  • Use agent: true when the skill needs its own conversation context
+  • Use disable-model-invocation: true to prevent auto-invocation
+  • Use allowed-tools to sandbox the skill's capabilities
 
 ### 4.4 Frontmatter Fields Explained
 
@@ -627,6 +722,29 @@ Here is the complete lifecycle of how all three mechanisms work together during 
 ║  │ /context → Detailed token breakdown                   │    ║
 ║  └──────────────────────────────────────────────────────┘    ║
 ╚══════════════════════════════════════════════════════════════╝
+```
+
+### 5.2 Context Load Order — Detailed Sequence
+
+```
+  Order in which Claude Code assembles context at session start:
+
+  1. Tool schema definitions (built-in tools)
+  2. MCP tool schemas (if MCP servers configured)
+  3. System prompt (hardcoded behavior)
+  4. Enterprise CLAUDE.md (if exists)
+  5. User CLAUDE.md (~/.claude/CLAUDE.md if exists)
+  6. Project CLAUDE.md (./CLAUDE.md or ./.claude/CLAUDE.md)
+  7. CLAUDE.local.md (./CLAUDE.local.md if exists)
+  8. Auto-memory MEMORY.md (~/.claude/projects/<hash>/memory/MEMORY.md)
+  9. Global Rules (.claude/rules/*.md WITHOUT paths: frontmatter)
+  10. @imported files (recursively, max 5 hops)
+  11. Skills (loaded ONLY when Claude invokes them)
+  12. Path-scoped Rules (loaded ONLY when matching files touched)
+  13. Conversation history (previous turns)
+
+  Note: Items 1-10 form the "prefix" (cache-eligible)
+        Items 11-13 are dynamic (added mid-session)
 ```
 
 ---
