@@ -1,0 +1,19 @@
+---
+tableOfContents: false
+title: MCP Architecture — Interactive Diagram
+description: >
+  Interactive visual guide to the Model Context Protocol (MCP) in Claude Code — four-layer
+  architecture overview, three primitives (Tools, Resources, Prompts) with TypeScript examples,
+  three transport types (stdio, HTTP, SSE-deprecated) with configuration, four configuration
+  scopes (project, user, local, enterprise), and all 12 official MCP servers.
+  MCP Spec 1.1 · Claude Code v2.1.126 (May 2026).
+sidebar:
+  order: 19
+lastUpdated: 2026-05-07
+---
+
+import MCPDiagram from '../../../components/interactive/MCPDiagram.jsx';
+
+<div class="interactive-tool">
+  <MCPDiagram client:only="react" />
+</div>

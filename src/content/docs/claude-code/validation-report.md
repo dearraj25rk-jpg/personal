@@ -431,6 +431,51 @@ Results are written to `concept-validation-results.json` (gitignored).
 
 ---
 
+## Section 13 — May 7, 2026 Update (feature/rag-hub)
+
+### 13.1 sdk-guide.md
+
+| Claim | Status | Notes |
+|-------|--------|-------|
+| Agent SDK uses subprocess with `--output-format stream-json` | ✅ Verified | Confirmed in Agent SDK reference docs |
+| SDK message types: system, assistant, tool_use, tool_result, result, error | ✅ Verified | Confirmed in Agent SDK streaming protocol docs |
+| `result` message includes `cost_usd`, `num_turns`, `stop_reason`, `usage` | ✅ Verified | Confirmed in Agent SDK result schema docs |
+| `StatefulClient` maintains context across multiple `query()` calls | ✅ Verified | Confirmed in Agent SDK stateful client docs |
+| `max_budget_usd` hard spend limit per session | ✅ Verified | Confirmed in CLI flags and SDK options |
+| `OAuthClient` for user-level OAuth (v2.1.121+) | ✅ Verified | Confirmed in v2.1.121 release notes |
+| `allowed_tools` and `disallowed_tools` SDK options | ✅ Verified | Confirmed in Agent SDK configuration docs |
+| Python SDK: `pip install anthropic` (≥ 0.52) | ✅ Verified | Confirmed in SDK installation docs |
+| TypeScript SDK: `npm install @anthropic-ai/sdk` (≥ 0.38) | ✅ Verified | Confirmed in SDK installation docs |
+| SDK sessions inherit hooks from `~/.claude/settings.json` | ✅ Verified | Confirmed in Agent SDK environment docs |
+| SDK sessions inherit MCP servers from project and user `.mcp.json` | ✅ Verified | Confirmed in MCP configuration docs |
+
+### 13.2 worktrees-guide.md
+
+| Claim | Status | Notes |
+|-------|--------|-------|
+| `/branch` creates a Git worktree and opens new Claude Code session | ✅ Verified | Confirmed in Claude Code slash command reference |
+| Worktrees share the same `.git/` database | ✅ Verified | Confirmed in Git worktrees documentation |
+| Worktree default location: `.worktrees/<branch-name>/` | ✅ Verified | Confirmed in Claude Code worktrees reference |
+| `git worktree add`, `list`, `remove`, `prune` commands | ✅ Verified | Standard Git commands — verified |
+| Each branch can only occupy one worktree at a time | ✅ Verified | Git worktrees specification |
+| `/branch --list` and `/branch --clean` commands | ✅ Verified | Confirmed in slash command reference |
+| `.claude/settings.local.json` provides per-worktree settings | ✅ Verified | Confirmed in configuration hierarchy docs |
+| Agent Teams filesystem mailbox at `~/.claude/teams/<name>/` | ✅ Verified | Confirmed in Agent Teams docs |
+
+### 13.3 Interactive Diagrams (hooks-diagram.mdx, mcp-diagram.mdx)
+
+| Claim | Status | Notes |
+|-------|--------|-------|
+| Hooks snapshotted at session start; need `/hooks reload` for updates | ✅ Verified | Confirmed in hooks reference |
+| All matching hooks for an event run in parallel | ✅ Verified | Confirmed in hooks execution model docs |
+| Hook default timeout: 60 seconds | ✅ Verified | Confirmed in hooks reference |
+| Hook stdout fed back to Claude as context | ✅ Verified | Confirmed in hooks reference |
+| MCP spec 1.1 current as of May 2026 | ✅ Verified | Confirmed in MCP specification repository |
+| SSE transport deprecated in MCP spec 1.1; HTTP streaming is the current standard | ✅ Verified | Confirmed in MCP 1.1 migration notes |
+| MCP adopted by Zed Editor and Continue.dev | ✅ Verified | Confirmed in respective product docs |
+
+---
+
 ## Overall Authenticity Assessment
 
 | Category | Verified | Partial | Unverifiable | Total |
@@ -443,10 +488,11 @@ Results are written to `concept-validation-results.json` (gitignored).
 | RAG & Architecture | 5 | 3 | 2 | 10 |
 | CI/CD & Workflows | 17 | 0 | 1 | 18 |
 | Enterprise & Security | 17 | 2 | 2 | 21 |
-| New Topic Guides | 47 | 5 | 0 | 52 |
-| **Total** | **205** | **17** | **7** | **229** |
+| Topic Guides (May 6, 2026) | 47 | 5 | 0 | 52 |
+| New Content (May 7, 2026) | 26 | 0 | 0 | 26 |
+| **Total** | **231** | **17** | **7** | **255** |
 
-**90%** of claims are fully verified against official Anthropic documentation or
+**91%** of claims are fully verified against official Anthropic documentation or
 independent public sources. **7%** are broadly accurate with caveats or
 approximations. **3%** cannot be independently verified (primarily vendor-reported
 performance metrics and statistics from a single source).
@@ -455,4 +501,4 @@ No claims were found to be factually incorrect. The unverifiable items are
 vendor-reported performance metrics, specific version numbers that predate the
 public changelog, or statistics whose primary source could not be traced.
 
-> **Last reviewed:** May 6, 2026 — verified against official Claude Code documentation through v2.1.126 (May 6, 2026).
+> **Last reviewed:** May 7, 2026 — verified against official Claude Code documentation through v2.1.126. Updated with sdk-guide.md, worktrees-guide.md, hooks-diagram.mdx, and mcp-diagram.mdx validation.

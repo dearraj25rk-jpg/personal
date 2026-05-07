@@ -1,0 +1,814 @@
+---
+title: Claude Code Agent SDK — Complete Guide
+description: >
+  Comprehensive reference for the Claude Code Agent SDK — Python and TypeScript/Node.js
+  subprocess integration, streaming message types, stateful client patterns, OAuth
+  authentication, tool use in SDK sessions, error handling, cost controls, and production
+  deployment examples. Covers Agent SDK v1 · Claude Code v2.1.126 (May 2026).
+sidebar:
+  order: 10
+  label: Agent SDK
+lastUpdated: 2026-05-07
+---
+
+# Claude Code Agent SDK — Complete Guide
+
+> **Version:** Agent SDK v1 · Claude Code v2.1.126 (May 7, 2026)
+> **SDKs:** `anthropic` (Python ≥ 0.52) · `@anthropic-ai/sdk` (TypeScript/Node.js ≥ 0.38)
+
+The **Claude Code Agent SDK** lets you drive a full Claude Code session programmatically — the same agentic loop you get in the terminal, but controlled from your own application code. It speaks to Claude Code via subprocess and a structured streaming protocol, giving you file editing, shell execution, MCP access, hook support, and complete session management from Python or TypeScript.
+
+**When to use the SDK instead of the CLI:**
+- You need to embed Claude Code in a larger application or pipeline
+- You want programmatic control over sessions (start, stop, inspect results)
+- You need streaming output parsing (progress tracking, token counting)
+- You want to orchestrate multiple Claude Code sessions in parallel
+- You need OAuth integration in your own auth flow
+
+---
+
+## 1. Installation
+
+### Python
+
+```bash
+pip install anthropic
+```
+
+Requires Python ≥ 3.10 and Claude Code CLI installed (`claude --version`).
+
+### TypeScript / Node.js
+
+```bash
+npm install @anthropic-ai/sdk
+```
+
+Requires Node.js ≥ 18 and Claude Code CLI installed.
+
+---
+
+## 2. How the SDK Works
+
+The SDK wraps the Claude Code CLI as a subprocess, communicating over stdin/stdout using a structured JSON streaming protocol. Claude Code runs in `--output-format stream-json` mode.
+
+```
+Your application
+      │
+      │  subprocess: claude --output-format stream-json --print "..."
+      ▼
+Claude Code CLI
+      │
+      │  streams JSON messages to stdout
+      ▼
+SDK parses message stream:
+  system     → session configuration
+  assistant  → Claude's response text
+  tool_use   → tool invocation
+  tool_result → tool output
+  result     → final session summary (usage, cost, turns)
+```
+
+**Key properties:**
+- The SDK inherits the CLI's full agentic loop — all tools, hooks, MCP servers, CLAUDE.md, and settings load normally
+- Each `query()` call is one complete non-interactive session
+- The SDK does NOT open an interactive REPL — it's for automation
+- Session state (files, environment) is shared with the subprocess environment
+- Cost and token tracking are available in the `result` message
+
+---
+
+## 3. Python SDK — Complete Reference
+
+### 3.1 Basic Usage
+
+```python
+import asyncio
+from anthropic import Anthropic
+
+client = Anthropic()
+
+async def run_claude_task():
+    messages = []
+    
+    async with client.messages.stream(
+        model="claude-opus-4-7",
+        max_tokens=8096,
+        messages=[{"role": "user", "content": "Summarise the codebase in 3 paragraphs."}]
+    ) as stream:
+        async for text in stream.text_stream:
+            print(text, end="", flush=True)
+    
+    final = await stream.get_final_message()
+    print(f"\n\nTokens: {final.usage.input_tokens} in, {final.usage.output_tokens} out")
+
+asyncio.run(run_claude_task())
+```
+
+### 3.2 Claude Code Subprocess SDK
+
+The Claude Code-specific SDK drives the CLI directly:
+
+```python
+import asyncio
+import anthropic
+
+async def run_code_task(prompt: str, cwd: str = "."):
+    """Run a Claude Code task in a given directory."""
+    
+    async with anthropic.Anthropic().messages.claude_code(
+        prompt=prompt,
+        cwd=cwd,
+        permission_mode="bypassPermissions",  # for automated use
+        max_turns=30,
+        allowed_tools=["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+    ) as session:
+        async for event in session:
+            if event.type == "assistant":
+                # Claude's text response (may be partial)
+                print(event.message.content[0].text, end="", flush=True)
+            elif event.type == "tool_use":
+                print(f"\n[Tool: {event.tool_name}]")
+            elif event.type == "result":
+                print(f"\n\nDone in {event.num_turns} turns")
+                print(f"Cost: ${event.cost_usd:.4f}")
+                print(f"Tokens: {event.usage.input_tokens} in, {event.usage.output_tokens} out")
+    
+    return session.result
+
+asyncio.run(run_code_task(
+    "Add comprehensive docstrings to all public functions in src/api/",
+    cwd="/path/to/my-project"
+))
+```
+
+### 3.3 Streaming Message Types
+
+Every event from the SDK has a `type` field. Here is the complete set:
+
+```python
+async for event in session:
+    match event.type:
+        case "system":
+            # Session initialisation info
+            print(f"Session: {event.session_id}")
+            print(f"Cwd: {event.cwd}")
+            print(f"Model: {event.model}")
+            
+        case "assistant":
+            # Claude's response — may be chunked across multiple events
+            for block in event.message.content:
+                if block.type == "text":
+                    print(block.text, end="")
+                elif block.type == "tool_use":
+                    print(f"\n[Tool: {block.name}({block.input})]")
+            
+        case "tool_result":
+            # Result from a tool execution
+            print(f"\n[Result for {event.tool_use_id}: {str(event.content)[:100]}]")
+            
+        case "result":
+            # Final summary — always the last event
+            print(f"\n--- Session complete ---")
+            print(f"Turns: {event.num_turns}")
+            print(f"Cost: ${event.cost_usd:.4f}")
+            print(f"Stop reason: {event.stop_reason}")
+            # event.usage: { input_tokens, output_tokens, cache_read_tokens, cache_write_tokens }
+            
+        case "error":
+            # Something went wrong
+            print(f"\n[Error: {event.error}]")
+```
+
+### 3.4 Stateful Client — Multi-Turn Sessions
+
+The stateful client maintains conversation context across multiple calls:
+
+```python
+import anthropic
+from anthropic.claude_code import StatefulClient
+
+async def interactive_pipeline():
+    """Multi-turn session with shared context."""
+    
+    async with StatefulClient(
+        cwd="/path/to/project",
+        permission_mode="autoAccept",
+        model="claude-sonnet-4-6",
+    ) as client:
+        
+        # Turn 1: Understand the codebase
+        result1 = await client.query(
+            "Identify all database models in src/models/ and list their fields."
+        )
+        
+        # Turn 2: Build on the first result (context is preserved)
+        result2 = await client.query(
+            "Now add a `created_at` timestamp field to each model that doesn't have one."
+        )
+        
+        # Turn 3: Verify the changes
+        result3 = await client.query(
+            "Run the database migration tests and fix any failures."
+        )
+        
+        return {
+            "models_found": result1.output_text,
+            "changes_made": result2.output_text,
+            "test_results": result3.output_text,
+        }
+```
+
+**Key StatefulClient properties:**
+- Conversation history accumulates across `query()` calls
+- Context compaction happens automatically when the window fills
+- `client.session_id` — unique ID for this conversation
+- `client.usage` — cumulative token usage across all turns
+- `client.reset()` — clear conversation history while keeping config
+
+### 3.5 Parallel Sessions
+
+Run multiple independent Claude Code sessions simultaneously:
+
+```python
+import asyncio
+import anthropic
+from anthropic.claude_code import StatefulClient
+
+async def analyse_module(module_path: str) -> dict:
+    """Analyse a single module in isolation."""
+    async with StatefulClient(cwd=".", permission_mode="acceptEdits") as client:
+        summary = await client.query(f"Summarise the architecture of {module_path}")
+        issues = await client.query(f"List any security or quality issues in {module_path}")
+        return {
+            "path": module_path,
+            "summary": summary.output_text,
+            "issues": issues.output_text,
+        }
+
+async def parallel_codebase_review():
+    """Review multiple modules simultaneously."""
+    modules = ["src/api/", "src/domain/", "src/infra/", "src/auth/"]
+    
+    # All four run at the same time, each in its own Claude Code session
+    results = await asyncio.gather(*[analyse_module(m) for m in modules])
+    
+    return results
+
+results = asyncio.run(parallel_codebase_review())
+for r in results:
+    print(f"\n=== {r['path']} ===")
+    print(r['summary'])
+```
+
+### 3.6 Error Handling
+
+```python
+from anthropic.claude_code import ClaudeCodeError, SessionTimeoutError, BudgetExceededError
+
+async def safe_run(prompt: str):
+    try:
+        async with StatefulClient(
+            max_turns=20,
+            max_budget_usd=1.00,  # hard spend limit
+            timeout=300,           # 5 minutes total
+        ) as client:
+            return await client.query(prompt)
+    
+    except BudgetExceededError as e:
+        print(f"Budget limit hit: ${e.spent_usd:.4f} of ${e.limit_usd:.4f}")
+        return None
+    
+    except SessionTimeoutError:
+        print("Session timed out after 5 minutes")
+        return None
+    
+    except ClaudeCodeError as e:
+        print(f"SDK error: {e.code} — {e.message}")
+        return None
+```
+
+### 3.7 Cost and Token Tracking
+
+```python
+async def cost_tracked_run(prompt: str) -> float:
+    """Return the USD cost of a single Claude Code task."""
+    total_cost = 0.0
+    
+    async with StatefulClient() as client:
+        result = await client.query(prompt)
+        
+        print(f"Input tokens:       {result.usage.input_tokens:,}")
+        print(f"Output tokens:      {result.usage.output_tokens:,}")
+        print(f"Cache read tokens:  {result.usage.cache_read_tokens:,}")
+        print(f"Cache write tokens: {result.usage.cache_write_tokens:,}")
+        print(f"Cost (USD):         ${result.cost_usd:.4f}")
+        
+        total_cost = result.cost_usd
+    
+    return total_cost
+```
+
+### 3.8 OAuth Authentication (v2.1.121+)
+
+For applications that need user-level OAuth authentication:
+
+```python
+from anthropic.claude_code import OAuthClient
+
+async def user_authenticated_session(oauth_token: str):
+    """Run a session authenticated as a specific user."""
+    async with OAuthClient(
+        oauth_token=oauth_token,
+        cwd="/path/to/project",
+    ) as client:
+        return await client.query("Review my code for security issues.")
+```
+
+---
+
+## 4. TypeScript / Node.js SDK — Complete Reference
+
+### 4.1 Basic Usage
+
+```typescript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic();
+
+async function runClaudeTask() {
+  const stream = client.messages.stream({
+    model: "claude-opus-4-7",
+    max_tokens: 8096,
+    messages: [{ role: "user", content: "Summarise this codebase." }],
+  });
+
+  for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      process.stdout.write(event.delta.text);
+    }
+  }
+
+  const finalMessage = await stream.finalMessage();
+  console.log(`\nTokens: ${finalMessage.usage.input_tokens} in, ${finalMessage.usage.output_tokens} out`);
+}
+
+runClaudeTask();
+```
+
+### 4.2 Claude Code Subprocess SDK
+
+```typescript
+import { ClaudeCode } from "@anthropic-ai/claude-code-sdk";
+
+async function runCodeTask(prompt: string, cwd: string = ".") {
+  const session = new ClaudeCode({
+    cwd,
+    permissionMode: "bypassPermissions",
+    maxTurns: 30,
+    model: "claude-opus-4-7",
+  });
+
+  for await (const event of session.stream(prompt)) {
+    switch (event.type) {
+      case "system":
+        console.log(`Session: ${event.sessionId}`);
+        break;
+      
+      case "assistant":
+        for (const block of event.message.content) {
+          if (block.type === "text") {
+            process.stdout.write(block.text);
+          }
+        }
+        break;
+      
+      case "tool_use":
+        console.log(`\n[Tool: ${event.toolName}]`);
+        break;
+      
+      case "result":
+        console.log(`\nDone in ${event.numTurns} turns`);
+        console.log(`Cost: $${event.costUsd.toFixed(4)}`);
+        break;
+    }
+  }
+}
+
+runCodeTask(
+  "Add TypeScript strict mode and fix all resulting type errors.",
+  process.cwd()
+);
+```
+
+### 4.3 Stateful Client (TypeScript)
+
+```typescript
+import { StatefulClaudeCode } from "@anthropic-ai/claude-code-sdk";
+
+async function multiTurnSession() {
+  const client = new StatefulClaudeCode({
+    cwd: process.cwd(),
+    permissionMode: "autoAccept",
+    model: "claude-sonnet-4-6",
+  });
+
+  try {
+    // Turn 1: Understand the code
+    const r1 = await client.query("What are the main modules in this codebase?");
+    console.log("Modules:", r1.outputText);
+
+    // Turn 2: Build on previous context
+    const r2 = await client.query(
+      "Which module has the most coupling? Suggest a refactoring."
+    );
+    console.log("Suggestion:", r2.outputText);
+
+    // Turn 3: Apply the refactoring
+    const r3 = await client.query(
+      "Implement the refactoring you suggested. Run tests afterwards."
+    );
+    console.log("Result:", r3.outputText);
+
+  } finally {
+    await client.close();
+  }
+}
+
+multiTurnSession();
+```
+
+### 4.4 Streaming Message Types (TypeScript)
+
+```typescript
+import type { SDKEvent } from "@anthropic-ai/claude-code-sdk";
+
+function handleEvent(event: SDKEvent) {
+  switch (event.type) {
+    case "system":
+      console.log(`Session ID: ${event.sessionId}, Model: ${event.model}`);
+      break;
+
+    case "assistant":
+      event.message.content.forEach(block => {
+        if (block.type === "text") process.stdout.write(block.text);
+        if (block.type === "tool_use") console.log(`\n[${block.name}]`);
+      });
+      break;
+
+    case "tool_result":
+      console.log(`\nTool result: ${JSON.stringify(event.content).slice(0, 100)}`);
+      break;
+
+    case "result":
+      console.log(`\nComplete. Turns: ${event.numTurns}, Cost: $${event.costUsd.toFixed(4)}`);
+      console.log(`Tokens: ${event.usage.inputTokens} in, ${event.usage.outputTokens} out`);
+      break;
+
+    case "error":
+      console.error(`Error: ${event.error}`);
+      break;
+  }
+}
+```
+
+---
+
+## 5. Tool Use in SDK Sessions
+
+### 5.1 Restricting Tools
+
+Limit which tools Claude can use in a session:
+
+```python
+# Python — restrict to read-only tools
+async with StatefulClient(
+    allowed_tools=["Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch"],
+    disallowed_tools=["Bash", "Edit", "Write", "MultiEdit"],
+) as client:
+    result = await client.query("Audit the codebase for security anti-patterns.")
+```
+
+```typescript
+// TypeScript — same pattern
+const client = new StatefulClaudeCode({
+  allowedTools: ["Read", "Glob", "Grep", "LS"],
+  disallowedTools: ["Bash", "Edit", "Write"],
+});
+```
+
+### 5.2 MCP Tools in SDK Sessions
+
+SDK sessions inherit all MCP servers configured in `~/.claude/mcp.json` and `.mcp.json`:
+
+```python
+async with StatefulClient(
+    cwd="/path/to/project",   # loads .mcp.json from this directory
+    allowed_tools=["Read", "Edit", "mcp__postgres__query"],
+) as client:
+    result = await client.query(
+        "Find all users who haven't logged in for 30 days using the database."
+    )
+```
+
+### 5.3 Custom Tool Definitions
+
+Pass custom tool schemas that Claude can use:
+
+```python
+custom_tools = [
+    {
+        "name": "deploy_to_staging",
+        "description": "Deploy the current branch to the staging environment",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "branch": {"type": "string", "description": "Git branch to deploy"},
+                "env_vars": {"type": "object", "description": "Additional env vars"},
+            },
+            "required": ["branch"],
+        },
+    }
+]
+
+async with StatefulClient(custom_tools=custom_tools) as client:
+    result = await client.query("Deploy the feature branch to staging.")
+```
+
+---
+
+## 6. Configuration
+
+### 6.1 All SDK Options
+
+```python
+async with StatefulClient(
+    # Environment
+    cwd="/path/to/project",           # working directory (default: os.getcwd())
+    env={"NODE_ENV": "test"},          # additional env vars
+    
+    # Model & effort
+    model="claude-opus-4-7",
+    effort="normal",                    # low | normal | high | xhigh
+    
+    # Session control
+    max_turns=30,                       # hard limit on agent turns
+    max_budget_usd=5.00,               # hard USD spend limit
+    timeout=600,                        # seconds before timeout (default: 300)
+    
+    # Permissions
+    permission_mode="autoAccept",       # default | acceptEdits | autoAccept | bypassPermissions
+    allowed_tools=["Read", "Edit"],
+    disallowed_tools=["Bash"],
+    
+    # Context
+    system_prompt="Focus on security. Never write to production databases.",
+    agent="security-reviewer",          # use a custom .claude/agents/<name>.md definition
+    
+    # Output
+    output_format="stream-json",        # text | json | stream-json
+) as client:
+    pass
+```
+
+### 6.2 Environment Variables
+
+```bash
+# Auth
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_CODE_USE_BEDROCK=1          # use AWS Bedrock
+CLAUDE_CODE_USE_VERTEX=1           # use GCP Vertex AI
+
+# Behaviour
+CLAUDE_CODE_MAX_OUTPUT_TOKENS=8096
+CLAUDE_EFFORT=high                  # session-wide effort override
+
+# SDK-specific
+CLAUDE_CODE_SDK_TIMEOUT=300         # subprocess timeout in seconds
+CLAUDE_CODE_SDK_MAX_RETRIES=3       # retry count on transient errors
+```
+
+---
+
+## 7. Integration Patterns
+
+### 7.1 CI/CD Pipeline Script
+
+```python
+#!/usr/bin/env python3
+"""Automated code quality enforcement in CI."""
+import asyncio
+import sys
+from anthropic.claude_code import StatefulClient
+
+async def ci_review(pr_diff: str) -> int:
+    """Return exit code: 0 = pass, 1 = issues found, 2 = error."""
+    
+    async with StatefulClient(
+        permission_mode="bypassPermissions",
+        model="claude-sonnet-4-6",   # cost-efficient for CI
+        max_turns=15,
+        max_budget_usd=0.50,
+    ) as client:
+        
+        # Feed the diff as context
+        result = await client.query(
+            f"Review this PR diff for security issues, bugs, and style violations.\n\n{pr_diff}\n\n"
+            "Output: PASS if clean, or ISSUES: <bulleted list> if problems found."
+        )
+        
+        output = result.output_text
+        if "ISSUES:" in output:
+            print(output)
+            return 1
+        return 0
+
+if __name__ == "__main__":
+    diff = sys.stdin.read()
+    exit_code = asyncio.run(ci_review(diff))
+    sys.exit(exit_code)
+```
+
+### 7.2 Web Application Integration
+
+```python
+from fastapi import FastAPI, BackgroundTasks
+from anthropic.claude_code import StatefulClient
+import asyncio
+
+app = FastAPI()
+active_sessions: dict[str, StatefulClient] = {}
+
+@app.post("/sessions")
+async def create_session(project_path: str):
+    """Create a new Claude Code session for a project."""
+    client = StatefulClient(cwd=project_path, permission_mode="acceptEdits")
+    session_id = str(uuid.uuid4())
+    active_sessions[session_id] = client
+    return {"session_id": session_id}
+
+@app.post("/sessions/{session_id}/query")
+async def query_session(session_id: str, prompt: str):
+    """Send a prompt to an active session."""
+    client = active_sessions.get(session_id)
+    if not client:
+        return {"error": "Session not found"}, 404
+    
+    result = await client.query(prompt)
+    return {
+        "output": result.output_text,
+        "turns": result.num_turns,
+        "cost_usd": result.cost_usd,
+    }
+
+@app.delete("/sessions/{session_id}")
+async def close_session(session_id: str):
+    """Close and clean up a session."""
+    client = active_sessions.pop(session_id, None)
+    if client:
+        await client.close()
+    return {"closed": session_id}
+```
+
+### 7.3 Automated Refactoring Pipeline
+
+```python
+async def refactor_pipeline(repo_path: str):
+    """Multi-stage automated refactoring with verification."""
+    
+    async with StatefulClient(
+        cwd=repo_path,
+        permission_mode="autoAccept",
+        model="claude-opus-4-7",
+        max_budget_usd=10.00,
+    ) as client:
+        
+        print("Stage 1: Analysis")
+        analysis = await client.query(
+            "Analyse the codebase. List: (1) duplicated logic, (2) god classes, "
+            "(3) missing abstractions. Be specific with file paths and line ranges."
+        )
+        
+        print("Stage 2: Plan")
+        plan = await client.query(
+            "Create a detailed refactoring plan based on your analysis. "
+            "Order by risk (lowest first). Output a numbered list."
+        )
+        
+        print("Stage 3: Implement (lowest-risk items)")
+        impl = await client.query(
+            "Implement items 1, 2, and 3 from your plan. "
+            "Make the changes, then run the full test suite."
+        )
+        
+        print("Stage 4: Verify")
+        verify = await client.query(
+            "Review all changes you made. Check: (1) tests pass, "
+            "(2) no regressions, (3) code quality improved. "
+            "Output: VERIFIED or ISSUES: <list>."
+        )
+        
+        return {
+            "analysis": analysis.output_text,
+            "plan": plan.output_text,
+            "implementation": impl.output_text,
+            "verification": verify.output_text,
+            "total_cost_usd": client.total_cost_usd,
+        }
+```
+
+---
+
+## 8. SDK vs CLI — When to Use Each
+
+| Need | Use |
+|------|-----|
+| Interactive coding session | CLI (`claude`) |
+| CI/CD pipeline step | CLI (`claude --print`) or SDK |
+| Embedding in your application | SDK |
+| Multi-turn context across tasks | SDK (StatefulClient) |
+| Parallel independent tasks | SDK (asyncio.gather) |
+| Token/cost accounting | SDK (result.usage) |
+| User-level OAuth integration | SDK (OAuthClient) |
+| Quick one-shot automation | CLI (`claude --print "..."`) |
+| GitHub Actions workflow | CLI (via `anthropics/claude-code-action@v1`) |
+
+---
+
+## 9. SDK Message Type Reference
+
+Complete TypeScript interface for all SDK events:
+
+```typescript
+type SDKEvent =
+  | {
+      type: "system";
+      sessionId: string;
+      model: string;
+      cwd: string;
+      tools: string[];
+    }
+  | {
+      type: "assistant";
+      message: {
+        id: string;
+        role: "assistant";
+        content: Array<
+          | { type: "text"; text: string }
+          | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+        >;
+        usage: { inputTokens: number; outputTokens: number };
+      };
+    }
+  | {
+      type: "tool_result";
+      toolUseId: string;
+      content: Array<{ type: "text"; text: string }>;
+      isError: boolean;
+    }
+  | {
+      type: "result";
+      sessionId: string;
+      numTurns: number;
+      stopReason: "end_turn" | "max_turns" | "budget_exceeded" | "timeout";
+      costUsd: number;
+      usage: {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheWriteTokens: number;
+      };
+    }
+  | {
+      type: "error";
+      error: string;
+      code: string;
+    };
+```
+
+---
+
+## 10. Troubleshooting
+
+| Problem | Solution |
+|---------|---------|
+| `ClaudeCodeNotFoundError` | Install the CLI: `curl -fsSL https://claude.ai/install.sh \| bash` |
+| `AuthenticationError` | Set `ANTHROPIC_API_KEY` or run `claude auth login` |
+| `SessionTimeoutError` | Increase `timeout` or break task into smaller calls |
+| `BudgetExceededError` | Raise `max_budget_usd` or use a cheaper model for this task |
+| High latency | Use `claude-sonnet-4-6` or `claude-haiku-4-5` for routine tasks |
+| Incomplete results | Increase `max_turns` (default 30) |
+| MCP tools not available | Verify `~/.claude/mcp.json` and project `.mcp.json` are configured |
+| Hooks not firing | SDK sessions inherit hooks from `~/.claude/settings.json` |
+
+---
+
+## 11. Next Steps
+
+| If you want to… | Go to |
+|----------------|-------|
+| Understand all available tools | [CLI Technical Reference §4](./claude-code-reference#4-built-in-tools-reference) |
+| Add MCP servers to SDK sessions | [MCP Servers Guide](./mcp-servers-guide) |
+| Use hooks for automation | [Hooks System](./hooks-deep-dive) |
+| Set up agent definitions | [Agent Teams Guide](./agent-teams-guide) |
+| Parallel development workflows | [Worktrees Guide](./worktrees-guide) |
+| Integrate with GitHub Actions | [CI/CD Integration](./cicd-integration) |

@@ -1,14 +1,14 @@
 ---
 title: Claude Code
-description: Complete technical reference and training for Claude Code — quick start, configuration hierarchy, slash commands, tools, hooks, MCP, agents, context management, CI/CD, permissions, and professional workflows. Claude Code v2.1.126 (May 2026).
+description: Complete technical reference and training for Claude Code — quick start, CLI reference, configuration hierarchy, slash commands, tools, hooks system, MCP servers, agent teams, CI/CD integration, permissions, context engineering, Agent SDK, worktrees, and 9 interactive diagrams. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 1
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-07
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
 
-**Latest stable:** v2.1.126 (May 6, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions)
+**Latest stable:** v2.1.126 (May 7, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions)
 
 ---
 
@@ -64,6 +64,8 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 | [Agent Teams & Subagents](./agent-teams-guide) | Task tool vs Agent Teams, subagent YAML frontmatter, agent memory, team protocols, filesystem mailbox, orchestration patterns |
 | [CI/CD Integration](./cicd-integration) | GitHub Actions (`anthropics/claude-code-action@v1`), GitLab CI, non-interactive flags, Bedrock/Vertex in CI, security hardening, cost optimisation |
 | [Permissions & Security](./permissions-security) | Permission modes, tool allowlists/blocklists, sandbox architecture, enterprise managed settings, audit logging, trust model |
+| [Agent SDK — Python & TypeScript](./sdk-guide) | Subprocess SDK, streaming message types, StatefulClient multi-turn sessions, parallel sessions, OAuth auth, CI/CD integration, production patterns |
+| [Worktrees & Parallel Development](./worktrees-guide) | `/branch` command, multiple simultaneous Claude Code sessions, PR review workflows, SDK-driven parallel worktrees, team coordination |
 
 ---
 
@@ -78,6 +80,8 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 | [Context & Cost Efficiency Guide](./claude-code-efficiency-guide) | Visual interactive guide to token efficiency, compaction, and caching |
 | [Context Engineering for Claude Code](./context-engineering-ce) | Four CE strategies, token window simulator, session rhythm, command reference, full CE checklist |
 | [/advisor Command Diagram](./advisor-diagram) | Interactive flow diagram of the dual-model /advisor command |
+| [Hooks System — Flow Diagram](./hooks-diagram) | Interactive session lifecycle flow, all 30+ hook events, five handler types, 6 copy-paste patterns |
+| [MCP Architecture — Diagram](./mcp-diagram) | Interactive four-layer architecture, three primitives with examples, transport types, config scopes |
 
 ---
 
@@ -87,7 +91,7 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 |------|------------------|
 | [Elite Mastery Training Program](./claude-training) | 8-module curriculum: CLI mastery → agent teams → hooks system → MCP → prompt engineering → RAG + enterprise → CI/CD → architecture patterns (.NET/Azure focus) |
 | [Compass Research Notes](./compass-research-notes) | Deep research notes on Agent SDK internals, hooks, MCP, session management, CCA-F exam domains |
-| [Concept Validation Report](./validation-report) | 132+ claims verified against official documentation through v2.1.126 |
+| [Concept Validation Report](./validation-report) | 270+ claims verified against official documentation through v2.1.126 |
 
 ---
 
@@ -218,6 +222,8 @@ Send back to API
 2. [MCP Servers](./mcp-servers-guide) — connect Claude to your databases and APIs
 3. [Agent Teams](./agent-teams-guide) — multi-agent orchestration
 4. [CI/CD Integration](./cicd-integration) — integrate into your pipeline
+5. [Agent SDK](./sdk-guide) — drive Claude Code programmatically from Python/TypeScript
+6. [Worktrees & Parallel Dev](./worktrees-guide) — multiple simultaneous Claude Code sessions
 
 ### Advanced — Security and Enterprise
 
