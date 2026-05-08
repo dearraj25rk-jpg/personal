@@ -1,0 +1,20 @@
+---
+tableOfContents: false
+title: Agent SDK — Interactive Architecture Diagram
+description: >
+  Interactive diagram of the Claude Code Agent SDK — full subprocess architecture showing
+  how your application drives Claude Code via JSON streaming, all SDK event types
+  (system, assistant, tool_result, result, error) with field reference, Python StatefulClient
+  multi-turn and parallel session patterns, TypeScript StatefulClaudeCode examples,
+  complete configuration option reference, and production patterns for CI/CD,
+  web apps, and parallel workloads. Agent SDK v1 · Claude Code v2.1.126 (May 2026).
+sidebar:
+  order: 21
+lastUpdated: 2026-05-08
+---
+
+import SDKDiagram from '../../../components/interactive/SDKDiagram.jsx';
+
+<div class="interactive-tool">
+  <SDKDiagram client:only="react" />
+</div>

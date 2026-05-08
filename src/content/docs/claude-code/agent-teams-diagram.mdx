@@ -1,0 +1,19 @@
+---
+tableOfContents: false
+title: Agent Teams — Interactive Architecture Diagram
+description: >
+  Interactive diagram covering Claude Code's two multi-agent patterns — the Task tool for
+  lightweight parallel subagents and Agent Teams for persistent bidirectional coordination.
+  Includes architecture overview, subagent YAML frontmatter reference, filesystem mailbox
+  layout, team tools, message types, task state machine, and an interactive decision guide
+  for choosing the right pattern. v2.1.126 (May 2026).
+sidebar:
+  order: 20
+lastUpdated: 2026-05-08
+---
+
+import AgentTeamsDiagram from '../../../components/interactive/AgentTeamsDiagram.jsx';
+
+<div class="interactive-tool">
+  <AgentTeamsDiagram client:only="react" />
+</div>
