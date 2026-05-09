@@ -92,7 +92,7 @@ function Label({ x, y, text, anchor = "middle", size = 11 }) {
 
 export default function AdvisorDiagram() {
   const theme = useTheme();
-  const [tooltip, setTooltip] = useState(null);
+  const [tooltip, setTooltip] = useState(null); // { key, x, y } — viewport coords
 
   const tips = {
     run:       { title: "Run /advisor",               body: "Available from Claude Code v2.1.101. Opens an interactive model picker. Session-scoped — re-run it each new session. Re-running mid-session lets you swap the advisor model without restarting." },
@@ -117,6 +117,7 @@ export default function AdvisorDiagram() {
     };
   }
 
+  // Dismiss on Escape key
   useEffect(() => {
     if (!tooltip) return;
     const onKey = (e) => { if (e.key === "Escape") setTooltip(null); };
@@ -141,6 +142,7 @@ export default function AdvisorDiagram() {
           </marker>
         </defs>
 
+        {/* ── SETUP ROW ── */}
         <Box x={20}  y={24} w={138} h={40} color="gray" title="Run /advisor"
           onClick={tip("run")} active={tooltip?.key==="run"} theme={theme}/>
         <Box x={200} y={24} w={172} h={40} color="gray" title="Select advisor model"
@@ -150,15 +152,18 @@ export default function AdvisorDiagram() {
         <Arrow d="M158 44 L200 44"/>
         <Arrow d="M372 44 L420 44"/>
 
+        {/* divider */}
         <line x1={20} y1={82} x2={656} y2={82}
           stroke="#D3D1C7" strokeWidth={0.5} strokeDasharray="4 4"/>
 
+        {/* column headers */}
         {[["Executor (Sonnet)", 125], ["Advisor (Opus)", 541]].map(([t, x]) => (
           <text key={t} x={x} y={97} textAnchor="middle" dominantBaseline="central"
             fontSize={13} fontWeight={600} fill="#888780"
             fontFamily="system-ui, sans-serif">{t}</text>
         ))}
 
+        {/* ── EXECUTOR COLUMN ── */}
         <Box x={20} y={114} w={210} h={40} color="gray"  title="User sends task"
           onClick={tip("task")} active={tooltip?.key==="task"} theme={theme}/>
         <Box x={20} y={168} w={210} h={52} color="teal"  title="Read & orient" sub="files, context, history"
@@ -174,17 +179,21 @@ export default function AdvisorDiagram() {
         <Box x={20} y={628} w={210} h={40} color="gray"  title="Task complete"
           onClick={tip("complete")} active={tooltip?.key==="complete"} theme={theme}/>
 
+        {/* executor vertical arrows */}
         <Arrow d="M125 154 L125 168"/>
         <Arrow d="M125 220 L125 234"/>
         <Arrow d="M125 274 L125 292"/>
         <Label x={136} y={286} text="yes" anchor="start"/>
+        {/* dashed pause */}
         <Arrow d="M125 344 L125 490" dashed light/>
         <Arrow d="M125 542 L125 558"/>
         <Arrow d="M125 610 L125 628"/>
 
+        {/* loop: no trigger */}
         <Arrow d="M230 254 L372 254 L372 194 L230 194" light/>
         <Label x={301} y={244} text="no trigger ↺"/>
 
+        {/* ── ADVISOR COLUMN ── */}
         <Box x={440} y={292} w={210} h={52} color="blue" title="Full transcript → Opus" sub="zero extra API calls"
           onClick={tip("transcript")} active={tooltip?.key==="transcript"} theme={theme}/>
         <Box x={440} y={358} w={210} h={52} color="blue" title="Opus sub-inference" sub="400–700 text tokens"
@@ -192,15 +201,19 @@ export default function AdvisorDiagram() {
         <Box x={440} y={424} w={210} h={52} color="teal" title="advisor_tool_result" sub="returned to executor"
           onClick={tip("result")} active={tooltip?.key==="result"} theme={theme}/>
 
+        {/* advisor vertical arrows */}
         <Arrow d="M545 344 L545 358"/>
         <Arrow d="M545 410 L545 424"/>
 
+        {/* cross: executor → advisor */}
         <Arrow d="M230 318 L440 318"/>
         <Label x={335} y={308} text="full context"/>
 
+        {/* cross: advisor → executor */}
         <Arrow d="M440 450 L335 450 L335 516 L230 516"/>
         <Label x={390} y={440} text="advice"/>
 
+        {/* ── TRIGGER PANEL ── */}
         <rect x={440} y={558} width={210} height={110} rx={8}
           fill="none" stroke="#D3D1C7" strokeWidth={0.5} strokeDasharray="4 4"/>
         <text x={545} y={577} textAnchor="middle" dominantBaseline="central"
@@ -219,6 +232,7 @@ export default function AdvisorDiagram() {
         ))}
       </svg>
 
+      {/* Floating tooltip — portal into body with position:absolute+pageXY so it scrolls with the page */}
       {tooltip && createPortal((() => {
         const t = tips[tooltip.key];
         const TIP_W = 320;
@@ -229,6 +243,7 @@ export default function AdvisorDiagram() {
         left = Math.max(8, left);
         const ESTIMATED_H = 120;
         let top = tooltip.y + OFFSET;
+        // If near the bottom of the viewport, flip upward
         const fromViewportBottom = window.innerHeight - (tooltip.y - window.scrollY);
         if (fromViewportBottom < ESTIMATED_H + 16) top = tooltip.y - ESTIMATED_H - OFFSET;
         top = Math.max(8, top);
@@ -268,6 +283,7 @@ export default function AdvisorDiagram() {
         );
       })(), document.body)}
 
+      {/* Legend */}
       <div style={{
         display: "flex", gap: 16, padding: "4px 8px",
         flexWrap: "wrap", fontSize: 11, color: "#888780",
