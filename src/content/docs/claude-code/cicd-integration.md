@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 8
   label: CI/CD Integration
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-09
 ---
 
 # CI/CD Integration — GitHub Actions & Automation
@@ -31,7 +31,7 @@ This prints Claude's response to stdout and exits — no REPL, no prompts, no us
 ### Core automation flags
 
 | Flag | Purpose |
-|------|---------|
+|------|--------|
 | `--print "prompt"` | Non-interactive: run prompt, print result, exit |
 | `--permission-mode <mode>` | Permission strategy (see below) |
 | `--max-turns <n>` | Hard limit on agent turns (prevents runaway sessions) |
@@ -49,7 +49,7 @@ This prints Claude's response to stdout and exits — no REPL, no prompts, no us
 ### Permission modes
 
 | Mode | Behaviour | Use case |
-|------|-----------|---------|
+|------|-----------|--------|
 | `default` | Prompts for each tool (blocks in CI) | Interactive sessions only |
 | `acceptEdits` | Auto-accepts file edits, prompts for Bash | Supervised automation |
 | `autoAccept` | Auto-accepts all tools | Trusted automation |
@@ -689,7 +689,7 @@ jobs:
 ## 10. Environment Variables Reference (CI/CD)
 
 | Variable | Purpose |
-|----------|---------|
+|----------|--------|
 | `ANTHROPIC_API_KEY` | API authentication (direct Anthropic) |
 | `CLAUDE_CODE_USE_BEDROCK=1` | Route to AWS Bedrock |
 | `CLAUDE_CODE_USE_VERTEX=1` | Route to GCP Vertex |

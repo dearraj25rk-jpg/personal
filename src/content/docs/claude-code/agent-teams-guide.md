@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 7
   label: Agent Teams
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-09
 ---
 
 # Agent Teams & Subagents — Complete Guide
@@ -158,7 +158,7 @@ Or in `.claude/settings.json`:
 │                  Filesystem Mailbox                     │
 │         ~/.claude/teams/{team-name}/inboxes/           │
 │                                                        │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────┐  │
+│  ┌──────────────┐   ┌──────────────┐   ┌────────┐  │
 │  │ orchestrator  │   │  agent-a     │   │ agent-b  │  │
 │  │ (your session)│   │  (terminal 2)│   │(terminal3│  │
 │  └──────┬────────┘   └──────┬───────┘   └────┬─────┘  │
@@ -166,7 +166,7 @@ Or in `.claude/settings.json`:
 │         │ ─────────────────▶│               │         │
 │         │ ◀─────────────────│               │         │
 │         │ ──────────────────────────────────▶         │
-└─────────┼─────────────────────────────────────────────┘
+└─────────┬───────────────────────────────────────────────┘
 ```
 
 Each agent has its own inbox directory. Messages are written as atomic JSON files (tempfile + `os.replace` for consistency).
@@ -174,7 +174,7 @@ Each agent has its own inbox directory. Messages are written as atomic JSON file
 ### 2.3 Team Tools
 
 | Tool | Purpose |
-|------|---------|
+|------|--------|
 | `TeamCreate` | Create a team and register members |
 | `TaskCreate` | Create a task and assign it to a team member |
 | `TaskUpdate` | Update task status or add results |
