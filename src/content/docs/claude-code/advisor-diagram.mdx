@@ -1,13 +1,17 @@
 ---
 tableOfContents: false
-title: /advisor Command — Dual-Model Flow
-description: Interactive diagram of the /advisor command — how Claude Code's Sonnet executor delegates to Opus at trigger points, the full context transfer, and when advisor fires during a task.
+title: /advisor Command — Dual-Model Flow Diagram
+description: >
+  Interactive diagram of the /advisor command — how Claude Code's Sonnet executor
+  delegates complex reasoning to Opus at trigger points, the full context transfer
+  mechanism, when advisor fires during a task, and cost implications of the dual-model
+  approach. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 17
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-09
 ---
 
-import AdvisorDiagram from '../../../../advisor_diagram.jsx';
+import AdvisorDiagram from '../../../components/interactive/AdvisorDiagram.jsx';
 
 <div class="interactive-tool">
   <AdvisorDiagram client:only="react" />

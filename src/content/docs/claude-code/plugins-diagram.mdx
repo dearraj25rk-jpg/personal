@@ -1,0 +1,19 @@
+---
+tableOfContents: false
+title: Plugins — Interactive Architecture Diagram
+description: >
+  Interactive visual guide to Claude Code plugins — all 10 plugin component types
+  (commands, agents, skills, output styles, monitors, themes, bin executables, hooks,
+  MCP servers, LSP servers), plugin directory structure, plugin environment variables
+  (CLAUDE_PLUGIN_ROOT vs CLAUDE_PLUGIN_DATA), installation scopes, and the plugin manifest.
+  Claude Code v2.1.126 (May 2026).
+sidebar:
+  order: 24
+lastUpdated: 2026-05-09
+---
+
+import PluginsDiagram from '../../../components/interactive/PluginsDiagram.jsx';
+
+<div class="interactive-tool">
+  <PluginsDiagram client:only="react" />
+</div>
