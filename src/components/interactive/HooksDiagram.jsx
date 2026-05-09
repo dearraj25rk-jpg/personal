@@ -236,7 +236,7 @@ echo "Open PRs: $(gh pr list --limit 3 2>/dev/null)"`,
   "Stop": [{
     "hooks": [{
       "type": "http",
-      "url": "${env.SLACK_WEBHOOK_URL}",
+      "url": "${"$"}{env.SLACK_WEBHOOK_URL}",
       "body": {
         "text": "Claude Code finished: {{session_id}} ({{turn_count}} turns)"
       }
