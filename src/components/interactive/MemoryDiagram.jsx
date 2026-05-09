@@ -33,7 +33,7 @@ const MEMORY_TYPES = [
     priority: "Highest — cannot be overridden",
     writtenBy: "IT/DevOps via config management",
     purpose: "Org-wide coding standards, security policies, compliance requirements, approved tools.",
-    example: `# Enterprise Policy — Acme Corp\n## Security\n- Never commit secrets or API keys\n- All endpoints require authentication middleware\n- Use parameterized queries only\n## Compliance\n- GDPR: All PII must be encrypted at rest\n- SOC2: Audit logging required for data access`,
+    example: "# Enterprise Policy — Acme Corp\n## Security\n- Never commit secrets or API keys\n- All endpoints require authentication middleware\n- Use parameterized queries only\n## Compliance\n- GDPR: All PII must be encrypted at rest\n- SOC2: Audit logging required for data access",
   },
   {
     id: "user",
@@ -51,7 +51,7 @@ const MEMORY_TYPES = [
     priority: "High — after Enterprise, before Project",
     writtenBy: "You (manual)",
     purpose: "Personal coding preferences, interaction style, shortcuts that travel with you across all projects.",
-    example: `# Personal Preferences — Raj\n## Coding Style\n- Prefer functional patterns\n- Always add XML doc comments on public methods\n## Interaction\n- Before changes, propose a plan first\n- Keep solutions minimal\n- When unsure, ask rather than assume`,
+    example: "# Personal Preferences — Raj\n## Coding Style\n- Prefer functional patterns\n- Always add XML doc comments on public methods\n## Interaction\n- Before changes, propose a plan first\n- Keep solutions minimal\n- When unsure, ask rather than assume",
   },
   {
     id: "project",
@@ -69,7 +69,7 @@ const MEMORY_TYPES = [
     priority: "High — after User, before Local",
     writtenBy: "Team (committed to git). Use /init to auto-generate.",
     purpose: "Team-shared conventions: tech stack, build commands, architecture overview, code style rules.",
-    example: `# ACME Insurance API\n## Tech Stack\n.NET 9, EF Core, MediatR, SQL Server\n## Commands\n- dotnet build\n- dotnet test\n- dotnet run --project src/Api\n## Architecture\nClean Architecture: Domain/Application/Infrastructure/WebApi\nAll endpoints require JWT auth`,
+    example: "# ACME Insurance API\n## Tech Stack\n.NET 9, EF Core, MediatR, SQL Server\n## Commands\n- dotnet build\n- dotnet test\n- dotnet run --project src/Api\n## Architecture\nClean Architecture: Domain/Application/Infrastructure/WebApi\nAll endpoints require JWT auth",
   },
   {
     id: "local",
@@ -87,7 +87,7 @@ const MEMORY_TYPES = [
     priority: "High — most specific personal override",
     writtenBy: "You (manual, personal)",
     purpose: "Personal project overrides: sandbox URLs, local test DB credentials, debugging preferences. Not shared with team.",
-    example: `# My Local Settings — ACME API\n## Dev Environment\n- Sandbox API: https://raj-sandbox.azurewebsites.net\n- Test DB: Server=.\\MSSQLLocalDB;Database=AcmeTest\n## Personal Workflow\n- Use lazygit for git operations\n- Always run dotnet format before showing diffs`,
+    example: "# My Local Settings — ACME API\n## Dev Environment\n- Sandbox API: https://raj-sandbox.azurewebsites.net\n- Test DB: Server=.\\MSSQLLocalDB;Database=AcmeTest\n## Personal Workflow\n- Use lazygit for git operations\n- Always run dotnet format before showing diffs",
   },
   {
     id: "subtree",
@@ -105,7 +105,7 @@ const MEMORY_TYPES = [
     priority: "High (context-specific — most targeted)",
     writtenBy: "Team (per-subdomain)",
     purpose: "Domain-specific instructions for a subsystem. Only loaded when Claude works in that area.",
-    example: `# Domain Layer Rules\n- ZERO infrastructure dependencies from Domain layer\n- All entities inherit from BaseEntity<TId>\n- Value Objects for: money, dates, policy numbers\n- Aggregate roots are only public entry points\n- Result<T> for all operations that can fail`,
+    example: "# Domain Layer Rules\n- ZERO infrastructure dependencies from Domain layer\n- All entities inherit from BaseEntity<TId>\n- Value Objects for: money, dates, policy numbers\n- Aggregate roots are only public entry points\n- Result<T> for all operations that can fail",
   },
   {
     id: "automemory",
@@ -123,7 +123,7 @@ const MEMORY_TYPES = [
     priority: "Normal — auto-maintained by Claude",
     writtenBy: "Claude itself — when you say 'remember this'",
     purpose: "Durable cross-session learning: architecture patterns, team conventions, personal preferences learned over time.",
-    example: `# Auto-Memory — ACME API\n## Architecture Patterns\n- CQRS: Queries→ViewModels, Commands→Result<T>\n- All data access via IRepository<T>\n## Team Conventions Learned\n- Always run dotnet format before commit\n- Use pnpm not npm in this project\n## Reminders\n- UserService has circular dep with NotificationService (CC-234)`,
+    example: "# Auto-Memory — ACME API\n## Architecture Patterns\n- CQRS: Queries→ViewModels, Commands→Result<T>\n- All data access via IRepository<T>\n## Team Conventions Learned\n- Always run dotnet format before commit\n- Use pnpm not npm in this project\n## Reminders\n- UserService has circular dep with NotificationService (CC-234)",
   },
   {
     id: "subagent",
@@ -141,7 +141,7 @@ const MEMORY_TYPES = [
     priority: "Normal (in subagent context)",
     writtenBy: "The subagent itself (auto-maintained)",
     purpose: "Persistent learning for subagents: codebase patterns, review history, architecture discoveries.",
-    example: `# Code Reviewer Memory — ACME API\n## Architecture Patterns Observed\n- CQRS via MediatR, Queries→ViewModels\n## Known Issues\n- PaymentController bypasses validation — always flag\n## PR Review Checklist Learned\n- Check FluentValidation on all new commands\n- Verify new endpoints added to Swagger groups`,
+    example: "# Code Reviewer Memory — ACME API\n## Architecture Patterns Observed\n- CQRS via MediatR, Queries→ViewModels\n## Known Issues\n- PaymentController bypasses validation — always flag\n## PR Review Checklist Learned\n- Check FluentValidation on all new commands\n- Verify new endpoints added to Swagger groups",
   },
 ];
 
@@ -149,7 +149,7 @@ const ATIMPORT_INFO = {
   id: "import",
   label: "@import Syntax",
   description: "Any CLAUDE.md can import other files with @path/to/file syntax. Inline expansion at load time — imported content becomes part of the parent file's token cost.",
-  syntax: `# CLAUDE.md\n@./standards/coding-style.md\n@./standards/security-rules.md\n@~/.claude/company-policy.md`,
+  syntax: "# CLAUDE.md\n@./standards/coding-style.md\n@./standards/security-rules.md\n@~/.claude/company-policy.md",
   rules: [
     "Max 5 recursive hops",
     "Relative or absolute paths",
@@ -181,7 +181,6 @@ export default function MemoryDiagram() {
       maxWidth: "1100px",
       margin: "0 auto",
     }}>
-      {/* Header */}
       <div style={{ marginBottom: "24px" }}>
         <h2 style={{ margin: 0, fontSize: "1.4rem", color: DARK.accent, fontWeight: 700 }}>
           Claude Code Memory System
@@ -191,7 +190,6 @@ export default function MemoryDiagram() {
         </p>
       </div>
 
-      {/* Tab Nav */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }}>
         {["overview", "detail", "hierarchy", "commands"].map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
@@ -340,7 +338,6 @@ export default function MemoryDiagram() {
             </div>
           </div>
 
-          {/* @import box */}
           <div style={{ background: DARK.card, borderRadius: "12px", padding: "20px", border: `1px solid ${DARK.accent}` }}>
             <h3 style={{ margin: "0 0 10px", color: DARK.accent, fontSize: "1rem" }}>@import Syntax</h3>
             <p style={{ color: DARK.muted, fontSize: "0.82rem", margin: "0 0 10px" }}>

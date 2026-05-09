@@ -26,7 +26,7 @@ const COMPONENTS = [
     description: "Slash commands bundled with the plugin. Same format as project commands — use $ARGUMENTS, @file imports, !shell execution. Automatically namespaced.",
     invocation: "User types /plugin-name:command-name",
     security: "Full command capabilities",
-    example: `---\ndescription: Check deployment status\nallowed-tools: Bash(kubectl *), Read\n---\n\nCheck current deployment:\n!kubectl get pods -n production\n\nStatus for: $ARGUMENTS`,
+    example: "---\ndescription: Check deployment status\nallowed-tools: Bash(kubectl *), Read\n---\n\nCheck current deployment:\n!kubectl get pods -n production\n\nStatus for: $ARGUMENTS",
     notes: ["Namespaced automatically", "Same frontmatter as project commands", "Appear in /help with plugin prefix"],
   },
   {
@@ -39,7 +39,7 @@ const COMPONENTS = [
     description: "Subagent definitions bundled with the plugin. RESTRICTED: cannot set hooks, mcpServers, or permissionMode (security isolation). All other frontmatter fields supported.",
     invocation: "Claude auto-delegates or user @-mentions",
     security: "⚠️ No hooks, mcpServers, or permissionMode allowed",
-    example: `---\nname: security-reviewer\ndescription: Reviews code for security vulnerabilities.\n  Auto-invoked for security audits and after auth changes.\ntools: Read, Glob, Grep\nmodel: sonnet\neffort: high\nmaxTurns: 30\n---\n\nYou are a security specialist...`,
+    example: "---\nname: security-reviewer\ndescription: Reviews code for security vulnerabilities.\n  Auto-invoked for security audits and after auth changes.\ntools: Read, Glob, Grep\nmodel: sonnet\neffort: high\nmaxTurns: 30\n---\n\nYou are a security specialist...",
     notes: ["Security-restricted frontmatter", "Invoked as plugin-name:agent-name", "Can use skills and memory"],
   },
   {
@@ -52,7 +52,7 @@ const COMPONENTS = [
     description: "On-demand capabilities bundled with the plugin. Claude auto-invokes based on description match. Same format as project skills with auto-namespacing.",
     invocation: "Claude auto-invokes from description OR /plugin-name:skill",
     security: "Full skill capabilities",
-    example: `---\nname: pdf-extract\ndescription: >\n  Extract text and data from PDF files.\n  Use when asked to read, parse, or analyze PDFs.\nallowed-tools: Bash(python3 *), Read\n---\n\nExtract content from PDF:\n$ARGUMENTS`,
+    example: "---\nname: pdf-extract\ndescription: >\n  Extract text and data from PDF files.\n  Use when asked to read, parse, or analyze PDFs.\nallowed-tools: Bash(python3 *), Read\n---\n\nExtract content from PDF:\n$ARGUMENTS",
     notes: ["Auto-invocable from description", "Supporting files in skill folder", "Use ${CLAUDE_PLUGIN_ROOT}/scripts/"],
   },
   {
@@ -65,7 +65,7 @@ const COMPONENTS = [
     description: "Custom response format styles that appear in the /config Output Style menu alongside built-in styles (Default, Explanatory, Learning).",
     invocation: "User selects in /config → Output Style",
     security: "Modifies Claude's system prompt",
-    example: `---\nname: Terse CI Mode\ndescription: Minimal output for CI/CD pipelines\nkeep-coding-instructions: true\n---\n\nRespond with code only.\nNo explanations, no markdown prose.\nOutput must be parseable by scripts.`,
+    example: "---\nname: Terse CI Mode\ndescription: Minimal output for CI/CD pipelines\nkeep-coding-instructions: true\n---\n\nRespond with code only.\nNo explanations, no markdown prose.\nOutput must be parseable by scripts.",
     notes: ["Appears in /config menu", "keep-coding-instructions: true recommended", "Takes effect next new session"],
   },
   {
@@ -78,7 +78,7 @@ const COMPONENTS = [
     description: "Background processes that run for the session lifetime, delivering every stdout line to Claude as a notification. Requires v2.1.105+. Unsandboxed at hook trust level.",
     invocation: "Automatic (session start) or on-skill-invoke:skillname",
     security: "Hook trust level — unsandboxed",
-    example: `[\n  {\n    \"name\": \"deploy-status\",\n    \"command\": \"${CLAUDE_PLUGIN_ROOT}/poll-deploy.sh\",\n    \"description\": \"Deployment status watcher\"\n  },\n  {\n    \"name\": \"error-log\",\n    \"command\": \"tail -F ./logs/error.log\",\n    \"when\": \"on-skill-invoke:debug\"\n  }\n]`,
+    example: "[\n  {\n    \"name\": \"deploy-status\",\n    \"command\": \"${CLAUDE_PLUGIN_ROOT}/poll-deploy.sh\",\n    \"description\": \"Deployment status watcher\"\n  },\n  {\n    \"name\": \"error-log\",\n    \"command\": \"tail -F ./logs/error.log\",\n    \"when\": \"on-skill-invoke:debug\"\n  }\n]",
     notes: ["Requires v2.1.105+", "when: always OR on-skill-invoke:name", "Interactive sessions only", "Each stdout line → Claude notification"],
   },
   {
@@ -91,7 +91,7 @@ const COMPONENTS = [
     description: "Color themes that appear in /theme. Users can press Ctrl+E to copy a plugin theme to ~/.claude/themes/ for personal editing. Base preset + sparse overrides format.",
     invocation: "User selects in /theme",
     security: "UI only — no code execution",
-    example: `{\n  \"name\": \"Dracula\",\n  \"base\": \"dark\",\n  \"overrides\": {\n    \"claude\": \"#bd93f9\",\n    \"error\": \"#ff5555\",\n    \"success\": \"#50fa7b\",\n    \"warning\": \"#ffb86c\"\n  }\n}`,
+    example: "{\n  \"name\": \"Dracula\",\n  \"base\": \"dark\",\n  \"overrides\": {\n    \"claude\": \"#bd93f9\",\n    \"error\": \"#ff5555\",\n    \"success\": \"#50fa7b\",\n    \"warning\": \"#ffb86c\"\n  }\n}",
     notes: ["Ctrl+E to copy for user editing", "base: dark | light | system", "Persisted as custom:plugin-name:slug"],
   },
   {
@@ -104,7 +104,7 @@ const COMPONENTS = [
     description: "Raw executables and scripts added to the Bash tool's PATH when the plugin is enabled. Invokable as bare commands in shell tool calls.",
     invocation: "Available as bare commands in Bash tool",
     security: "Full execution — same as Bash tool",
-    example: `# bin/format-code\n#!/bin/bash\n# Custom code formatter\nset -e\nprettier --write \"$1\"\ngofmt -w \"$1\" 2>/dev/null || true`,
+    example: "# bin/format-code\n#!/bin/bash\n# Custom code formatter\nset -e\nprettier --write \"$1\"\ngofmt -w \"$1\" 2>/dev/null || true",
     notes: ["Must be executable (chmod +x)", "Available in all Bash tool calls", "Use ${CLAUDE_PLUGIN_DATA} for mutable state"],
   },
   {
@@ -117,7 +117,7 @@ const COMPONENTS = [
     description: "Event hooks using ${CLAUDE_PLUGIN_ROOT} for paths. Same event types as session hooks: SessionStart, PreToolUse, PostToolUse, Stop, etc.",
     invocation: "Automatic — fired at lifecycle events",
     security: "Hook trust level",
-    example: `{\n  \"PostToolUse\": [{\n    \"matcher\": \"Edit|Write\",\n    \"hooks\": [{\n      \"type\": \"command\",\n      \"command\": \"${CLAUDE_PLUGIN_ROOT}/bin/lint.sh\"\n    }]\n  }]\n}`,
+    example: "{\n  \"PostToolUse\": [{\n    \"matcher\": \"Edit|Write\",\n    \"hooks\": [{\n      \"type\": \"command\",\n      \"command\": \"${CLAUDE_PLUGIN_ROOT}/bin/lint.sh\"\n    }]\n  }]\n}",
     notes: ["Use ${CLAUDE_PLUGIN_ROOT} for paths", "Same events as session hooks", "Runs in hook trust level"],
   },
   {
@@ -130,7 +130,7 @@ const COMPONENTS = [
     description: "MCP server configurations that start automatically when the plugin is enabled. Use ${CLAUDE_PLUGIN_ROOT} for server path and ${CLAUDE_PLUGIN_DATA} for persistent data.",
     invocation: "Auto-started at session start when plugin enabled",
     security: "MCP trust level",
-    example: `{\n  \"mcpServers\": {\n    \"my-db\": {\n      \"type\": \"stdio\",\n      \"command\": \"node\",\n      \"args\": [\"${CLAUDE_PLUGIN_ROOT}/mcp-server.js\"],\n      \"env\": {\n        \"DB_PATH\": \"${CLAUDE_PLUGIN_DATA}/db.sqlite\"\n      }\n    }\n  }\n}`,
+    example: "{\n  \"mcpServers\": {\n    \"my-db\": {\n      \"type\": \"stdio\",\n      \"command\": \"node\",\n      \"args\": [\"${CLAUDE_PLUGIN_ROOT}/mcp-server.js\"],\n      \"env\": {\n        \"DB_PATH\": \"${CLAUDE_PLUGIN_DATA}/db.sqlite\"\n      }\n    }\n  }\n}",
     notes: ["${CLAUDE_PLUGIN_ROOT} for server binary", "${CLAUDE_PLUGIN_DATA} for persistent files", "Auto-starts with plugin"],
   },
   {
@@ -143,7 +143,7 @@ const COMPONENTS = [
     description: "Language Server Protocol configurations for code intelligence features. Provides hover docs, go-to-definition, and inline diagnostics within Claude Code's editor integration.",
     invocation: "Auto-configured based on file type",
     security: "LSP process trust level",
-    example: `{\n  \"servers\": [{\n    \"name\": \"rust-analyzer\",\n    \"command\": \"${CLAUDE_PLUGIN_ROOT}/bin/rust-analyzer\",\n    \"languages\": [\"rust\"]\n  }]\n}`,
+    example: "{\n  \"servers\": [{\n    \"name\": \"rust-analyzer\",\n    \"command\": \"${CLAUDE_PLUGIN_ROOT}/bin/rust-analyzer\",\n    \"languages\": [\"rust\"]\n  }]\n}",
     notes: ["Language-aware code intelligence", "Auto-configures for matching file types", "Uses ${CLAUDE_PLUGIN_ROOT} for binaries"],
   },
 ];
@@ -177,7 +177,6 @@ export default function PluginsDiagram() {
       maxWidth: "1100px",
       margin: "0 auto",
     }}>
-      {/* Header */}
       <div style={{ marginBottom: "24px" }}>
         <h2 style={{ margin: 0, fontSize: "1.4rem", color: DARK.accent, fontWeight: 700 }}>
           Claude Code Plugin Architecture
@@ -187,7 +186,6 @@ export default function PluginsDiagram() {
         </p>
       </div>
 
-      {/* Tab Nav */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }}>
         {["components", "detail", "env-vars", "install"].map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
@@ -231,7 +229,6 @@ export default function PluginsDiagram() {
             ))}
           </div>
 
-          {/* Plugin Directory Overview */}
           <div style={{ background: DARK.card, borderRadius: "12px", padding: "20px", marginTop: "20px", border: `1px solid ${DARK.border}` }}>
             <h3 style={{ margin: "0 0 12px", color: DARK.accent, fontSize: "0.95rem" }}>Complete Plugin Directory Layout</h3>
             <pre style={{ margin: 0, fontFamily: "monospace", fontSize: "0.78rem", color: DARK.text, lineHeight: 1.7 }}>
