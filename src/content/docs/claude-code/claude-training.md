@@ -1,7 +1,13 @@
 ---
 title: Elite Claude Code Mastery — Training Program
+description: >
+  8-module curriculum for elite Claude Code mastery — CLI mastery, agent teams,
+  hooks system, MCP servers, prompt engineering, RAG + enterprise integration,
+  CI/CD automation, and advanced architecture patterns. Targets .NET/Azure developers.
+  Covers Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 11
+lastUpdated: 2026-05-09
 ---
 
 # Elite Claude Code mastery: a complete AI Engineer training program
@@ -146,7 +152,7 @@ Keep CLAUDE.md **ruthlessly concise**. Research from HumanLayer shows Claude's s
 **CLI Flags Quick Reference (headless and automation use):**
 
 | Flag | Purpose | Example |
-|------|---------|---------|
+|------|---------|--------|
 | `-p "prompt"` / `--print` | Non-interactive (headless) mode | `claude -p "review this file" --allowedTools Read` |
 | `--model` | Override model | `--model claude-sonnet-4-6` |
 | `--permission-mode plan` | Read-only (no edits/writes) | Used for CI code review |
@@ -421,7 +427,7 @@ Hooks transform Claude Code from an interactive assistant into a **governed deve
 Claude Code provides **30+ hook events** spanning the full session lifecycle:
 
 | Event | When | Can Block? | Version |
-|-------|------|-----------|---------|
+|-------|------|-----------|--------|
 | **PreToolUse** | Before any tool executes | Yes — return `deny` to prevent execution | Original |
 | **PostToolUse** | After tool completes | Yes — feed errors back to Claude | Original |
 | **UserPromptSubmit** | Before Claude processes your input | Yes — exit 2 blocks the prompt | Original |
@@ -1026,7 +1032,7 @@ Implement defense in depth: **Input Layer** (sanitization, malicious encoding bl
 ### Vector Database Comparison
 
 | Database | Best for | Strengths | Avoid when |
-|----------|---------|-----------|-----------|
+|----------|---------|-----------|----------|
 | **Azure AI Search** | .NET/Azure teams | Native Azure integration, hybrid search, RRF | Not on Azure |
 | **Qdrant** | Metadata-heavy filtering | Fastest metadata filters, Rust performance | Need managed service without Qdrant Cloud |
 | **Milvus** | Billion-scale | GPU acceleration, multi-tenancy | Small corpus (<1M vectors) |
