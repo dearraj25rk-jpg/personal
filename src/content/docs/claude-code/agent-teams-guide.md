@@ -158,15 +158,15 @@ Or in `.claude/settings.json`:
 │                  Filesystem Mailbox                     │
 │         ~/.claude/teams/{team-name}/inboxes/           │
 │                                                        │
-│  ┌──────────────┐   ┌──────────────┐   ┌────────┐  │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────┐  │
 │  │ orchestrator  │   │  agent-a     │   │ agent-b  │  │
 │  │ (your session)│   │  (terminal 2)│   │(terminal3│  │
 │  └──────┬────────┘   └──────┬───────┘   └────┬─────┘  │
 │         │  sends messages   │               │         │
 │         │ ─────────────────▶│               │         │
 │         │ ◀─────────────────│               │         │
-│         │ ──────────────────────────────────▶         │
-└─────────┬───────────────────────────────────────────────┘
+│         │ ─────────────────────────────────▶         │
+└─────────┼───────────────────────────────────────────┘
 ```
 
 Each agent has its own inbox directory. Messages are written as atomic JSON files (tempfile + `os.replace` for consistency).
@@ -198,7 +198,7 @@ type MessageType =
 
 ```
 pending → in_progress → completed
-                      ↘ failed
+                      ⇘ failed
 ```
 
 ### 2.6 Filesystem Layout
