@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 2
   label: Quick Start
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-09
 ---
 
 # Quick Start — Claude Code for New Users
@@ -200,6 +200,11 @@ Run `/terminal-setup` once to enable `Shift+Enter` for multiline (requires iTerm
 | `/debug` | Troubleshoot session issues |
 | `/terminal-setup` | Configure scroll, clipboard, iTerm2 integration |
 | `/team-onboarding` | Generate a teammate ramp-up guide |
+| `/branch [name]` | Create a git worktree and new session in it |
+| `/advisor` | Escalate to dual-model advisor (Sonnet + Opus) |
+| `/init` | Auto-generate CLAUDE.md from codebase analysis |
+
+For full detail on every built-in command plus how to author custom slash commands (frontmatter fields, `$ARGUMENTS`, `@file` imports, `` !`shell` `` injection), see the [Slash Commands — Complete Reference](./slash-commands-reference).
 
 ---
 
@@ -474,6 +479,7 @@ See the [Context, Cost & Token Efficiency guide](./claude-code-efficiency-refere
 | If you want to… | Go to |
 |----------------|-------|
 | Master every feature | [CLI Technical Reference](./claude-code-reference) |
+| Deep-dive every slash command + build custom commands | [Slash Commands — Complete Reference](./slash-commands-reference) |
 | Understand CLAUDE.md vs Rules vs Skills | [Config Guide](./claude-code-config-guide) |
 | Automate with hooks | [Hooks Deep Dive](./hooks-deep-dive) |
 | Add MCP tools | [MCP Servers Guide](./mcp-servers-guide) |

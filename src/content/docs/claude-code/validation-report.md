@@ -6,7 +6,7 @@ description: >
   CHANGELOG, and public release notes through v2.1.126 (May 2026).
 sidebar:
   order: 13
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-09
 ---
 
 # Concept Validation Report
@@ -501,4 +501,4 @@ No claims were found to be factually incorrect. The unverifiable items are
 vendor-reported performance metrics, specific version numbers that predate the
 public changelog, or statistics whose primary source could not be traced.
 
-> **Last reviewed:** May 7, 2026 — verified against official Claude Code documentation through v2.1.126. Updated with sdk-guide.md, worktrees-guide.md, hooks-diagram.mdx, and mcp-diagram.mdx validation.
+> **Last reviewed:** May 9, 2026 — verified against official Claude Code documentation through v2.1.126. Updated with sdk-guide.md, worktrees-guide.md, hooks-diagram.mdx, and mcp-diagram.mdx validation.
