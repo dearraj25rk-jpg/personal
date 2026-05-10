@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 6
   label: MCP Servers
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-09
 ---
 
 # MCP Servers — Architecture, Configuration & Development
@@ -29,8 +29,8 @@ The **Model Context Protocol (MCP)** is an open standard that allows AI systems 
 │  ┌───────────────────────────────┐  │
 │  │       MCP Client              │  │
 │  │  (built into Claude Code)     │  │
-│  └───────────┬───────────────────┘  │
-└─────────────┼───────────────────────┘
+│  └───────────┬───────────────┘  │
+└─────────────┕───────────────────────┘
               │ JSON-RPC 2.0
               │ (stdio / HTTP / SSE)
               ▼

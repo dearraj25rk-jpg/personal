@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 11
   label: Worktrees & Parallel Dev
-lastUpdated: 2026-05-07
+lastUpdated: 2026-05-09
 ---
 
 # Git Worktrees — Parallel Development with Claude Code
@@ -406,7 +406,7 @@ Each job runs on its own checkout (analogous to a worktree) in parallel.
 ## 9. Troubleshooting
 
 | Problem | Solution |
-|---------|---------|
+|---------|----------|
 | `fatal: 'feature/foo' is already checked out` | Each branch can only be in one worktree at a time. Remove the existing worktree first. |
 | Worktree stuck after force delete | Run `git worktree prune` to clean up stale metadata |
 | `.claude/settings.local.json` not loading | Must be in the worktree root, not the main repo root |
