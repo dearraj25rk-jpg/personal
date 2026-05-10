@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 9
   label: Permissions & Security
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-09
 ---
 
 # Permissions, Sandbox & Security
@@ -223,7 +223,7 @@ The sandbox provides OS-level process isolation for the entire Claude Code sessi
 ### 3.3 Sandbox modes
 
 | Mode | Isolation level | Use case |
-|------|----------------|---------|
+|------|----------------|----------|
 | Disabled | None | Full system access, maximum speed |
 | Standard | File + process | Recommended for interactive use |
 | Strict | File + process + network | High-security environments |

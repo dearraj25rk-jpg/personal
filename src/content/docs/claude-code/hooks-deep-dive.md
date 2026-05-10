@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 5
   label: Hooks System
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-09
 ---
 
 # Hooks System — Complete Reference
@@ -452,7 +452,7 @@ echo "Project: $CLAUDE_PROJECT_DIR"
 **Exit code 2 behaviour by event:**
 
 | Event | Exit 2 effect |
-|-------|--------------|
+|-------|---------------|
 | `PreToolUse` | Tool does **not** execute; Claude sees your error message and can retry or apologise |
 | `PostToolUse` | Tool result is **rejected**; Claude must retry or stop |
 | `UserPromptSubmit` | Prompt is **blocked**; user sees your error message |
