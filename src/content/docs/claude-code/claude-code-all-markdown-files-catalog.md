@@ -6,7 +6,7 @@ sidebar:
 
 # Every Markdown File Claude Code Recognizes — Complete Catalog
 
-> **Last updated: May 6, 2026 — reflects Claude Code v2.1.121+**
+> **Last updated: May 6, 2026 — reflects Claude Code v2.1.126+**
 > All information sourced from official `code.claude.com` documentation.
 
 ---
@@ -148,6 +148,145 @@ IMPORTED FILES (via @path syntax in any CLAUDE.md)
 
 ---
 
+## Visual Load-Order Timeline
+
+Understanding *when* each file type loads is critical for token budget planning. The timeline below shows the sequence from session start through user interaction.
+
+```
+  SESSION START
+  │
+  │  T=0ms  PHASE 1: Fixed Context Assembly (always happens)
+  │  ┌──────────────────────────────────────────────────────────────────┐
+  │  │ Step 1  Tool schema definitions (built-in tools)                 │
+  │  │         ↳ Shared by ALL users → highest cache hit rate           │
+  │  │                                                                  │
+  │  │ Step 2  MCP tool schemas (if MCP servers configured)             │
+  │  │         ↳ Per-session config, added to stable prefix             │
+  │  │                                                                  │
+  │  │ Step 3  System prompt (Anthropic hardcoded instructions)         │
+  │  │         ↳ Shared across all users → very high cache hit          │
+  │  │                                                                  │
+  │  │ Step 4  Enterprise CLAUDE.md (if exists)                         │
+  │  │         ↳ Loaded FIRST among user-configurable content           │
+  │  │                                                                  │
+  │  │ Step 5  User CLAUDE.md (~/.claude/CLAUDE.md)                     │
+  │  │         ↳ Personal, all projects                                 │
+  │  │                                                                  │
+  │  │ Step 6  Project CLAUDE.md (./CLAUDE.md or ./.claude/CLAUDE.md)  │
+  │  │         ↳ Team-shared; survives /compact                         │
+  │  │                                                                  │
+  │  │ Step 7  CLAUDE.local.md (./CLAUDE.local.md)                      │
+  │  │         ↳ Personal overrides, gitignored                         │
+  │  │                                                                  │
+  │  │ Step 8  Auto-memory MEMORY.md (≤200 lines / 25KB)               │
+  │  │         ↳ Machine-local, all worktrees share one file            │
+  │  │                                                                  │
+  │  │ Step 9  Global Rules (.claude/rules/*.md, no paths: frontmatter) │
+  │  │         ↳ Always-on rules, loaded in full                        │
+  │  │                                                                  │
+  │  │ Step 10 @imported files (resolved recursively, max 5 hops)       │
+  │  │         ↳ Inline at load time; adds to parent file's cost        │
+  │  │                                                                  │
+  │  │ Step 11 Skill & Agent frontmatter scan (name + description only) │
+  │  │         ↳ ~100-150 tokens per skill; body NOT loaded yet         │
+  │  └──────────────────────────────────────────────────────────────────┘
+  │
+  │  T=variable  PHASE 2: On-Demand Context (triggered mid-session)
+  │  ┌──────────────────────────────────────────────────────────────────┐
+  │  │ On file access    Subtree CLAUDE.md files (nested subdirectories) │
+  │  │                   ↳ Fires "nested_traversal" InstructionsLoaded  │
+  │  │                                                                  │
+  │  │ On file access    Path-scoped Rules (.claude/rules/ with paths:) │
+  │  │                   ↳ Fires "path_glob_match" InstructionsLoaded   │
+  │  │                                                                  │
+  │  │ On task match     Skill body (full SKILL.md content)             │
+  │  │                   ↳ Loaded as tool result into conversation       │
+  │  │                                                                  │
+  │  │ On /command       Slash command body                              │
+  │  │                   ↳ Loaded only when user types /command-name    │
+  │  │                                                                  │
+  │  │ On delegation     Subagent definition body                        │
+  │  │                   ↳ Becomes subagent system prompt               │
+  │  │                                                                  │
+  │  │ On invocation     Subagent MEMORY.md (≤200 lines / 25KB)         │
+  │  │                   ↳ Into subagent's own context window           │
+  │  └──────────────────────────────────────────────────────────────────┘
+  │
+  │  T=session  PHASE 3: Separate Context (never touches main window)
+  │  ┌──────────────────────────────────────────────────────────────────┐
+  │  │ Subagent conversations → own forked context window               │
+  │  │ Skills with context: fork → run in subagent context window       │
+  │  └──────────────────────────────────────────────────────────────────┘
+  │
+  END SESSION
+```
+
+---
+
+## Decision Flowchart: Which File Type Should I Use?
+
+Use this flowchart when you have content to give Claude and need to decide where to put it.
+
+```
+  START: "I have content/instructions for Claude"
+  │
+  ├─► Is this enforced policy for ALL users on this machine?
+  │   │
+  │   YES ─► Enterprise CLAUDE.md (#1) + managed-settings.json
+  │           Deployed via MDM/Ansible/Group Policy
+  │
+  └─► Is this personal to me, not the team?
+      │
+      ├─► YES: Does it apply to ALL my projects?
+      │         │
+      │         YES ─► User CLAUDE.md (#2) at ~/.claude/CLAUDE.md
+      │         │
+      │         NO  ─► This project only? Is it personal (not shared)?
+      │                 │
+      │                 YES ─► CLAUDE.local.md (#8) — gitignored
+      │
+      └─► NO (team-shared content):
+          │
+          ├─► Is it a multi-step workflow, needs scripts/templates?
+          │   │
+          │   YES ─► Skill (#12 project, #5 personal)
+          │           Put in .claude/skills/<name>/SKILL.md
+          │
+          ├─► Is it instructions Claude needs on EVERY interaction?
+          │   │
+          │   YES ─► Does it apply to specific file types/directories?
+          │           │
+          │           YES ─► Path-scoped Rule (#9)
+          │           │       .claude/rules/<name>.md with paths: frontmatter
+          │           │
+          │           NO  ─► Does it fit in ~5-10 lines?
+          │                   │
+          │                   YES ─► Project CLAUDE.md (#7)
+          │                   NO  ─► Global Rule (#9) — no paths: frontmatter
+          │
+          ├─► Is it a reusable command the team types explicitly?
+          │   │
+          │   YES ─► Project Slash Command (#10)
+          │           .claude/commands/<name>.md
+          │
+          ├─► Is it an autonomous agent with its own identity?
+          │   │
+          │   YES ─► Subagent (#11 project, #4 personal)
+          │           .claude/agents/<name>.md
+          │
+          ├─► Is it a custom response format/style?
+          │   │
+          │   YES ─► Output Style (#13 project, #6 personal)
+          │           .claude/output-styles/<name>.md
+          │
+          └─► Does it apply when Claude enters a specific subdirectory?
+              │
+              YES ─► Subtree CLAUDE.md (#14)
+                      src/subdomain/CLAUDE.md (on-demand loading)
+```
+
+---
+
 ## Detailed Breakdown of Each File
 
 ---
@@ -166,6 +305,9 @@ IMPORTED FILES (via @path syntax in any CLAUDE.md)
 | **Token impact** | Permanent overhead every session |
 | **Can be excluded** | **No** — `claudeMdExcludes` cannot skip managed CLAUDE.md files |
 | **Injection method** | Delivered as a **user message** after the system prompt (not part of the system prompt itself) |
+| **HTML comment stripping** | Yes — block-level `<!-- -->` comments removed before injection |
+| **Survives /compact** | Yes — re-injected from disk |
+| **Size limit** | None — loaded in full regardless of length |
 
 **Purpose**: Organization-wide coding standards, security policies, compliance requirements, approved tools/libraries. This is the "law of the land" — it shapes Claude's behavior but is not a hard enforcement layer the way `managed-settings.json` is. For technical enforcement, use settings; for behavioral guidance, use this file.
 
@@ -210,6 +352,9 @@ IMPORTED FILES (via @path syntax in any CLAUDE.md)
 | **Token impact** | Permanent overhead every session |
 | **Can be excluded** | Yes — via `claudeMdExcludes` in your settings |
 | **Injection method** | User message after the system prompt |
+| **HTML comment stripping** | Yes |
+| **Survives /compact** | Yes — re-injected from disk |
+| **Size limit** | None |
 
 **Purpose**: Your personal coding preferences that travel with you regardless of project — editor preferences, interaction style, personal shortcuts, formatting rules.
 
@@ -254,6 +399,9 @@ IMPORTED FILES (via @path syntax in any CLAUDE.md)
 | **Shared with** | Just you, across all projects |
 | **Git tracked** | No |
 | **Namespace** | No namespace for personal commands; subdirectory names appear in descriptions but don't affect the command name |
+| **Token impact** | On-use only (negligible at session start) |
+| **HTML comment stripping** | Yes |
+| **Size limit** | None |
 
 **Frontmatter fields**:
 ```yaml
@@ -320,6 +468,9 @@ Subdirectory names appear in the description shown in the command browser but do
 | **Shared with** | Just you, across all projects |
 | **Git tracked** | No |
 | **Priority** | Lower than project agents of the same name; higher than built-in agents |
+| **Token impact** | Frontmatter ~100-150 tokens at start; body only on invocation |
+| **HTML comment stripping** | Yes |
+| **Size limit** | None |
 
 **Frontmatter fields** (only `name` and `description` are required):
 ```yaml
@@ -424,6 +575,9 @@ actionable, constructive feedback.
 | **Shared with** | Just you, across all projects |
 | **Git tracked** | No |
 | **Can include** | Supporting `.md` files, scripts, templates, any data files |
+| **Token impact** | Frontmatter ~100-150 tokens at start; body 500-5K tokens only on invocation |
+| **HTML comment stripping** | Yes |
+| **Size limit** | None for body; description capped at 1,536 chars in /skills listing (v2.1.105) |
 
 **Frontmatter fields**:
 ```yaml
@@ -443,6 +597,7 @@ agent: Explore                    # Which subagent type to use when context: for
 **Special variables in skill body**:
 - `$ARGUMENTS` — user input typed after `/skill-name`
 - `${CLAUDE_SESSION_ID}` — current session identifier
+- `${CLAUDE_EFFORT}` — current session effort level (v2.1.120)
 - `!`backtick commands — shell output injected inline at invocation
 - `@path` — file content injected inline
 
@@ -490,6 +645,9 @@ hooks:
 | **Shared with** | Just you |
 | **Git tracked** | No |
 | **When takes effect** | Next new session (not mid-session, to keep prompt caching stable) |
+| **Token impact** | Replaces part of system prompt; overall overhead depends on style length |
+| **HTML comment stripping** | Yes |
+| **Size limit** | None |
 
 **How output styles differ from CLAUDE.md**:
 - **CLAUDE.md** → injected as a *user message* after the system prompt; does not touch the system prompt
@@ -558,6 +716,9 @@ When responding:
 | **Bootstrap** | Run `/init` to auto-generate from codebase analysis |
 | **Can be excluded** | Yes — via `claudeMdExcludes` (per-developer, not team-wide) |
 | **Injection method** | User message after system prompt |
+| **HTML comment stripping** | Yes |
+| **Survives /compact** | Yes — only CLAUDE.md that auto-survives compaction |
+| **Size limit** | None — loaded in full; recommended ~120 lines for efficiency |
 
 **Compaction survival**: After `/compact`, Claude re-reads the project-root `CLAUDE.md` from disk and re-injects it into the compacted session. This is the only CLAUDE.md that automatically survives compaction.
 
@@ -607,6 +768,9 @@ When responding:
 | **Shared with** | Just you, this project only |
 | **Git tracked** | **No** — automatically added to `.gitignore` when created by Claude Code |
 | **Token impact** | Permanent overhead every session |
+| **HTML comment stripping** | Yes |
+| **Survives /compact** | Yes |
+| **Size limit** | None |
 
 **Purpose**: Personal project overrides — your sandbox URLs, local test database credentials (non-sensitive), debugging preferences, personal workflow shortcuts specific to this project that you don't want to share or commit.
 
@@ -645,6 +809,10 @@ When responding:
 | **Shared with** | Team via git |
 | **Git tracked** | Yes |
 | **Advantage over CLAUDE.md** | Path-scoped rules only consume tokens when relevant — no permanent overhead |
+| **Token impact** | Global: permanent. Path-scoped: conditional |
+| **HTML comment stripping** | Yes |
+| **Symlinks** | Supported — circular symlinks detected and handled |
+| **Size limit** | None per file; recommended ~50 lines per file |
 
 **Frontmatter** (optional — no frontmatter = global rule):
 ```yaml
@@ -705,6 +873,10 @@ paths:
 | **Shared with** | Team via git |
 | **Git tracked** | Yes |
 | **Advantage** | Team members get these commands automatically when they clone/pull |
+| **Token impact** | On-use only |
+| **HTML comment stripping** | Yes |
+| **Priority** | Overrides personal commands of same name |
+| **Size limit** | None |
 
 Same format as personal slash commands (entry #3). Project commands take precedence over personal commands of the same name.
 
@@ -741,6 +913,9 @@ Summarize what changed and why.
 | **Git tracked** | Yes |
 | **Priority** | Higher than personal agents (`~/.claude/agents/`) of the same name |
 | **Discovery** | Claude walks up from cwd to find project agents; `--add-dir` directories are NOT scanned for agents |
+| **Token impact** | Frontmatter ~100-150 tokens at start; body only on invocation |
+| **HTML comment stripping** | Yes |
+| **Size limit** | None |
 
 Same format as personal subagents (entry #4). Useful for team-standard agents like a shared code reviewer, deployment agent, or security scanner.
 
@@ -757,6 +932,10 @@ Same format as personal subagents (entry #4). Useful for team-standard agents li
 | **Shared with** | Team via git |
 | **Git tracked** | Yes |
 | **Unified since v2.1.3** | A `SKILL.md` in `.claude/skills/<name>/` automatically creates the `/<name>` slash command for all team members |
+| **Token impact** | Frontmatter ~100-150 tokens at start; body 500-5K tokens only on invocation |
+| **HTML comment stripping** | Yes |
+| **Priority** | Overrides personal skills of same name |
+| **Size limit** | None for body; description capped at 1,536 chars in listing |
 
 Same format as personal skills (entry #5). Team members get these skills automatically upon clone/pull. Project skills take precedence over personal skills of the same name.
 
@@ -770,6 +949,10 @@ Same format as personal skills (entry #5). Team members get these skills automat
 | **Location** | `.claude/output-styles/` |
 | **Shared with** | Team via git |
 | **Git tracked** | Yes |
+| **Token impact** | Replaces part of system prompt |
+| **HTML comment stripping** | Yes |
+| **Priority** | Overrides personal output styles of same name |
+| **Size limit** | None |
 
 Same format as personal output styles (entry #6). Useful for team-standard response formats (e.g., an "architect" style for design sessions, a "terse" style for CI environments).
 
@@ -786,6 +969,9 @@ Same format as personal output styles (entry #6). Useful for team-standard respo
 | **Token impact** | None until Claude touches files in that directory; then loaded in full |
 | **Shared with** | Team via git (if committed) |
 | **Compaction** | Does **not** automatically survive compaction — reloads next time Claude enters the subdirectory |
+| **HTML comment stripping** | Yes |
+| **InstructionsLoaded hook** | Fires with matcher "nested_traversal" when lazily loaded |
+| **Size limit** | None |
 
 **Purpose**: Domain-specific instructions for a subsystem. If your `src/Domain/` directory has complex DDD rules, put them in `src/Domain/CLAUDE.md` — they only consume tokens when Claude is actually working in that area.
 
@@ -819,6 +1005,7 @@ Same format as personal output styles (entry #6). Useful for team-standard respo
 | **Who writes it** | Claude itself — when you say "remember this" or Claude learns something important |
 | **Machine-local** | Yes — not synced across machines; not shared with team members |
 | **Token impact** | On-demand only — 200 lines/25KB at session start, nothing more unless Claude loads satellite files |
+| **Size limit** | Hard cap: first 200 lines or 25KB loaded; beyond that is ignored at session start |
 
 **What this is**: Auto-memory is Claude Code's built-in persistent learning system for the main conversation (not subagents). When you ask Claude to "always use pnpm, not npm" or "remember that our API tests need a running Redis instance", Claude saves that to `MEMORY.md`. It reads the file back at the start of your next session.
 
@@ -862,6 +1049,8 @@ CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude
 | **Who writes it** | The subagent itself (auto-generated and maintained over time) |
 | **Purpose** | Persistent learning for subagents across sessions |
 | **Git tracked** | User scope: No · Project scope: Yes · Local scope: No (gitignored) |
+| **Token impact** | On-use only; first 200 lines/25KB at subagent invocation |
+| **Size limit** | Hard cap: first 200 lines or 25KB; beyond that is ignored |
 
 **How it works**: When a subagent has `memory` configured in its frontmatter, it automatically gets Read/Write/Edit tools scoped to its memory directory. The subagent can save patterns, discoveries, and architectural learnings to `MEMORY.md`. Next time it's invoked, the first 200 lines/25KB are automatically included in its system prompt.
 
@@ -1065,6 +1254,8 @@ my-plugin/
 | **Ignored in** | Code spans (`` `@not-imported` ``) and code fenced blocks |
 | **When expanded** | Inline at load time — expanded and loaded into context alongside the referencing CLAUDE.md |
 | **Token cost** | Adds to the parent CLAUDE.md's cost — all imports are loaded at the same time as the parent |
+| **HTML comment stripping** | Yes — applied to imported file content |
+| **Size limit** | None per file; total chain subject to same rules as parent |
 
 These are not a separate file type — they're any markdown (or other) file pulled into CLAUDE.md context via the import mechanism. Common patterns:
 
@@ -1082,6 +1273,419 @@ These are not a separate file type — they're any markdown (or other) file pull
 - Keeping sensitive personal instructions in `~/.claude/` while importing them into project context
 
 **Worktree gotcha**: Because `CLAUDE.local.md` doesn't exist across worktrees, using `@~/.claude/my-project-local.md` in a shared CLAUDE.md import is the recommended pattern for personal instructions that should work in all worktrees.
+
+---
+
+## Complete Attributes Reference Table
+
+The table below is the authoritative single-source comparison of all 23 file types across every attribute.
+
+| # | File | Location | Priority | When Loaded | Git? | Token Cost | HTML Strip | Survives /compact | Size Limit | Invocation |
+|---|------|----------|----------|-------------|------|-----------|------------|-------------------|------------|------------|
+| 1 | Enterprise CLAUDE.md | System managed path | Highest — unconfigurable | Always, first | No | Permanent | Yes | Yes | None | Automatic |
+| 2 | User CLAUDE.md | `~/.claude/` | High, after Enterprise | Always | No | Permanent | Yes | Yes | None | Automatic |
+| 3 | Personal Commands | `~/.claude/commands/*.md` | Normal | On invocation; frontmatter at start | No | On-use only | Yes | No | None | `/command` |
+| 4 | Personal Agents | `~/.claude/agents/*.md` | Normal | Frontmatter at start; body on invoke | No | ~100-150t start + on-use | Yes | No | None | Auto-delegate or `@mention` |
+| 5 | Personal Skills | `~/.claude/skills/*/SKILL.md` | Normal | Frontmatter at start; body on invoke | No | ~100-150t start + on-use | Yes | No | Description: 1,536 chars | Auto or `/skill` |
+| 6 | Personal Output Styles | `~/.claude/output-styles/*.md` | System prompt level | On activation (next session) | No | Replaces SE system prompt | Yes | N/A | None | `/config` → Output style |
+| 7 | Project CLAUDE.md | `./CLAUDE.md` or `./.claude/CLAUDE.md` | High, after Enterprise + User | Always; unique: survives /compact | Yes | Permanent | Yes | **Yes** (only one that auto-survives) | None | Automatic |
+| 8 | CLAUDE.local.md | `./CLAUDE.local.md` | High, personal override | Always | No (gitignored) | Permanent | Yes | Yes | None | Automatic |
+| 9 | Rules | `.claude/rules/*.md` | High, same as CLAUDE.md | Global: always. Scoped: on file match | Yes | Global=permanent; Scoped=conditional | Yes | No | None | Automatic |
+| 10 | Project Commands | `.claude/commands/*.md` | Normal (overrides personal same name) | On invocation | Yes | On-use only | Yes | No | None | `/command` |
+| 11 | Project Agents | `.claude/agents/*.md` | Normal (overrides personal same name) | Frontmatter at start; body on invoke | Yes | ~100-150t start + on-use | Yes | No | None | Auto-delegate or `@mention` |
+| 12 | Project Skills | `.claude/skills/*/SKILL.md` | Normal (overrides personal same name) | Frontmatter at start; body on invoke | Yes | ~100-150t start + on-use | Yes | No | Description: 1,536 chars | Auto or `/skill` |
+| 13 | Project Output Styles | `.claude/output-styles/*.md` | System prompt level | On activation (next session) | Yes | Replaces SE system prompt | Yes | N/A | None | `/config` → Output style |
+| 14 | Subtree CLAUDE.md | `<subdir>/CLAUDE.md` | High, most specific context | On demand — when directory accessed | Yes | On-demand, full content | Yes | No (reloads on next access) | None | Automatic |
+| 15 | Auto-memory MEMORY.md | `~/.claude/projects/<hash>/memory/` | Normal | First 200 lines or 25KB at session start | No | ≤25KB / 200 lines | No | Yes (machine-local) | Hard: 200 lines or 25KB | Automatic |
+| 16 | Subagent MEMORY.md | `agent-memory/<agent>/MEMORY.md` | Normal (in subagent context) | First 200 lines or 25KB at invocation | Scope-dependent | On-use: ≤25KB / 200 lines | No | Per-agent (scope-dependent) | Hard: 200 lines or 25KB | Automatic at subagent invocation |
+| 17 | Plugin Commands | `<plugin>/commands/*.md` | Normal | On invocation | Via plugin | On-use only | Yes | No | None | `/plugin:command` |
+| 18 | Plugin Agents | `<plugin>/agents/*.md` | Normal | Frontmatter at start; body on invoke | Via plugin | ~100-150t start + on-use | Yes | No | None | Auto or namespaced mention |
+| 19 | Plugin Skills | `<plugin>/skills/*/SKILL.md` | Normal | Frontmatter at start; body on invoke | Via plugin | ~100-150t start + on-use | Yes | No | Description: 1,536 chars | Auto or `/plugin:skill` |
+| 20 | Plugin Output Styles | `<plugin>/output-styles/*.md` | System prompt level | On activation | Via plugin | Replaces SE system prompt | Yes | N/A | None | `/config` → Output style |
+| 21 | Plugin Monitors | `<plugin>/monitors/monitors.json` | Background process | Session start or first skill invoke | Via plugin | Background stdout → notifications | N/A | No | None | Automatic (JSON not markdown) |
+| 22 | Plugin Themes | `<plugin>/themes/*.json` | UI level | When selected | Via plugin | UI only | N/A | N/A | None | `/theme` (JSON not markdown) |
+| 23 | @Imported Files | Anywhere, referenced via `@path` | Inherits from parent file | When parent CLAUDE.md loads | Varies | Adds to parent's cost | Yes | Inherits from parent | None per file; max 5 hop depth | Automatic with parent |
+
+---
+
+## Anti-Patterns Section: Common Mistakes
+
+Learning what NOT to do is as important as learning what to do. These are the most frequently observed anti-patterns in Claude Code configuration.
+
+### Anti-Pattern 1: The Monolithic CLAUDE.md
+
+**Symptom**: A single CLAUDE.md file exceeding 300–500 lines containing everything — architecture docs, all coding rules, deployment procedures, style guides, domain glossaries.
+
+**Why it hurts**: Claude's attention is finite. When everything competes for high priority in one large file, nothing is effectively high priority. Ignored instructions, inconsistent behavior, and higher token costs per session.
+
+```markdown
+# BAD: 400-line CLAUDE.md containing everything
+## Architecture (100 lines)
+## Domain Rules for Claims Processing (80 lines)
+## Domain Rules for Payments (80 lines)
+## API Conventions (60 lines)
+## Deployment Procedure (40 lines)
+## Style Guide (40 lines)
+```
+
+**Fix**: Keep CLAUDE.md under 120 lines containing only what Claude needs on *every* interaction. Extract the rest:
+- Domain-specific rules → path-scoped `.claude/rules/` files
+- Deployment procedure → `.claude/skills/deploy/SKILL.md`
+- Style guides longer than 10 lines → `.claude/rules/style.md` (global)
+
+```
+# GOOD: Split architecture
+CLAUDE.md                              ← 80 lines: tech stack, build commands, key paths
+.claude/rules/claims-rules.md         ← paths: ["src/Claims/**"]
+.claude/rules/payments-rules.md       ← paths: ["src/Payments/**"]
+.claude/rules/api-conventions.md      ← paths: ["src/Api/**"]
+.claude/skills/deploy/SKILL.md        ← invoked only when deploying
+```
+
+---
+
+### Anti-Pattern 2: Duplicating Instructions Across Files
+
+**Symptom**: "Use conventional commits" appears in CLAUDE.md, a global rule file, AND a deployment skill. "Never expose IQueryable" appears in both CLAUDE.md and a path-scoped rule.
+
+**Why it hurts**: Wastes tokens and can create conflicts when instructions diverge over time. If you update one copy and forget another, Claude gets contradictory instructions.
+
+**Fix**: Single source of truth. Each instruction in exactly one place:
+- Universal conventions → CLAUDE.md
+- Domain-specific patterns → path-scoped rule for that domain
+- Workflow-specific requirements → inside the skill that uses them
+
+---
+
+### Anti-Pattern 3: Vague Skill Descriptions
+
+**Symptom**: A skill with `description: Helps with code` or `description: Code review assistant`.
+
+**Why it hurts**: The description is the ONLY signal Claude has at session start to decide whether to invoke the skill. A vague description means Claude either invokes it for everything (noisy) or never (useless).
+
+```yaml
+# BAD
+description: Helps with documents
+
+# GOOD
+description: >
+  Extract text, tables, and form fields from PDF files.
+  Fill PDF forms programmatically. Merge or split PDF documents.
+  Use when working with PDF files or when the user mentions PDFs,
+  forms, document extraction, or "fill out this form".
+```
+
+The good description includes:
+- What the skill does (capabilities)
+- When to use it (trigger phrases and situations)
+- Enough specificity to differentiate from other skills
+
+---
+
+### Anti-Pattern 4: Making Everything a Skill
+
+**Symptom**: A skill named `use-typescript` that just says "Use TypeScript strict mode."
+
+**Why it hurts**: A skill adds a folder, a SKILL.md file, and frontmatter overhead. For simple instructions, this overhead is not justified. Skills shine for complex, multi-step workflows with supporting files — not for one-liners.
+
+**Fix**: Match the tool to the complexity:
+- Single instruction → CLAUDE.md or a line in a global rule
+- Domain-specific pattern → path-scoped rule
+- Multi-step workflow with scripts/templates → skill
+
+---
+
+### Anti-Pattern 5: No Path Scoping on Rules
+
+**Symptom**: Ten global rule files (no `paths:` frontmatter) covering TypeScript, SQL, React, .NET, Python, infrastructure, testing, security, mobile, and machine learning — even though a developer only works in one or two of these areas per session.
+
+**Why it hurts**: All ten files load at session start, every session, regardless of what files Claude is actually working on. This is permanent token overhead for instructions that are rarely relevant.
+
+**Fix**: Add `paths:` frontmatter to every rule that applies to specific file types:
+
+```yaml
+# BEFORE: loads every session regardless of task
+# typescript-rules.md — no frontmatter
+
+# AFTER: loads only when TypeScript files are touched
+---
+paths:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+```
+
+Only keep rules global (no paths:) when they truly apply to every file type (e.g., security rules, commit message conventions).
+
+---
+
+### Anti-Pattern 6: Ignoring the Token Budget
+
+**Symptom**: Developer adds everything to CLAUDE.md without checking `/context`, wonders why Claude "forgets" things toward the end of long sessions or becomes inconsistent.
+
+**Why it hurts**: As conversation history grows, early CLAUDE.md content competes with more recent turns. At high context utilization (>70%), behavior degrades.
+
+**Fix**: Monitor token usage actively:
+```
+/context     ← see live token breakdown
+/usage       ← see cumulative session cost and cache hit rate
+```
+
+Compact at 70% utilization, not 83.5% (the auto-compaction threshold). Keep the CLAUDE.md fixed overhead below ~5K tokens total.
+
+---
+
+### Anti-Pattern 7: Personal Config in Committed Files
+
+**Symptom**: Developer adds their personal sandbox URL, test database credentials, or workflow preferences to the project `CLAUDE.md` or `.claude/rules/*.md` — files that get committed to git.
+
+**Why it hurts**: Other team members get irrelevant, potentially confusing instructions. Sandbox URLs that are personal get shared with the whole team.
+
+**Fix**:
+- Personal project overrides → `CLAUDE.local.md` (auto-gitignored)
+- Cross-project personal preferences → `~/.claude/CLAUDE.md` (user scope)
+- Personal commands → `~/.claude/commands/` (user scope)
+
+---
+
+### Anti-Pattern 8: Treating MEMORY.md Like CLAUDE.md
+
+**Symptom**: Developer tries to put critical permanent instructions in auto-memory (`~/.claude/projects/<hash>/memory/MEMORY.md`), expecting them to always be available.
+
+**Why it hurts**: MEMORY.md has a hard 200-line / 25KB cap — content beyond that limit is silently NOT loaded. CLAUDE.md files have no size limit. MEMORY.md is also machine-local and not shared across machines.
+
+**Fix**:
+- Permanent team instructions → project `CLAUDE.md` (no size limit, git-tracked)
+- Permanent personal instructions → user `CLAUDE.md` or `CLAUDE.local.md`
+- Auto-memory → for learned facts, preferences Claude discovers over time (not critical instructions)
+
+---
+
+### Anti-Pattern 9: Mixing Scope Levels
+
+**Symptom**: Personal deployment preferences (your local Docker setup) committed to `.claude/rules/deployment.md` which is git-tracked and shared with the team.
+
+**Why it hurts**: Team gets your personal configuration. Breaking changes when your local setup differs from CI.
+
+**Correct scope mapping**:
+```
+~/.claude/CLAUDE.md                ← personal preferences, all projects
+CLAUDE.local.md                    ← personal preferences, this project
+~/.claude/agents/                  ← personal agents, all projects
+.claude/agents/                    ← team agents, this project
+.claude/settings.local.json        ← personal settings, this project (gitignored)
+.claude/settings.json              ← team settings, this project (committed)
+```
+
+---
+
+### Anti-Pattern 10: Forgetting HTML Comment Stripping
+
+**Symptom**: Developer writes maintainer notes like `// Last reviewed by Bob, 2026-01` directly in the markdown body of CLAUDE.md, consuming tokens every session.
+
+**Fix**: Use HTML comment syntax for maintainer notes — they are stripped before injection:
+
+```markdown
+# Project CLAUDE.md
+
+<!-- Last reviewed: 2026-05 by DevSecOps. Next review: 2026-08.
+     Author: bob@company.com. Approved by: alice@company.com.
+     This comment is stripped and costs ZERO tokens. -->
+
+## Architecture
+...
+```
+
+---
+
+## Enterprise Configuration Patterns
+
+These patterns show how all 23 file types can work together in a well-structured enterprise deployment.
+
+### Pattern 1: The Enterprise Standard Stack
+
+A 500-person organization deploying Claude Code with consistent governance across 20+ teams.
+
+```
+LAYER 1 — ENTERPRISE (deployed via Jamf/Ansible/Intune)
+┌───────────────────────────────────────────────────────────────┐
+│ /Library/Application Support/ClaudeCode/                      │
+│   CLAUDE.md          ← Security policies, approved tools,     │
+│                         compliance requirements, escalation   │
+│                         contacts. All users see this.        │
+│                                                               │
+│   managed-settings.json                                       │
+│     permissions.deny: ["Bash(rm -rf *)"]                      │
+│     allowManagedHooksOnly: false                              │
+│     enabledPlugins: ["acme-security-scanner"]                 │
+│                                                               │
+│   managed-settings.d/                                         │
+│     10-security.json    ← Security baseline (SecOps team)     │
+│     20-mcp-servers.json ← Approved MCP servers               │
+│     30-telemetry.json   ← OTel config for cost monitoring     │
+└───────────────────────────────────────────────────────────────┘
+
+LAYER 2 — TEAM PLUGIN (distributed via plugin marketplace)
+┌───────────────────────────────────────────────────────────────┐
+│ acme-security-scanner plugin                                  │
+│   agents/                                                     │
+│     security-reviewer.md    ← Team security review agent     │
+│   skills/                                                     │
+│     sast-scan/SKILL.md      ← Static analysis workflow        │
+│     sbom-generate/SKILL.md  ← Software bill of materials      │
+│   hooks/hooks.json                                            │
+│     PreToolUse: block writes to /secrets/                     │
+│     PostToolUse: log all Bash executions to audit trail       │
+│   monitors/monitors.json                                      │
+│     security-log-monitor    ← Real-time security event watch  │
+└───────────────────────────────────────────────────────────────┘
+
+LAYER 3 — PROJECT (team-specific, committed to git)
+┌───────────────────────────────────────────────────────────────┐
+│ .claude/CLAUDE.md          ← Team tech stack, commands,       │
+│                               architecture overview           │
+│                                                               │
+│ .claude/rules/                                                │
+│   global-standards.md      ← Always-on team standards        │
+│   api-contracts.md         paths: ["src/api/**"]             │
+│   domain-rules.md          paths: ["src/domain/**"]          │
+│   test-requirements.md     paths: ["tests/**"]               │
+│                                                               │
+│ .claude/skills/                                               │
+│   deploy-staging/          ← Team deployment workflow         │
+│   generate-endpoint/       ← API scaffolding                 │
+│   incident-response/       ← On-call runbook skill           │
+│                                                               │
+│ .claude/agents/                                               │
+│   code-reviewer.md         ← Team code review agent          │
+│   architecture-advisor.md  ← Design review specialist        │
+│                                                               │
+│ .claude/settings.json                                         │
+│   hooks.PostToolUse: prettier format-on-save                  │
+│   plugins: ["acme-security-scanner"]                          │
+└───────────────────────────────────────────────────────────────┘
+
+LAYER 4 — DEVELOPER (personal, not committed)
+┌───────────────────────────────────────────────────────────────┐
+│ ~/.claude/CLAUDE.md        ← Personal style across projects   │
+│ CLAUDE.local.md            ← Sandbox URLs, local overrides    │
+│ ~/.claude/commands/        ← Personal productivity commands   │
+│ ~/.claude/agents/          ← Personal specialized agents      │
+│ .claude/settings.local.json ← Local permission overrides     │
+└───────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Pattern 2: The Monorepo Configuration
+
+A monorepo with 8 packages, each needing different Claude Code configurations.
+
+```
+my-monorepo/
+├── CLAUDE.md                        ← Monorepo-level: workspace setup,
+│                                       build system, shared conventions
+│
+├── .claude/
+│   ├── rules/
+│   │   ├── global.md               ← No paths: — applies everywhere
+│   │   │   (monorepo-wide standards: git workflow, PR requirements)
+│   │   │
+│   │   ├── typescript.md           ← paths: ["**/*.ts", "**/*.tsx"]
+│   │   ├── python.md               ← paths: ["**/*.py"]
+│   │   └── infrastructure.md       ← paths: ["infra/**", "terraform/**"]
+│   │
+│   └── skills/
+│       ├── cross-package-refactor/ ← Multi-package change workflow
+│       └── release-management/     ← Monorepo release coordination
+│
+├── packages/
+│   ├── api-gateway/
+│   │   └── CLAUDE.md               ← Subtree: API gateway specifics
+│   │                                  (load-balanced, rate-limited)
+│   │
+│   ├── auth-service/
+│   │   ├── CLAUDE.md               ← Subtree: Auth domain rules
+│   │   └── .claude/
+│   │       ├── rules/
+│   │       │   └── oauth-patterns.md  paths: ["src/**/*.ts"]
+│   │       └── skills/
+│   │           └── audit-auth-flow/
+│   │
+│   ├── payment-service/
+│   │   ├── CLAUDE.md               ← Subtree: PCI-DSS compliance notes
+│   │   └── .claude/
+│   │       └── rules/
+│   │           └── pci-rules.md    ← paths: ["src/**"] — payment-specific
+│   │
+│   └── data-pipeline/
+│       ├── CLAUDE.md               ← Subtree: ETL patterns, data lineage
+│       └── .claude/
+│           └── rules/
+│               └── data-quality.md ← paths: ["src/**/*.py"]
+│
+└── .claude/settings.json
+    claudeMdExcludes: []            ← Team members can exclude packages
+                                       they're not actively working on
+```
+
+**Key insight**: The `claudeMdExcludes` setting in individual developers' `settings.local.json` lets them exclude irrelevant package CLAUDE.md files:
+
+```json
+// Developer working only on auth-service:
+// .claude/settings.local.json
+{
+  "claudeMdExcludes": [
+    "**/payment-service/CLAUDE.md",
+    "**/data-pipeline/CLAUDE.md",
+    "**/api-gateway/CLAUDE.md"
+  ]
+}
+```
+
+---
+
+### Pattern 3: The Regulated Industry Stack
+
+A financial services firm with strict compliance requirements.
+
+```
+COMPLIANCE LAYER (IT-administered)
+  managed-settings.json:
+    allowManagedHooksOnly: true         ← Block all developer hooks
+    allowManagedMcpServersOnly: true    ← Only approved MCP servers
+    allowManagedPermissionRulesOnly: true
+    forceRemoteSettingsRefresh: true    ← Fail-closed on settings fetch
+
+  managed-settings.d/
+    10-data-classification.json:
+      permissions.deny: ["Bash(curl *)", "WebFetch"]  ← No external calls
+    20-audit.json:
+      hooks.PostToolUse: audit-logger.sh  ← All tool calls logged
+
+ENTERPRISE CLAUDE.md:
+  # Financial Services AI Policy
+  - All customer data is PCI-DSS / GDPR regulated
+  - Never suggest code that handles plaintext card numbers
+  - All database queries must use parameterized statements
+  - Security reviews required before any auth system changes
+  - Escalate any PII-handling code changes to security team
+
+PROJECT CLAUDE.md (.claude/CLAUDE.md):
+  Tech stack: Java 21, Spring Boot 3.x, Oracle DB
+  - Zero-trust architecture: every service call requires auth token
+  - SAGA pattern for distributed transactions
+
+SKILLS:
+  - compliance-check/      ← Run automated compliance checklist
+  - audit-report/          ← Generate audit trail report
+  - pen-test-prep/         ← Prepare penetration test artifacts
+
+PATH-SCOPED RULES:
+  - pii-handling.md        paths: ["src/**/*Customer*", "src/**/*Payment*"]
+  - auth-patterns.md       paths: ["src/auth/**", "src/security/**"]
+  - database-rules.md      paths: ["src/**/*Repository*", "**/*.sql"]
+```
 
 ---
 

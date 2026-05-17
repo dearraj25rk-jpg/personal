@@ -786,3 +786,617 @@ Project Style Workflow
   3. Commit both files
   4. Individuals override via .claude/settings.local.json (git-ignored)
 ```
+
+---
+
+## 11. Side-by-Side Style Comparison
+
+The same prompt — "Add input validation to the createUser function" — produces radically different responses depending on which output style is active. This section shows exactly what changes.
+
+### The Prompt
+
+```
+> Add input validation to the createUser function in src/users/service.ts
+```
+
+### Response: Default Style
+
+```
+I'll add input validation to createUser.
+
+[reads src/users/service.ts]
+
+I'll use Zod for validation, consistent with the rest of the codebase:
+
+// src/users/service.ts
+import { z } from 'zod';
+
+const CreateUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  role: z.enum(['admin', 'user', 'viewer']).default('user'),
+});
+
+export async function createUser(input: unknown): Promise<User> {
+  const data = CreateUserSchema.parse(input);
+  // ... rest of function unchanged
+}
+
+Tests updated in src/users/service.test.ts with validation edge cases.
+All tests pass.
+```
+
+**Characteristics:** Concise. Shows the change. Mentions test update. Done.
+
+---
+
+### Response: Explanatory Style
+
+```
+I'll add input validation to createUser. Let me first read the existing
+implementation to understand the current shape.
+
+[reads src/users/service.ts]
+[reads src/users/service.test.ts]
+
+I see the codebase uses Zod v4 elsewhere (src/api/validators.ts). I'll
+be consistent with that.
+
+// src/users/service.ts
+import { z } from 'zod';
+
+const CreateUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  role: z.enum(['admin', 'user', 'viewer']).default('user'),
+});
+
+export async function createUser(input: unknown): Promise<User> {
+  const data = CreateUserSchema.parse(input);
+  // ... rest of function
+}
+
+**Insights**
+- Chose Zod over manual validation because it's already the project
+  standard (avoiding a second validation library with different semantics).
+- Used `z.parse` (throws ZodError) rather than `z.safeParse` (returns
+  result object) because the existing error middleware in src/api/middleware/
+  errors.ts already handles ZodError and formats it as a 400 response —
+  the throw is intentional, not accidental.
+- The `role` default inside the schema keeps the default co-located with
+  the type definition. An alternative was setting the default in the
+  database, but that would require reading the DB to know the default —
+  worse for documentation and testing.
+- Future maintainers: if you add a new field to User, add it here first.
+  The schema is the single source of truth for what createUser accepts.
+```
+
+**Characteristics:** Same code change, plus Insights explaining why Zod (vs alternatives), why `.parse` (vs `.safeParse`), and an explicit note for future maintainers.
+
+---
+
+### Response: Learning Style
+
+```
+Let's add validation to createUser. Before I write the code, let me
+explain the approach.
+
+Input validation sits at the boundary between untrusted external data
+and your trusted internal domain. The goal is to reject invalid data
+early, with a clear error, before it reaches business logic or the database.
+
+Here's the structure with a gap for you to fill in:
+
+// src/users/service.ts
+import { z } from 'zod';
+
+const CreateUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  // TODO(human): What should the valid values for `role` be?
+  // Look at the Role enum in src/types/user.ts for the options.
+  // Should there be a default value? If so, what and why?
+  role: ???,
+});
+
+export async function createUser(input: unknown): Promise<User> {
+  // TODO(human): Call the schema to validate `input`.
+  // Hint: Zod has two parse methods — one throws on invalid input,
+  // one returns a result object. Which is better here and why?
+  const data = ???;
+  
+  return db.users.create({ data });
+}
+
+What role values are valid here, and what should happen if no role is provided?
+```
+
+**Characteristics:** Leaves two intentional gaps. Forces the developer to think about valid role values and the choice of parse method. Ends with a question, not a complete solution.
+
+---
+
+### Response: Terse Style (Custom)
+
+```
+[reads src/users/service.ts]
+
+// src/users/service.ts
++import { z } from 'zod';
++
++const CreateUserSchema = z.object({
++  email: z.string().email(),
++  name: z.string().min(1).max(100),
++  role: z.enum(['admin', 'user', 'viewer']).default('user'),
++});
++
+ export async function createUser(input: unknown): Promise<User> {
++  const data = CreateUserSchema.parse(input);
+   return db.users.create({ data });
+ }
+```
+
+**Characteristics:** Diff only. No preamble. No explanation. Fastest to read; zero prose overhead.
+
+---
+
+### Comparison Table
+
+```
+┌────────────────┬──────────┬──────────────────────┬──────────────────────┐
+│ Style          │ Code     │ Explanation          │ Best For             │
+├────────────────┼──────────┼──────────────────────┼──────────────────────┤
+│ Default        │ Full     │ Brief (what/how)     │ Everyday development  │
+│ Explanatory    │ Full     │ Extended (why/alts)  │ Learning codebases   │
+│ Learning       │ Partial  │ Conceptual + gaps    │ Deliberate practice  │
+│ Terse (custom) │ Diff     │ None                 │ CI, fast iteration   │
+│ Architect      │ Full     │ Design decision doc  │ Architectural work   │
+│ Teaching       │ Partial  │ Socratic dialogue    │ Mentoring sessions   │
+└────────────────┴──────────┴──────────────────────┴──────────────────────┘
+```
+
+---
+
+## 12. Output Style Creation Walkthrough
+
+This section builds a complete custom output style from scratch — the "Code Reviewer" style that makes Claude behave like a meticulous senior engineer reviewing every change it makes.
+
+### Step 1: Decide What You Want to Change
+
+Before writing a style, articulate exactly what behavior you want:
+
+```
+Problem: Claude makes changes confidently but doesn't always tell me
+what could go wrong or what I should watch for.
+
+Desired behavior: Every code change includes a "Watch for" section
+that flags potential issues I should verify before committing —
+edge cases not covered by tests, performance assumptions, integration risks.
+```
+
+### Step 2: Choose `keep-coding-instructions` Setting
+
+```
+Is this style used during coding sessions? → Yes → keep-coding-instructions: true
+Does it replace all SE behavior?           → No  → keep-coding-instructions: true
+```
+
+For the Code Reviewer style: `keep-coding-instructions: true` — we want Claude to still read files, run tests, and follow conventions. We're adding behavior, not replacing it.
+
+### Step 3: Write the Style File
+
+```
+~/.claude/output-styles/code-reviewer.md
+```
+
+```markdown
+---
+name: "Code Reviewer"
+description: "Adds a 'Watch for' section to every code change — surfaces edge cases, assumptions, and integration risks"
+keep-coding-instructions: true
+---
+
+You are operating in Code Reviewer mode. After every meaningful code change:
+
+**Mandatory: Add a "Watch for" section** formatted as follows:
+
+---
+Watch for:
+- [Specific edge case this change might break]: [one line explanation]
+- [Performance assumption being made]: [what to verify]
+- [Integration point this touches]: [what downstream behavior might change]
+---
+
+Rules for the "Watch for" section:
+1. Minimum 2 items, maximum 5. Be selective — only real risks.
+2. Each item must be specific to THIS change, not generic advice.
+3. If a risk is covered by an existing test, note that: "[risk] — covered by test X"
+4. If a risk is NOT covered by a test, flag it: "[risk] — NO TEST — verify manually"
+5. When there are no meaningful risks (trivial change), write: "Watch for: Nothing notable — low-risk change."
+
+Example of a good "Watch for" section:
+---
+Watch for:
+- Email validation rejects '+' in local part (e.g., user+tag@example.com) — NO TEST — verify manually
+- The `role` default now happens at the service layer, not DB — downstream consumers that previously read the DB default directly will see 'user' where they expected NULL — NO TEST — check mobile app API client
+- ZodError format differs from the previous TypeError format — covered by src/api/middleware/errors.test.ts
+---
+```
+
+### Step 4: Place the File and Activate
+
+```bash
+# Personal style (works in all sessions)
+mkdir -p ~/.claude/output-styles
+cp code-reviewer.md ~/.claude/output-styles/
+
+# OR project style (shared with team)
+mkdir -p .claude/output-styles
+cp code-reviewer.md .claude/output-styles/
+```
+
+Activate:
+```
+/config → Output Style → Code Reviewer
+```
+
+Or in settings.json:
+```json
+{ "outputStyle": "Code Reviewer" }
+```
+
+### Step 5: Test on a Representative Task
+
+Start a fresh session (styles apply at session start). Make a code change and verify the "Watch for" section appears and is substantive. Check:
+
+1. Does the section appear after every meaningful change?
+2. Is the content specific to the change (not generic)?
+3. Are NO TEST flags appearing where they should?
+4. Does Claude still verify its changes compile and tests pass? (Confirms `keep-coding-instructions: true` is working)
+
+### Step 6: Refine
+
+Common refinements after testing:
+
+```markdown
+# If items are too generic, add an example of bad vs good:
+
+Bad: "Watch for: Edge cases in input validation"
+Good: "Watch for: Empty string passes the .min(1) check if it's whitespace-only — verify `name: '   '` is handled"
+
+# Add this to your style body:
+Each "Watch for" item must name a SPECIFIC value, path, state, or condition —
+not a category of risk. "Edge cases" is never specific enough.
+```
+
+---
+
+## 13. `keep-coding-instructions: true` vs `false` — Deep Comparison
+
+This flag controls whether the SE-specific system prompt block is preserved or replaced. The difference is substantial.
+
+### What the SE-Specific Block Contains
+
+The block output styles can replace includes instructions like:
+
+```
+- Read relevant source files and documentation before proposing changes
+- Verify that changes compile and all tests pass before claiming success
+- Prefer targeted edits over complete rewrites
+- Format code consistently with the surrounding codebase
+- When requirements are ambiguous, ask a clarifying question
+- Use available tools (Read, Bash, Grep) proactively to understand context
+- Never claim a task is complete until you have verified it works
+```
+
+This is the engineering discipline layer. It is what separates Claude Code from a general chat assistant.
+
+### With `keep-coding-instructions: false` (the default)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  System Prompt                                          │
+│  ─────────────────────────────────────────────────────  │
+│  [Core Anthropic Prompt — always present]               │
+│                                                         │
+│  [Your Style Content]     ← replaces SE block entirely  │
+│                                                         │
+│  [SE Block — REMOVED]     ← gone, no engineering rules  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Observed behavior differences:**
+
+| Behavior | Default (SE block present) | keep-coding-instructions: false |
+|----------|---------------------------|----------------------------------|
+| Reads files before editing | Yes, proactively | Only if your style says to |
+| Runs tests after changes | Yes | Only if explicitly instructed |
+| Makes targeted edits | Yes | May rewrite more aggressively |
+| Asks clarifying questions | Yes, when ambiguous | Less likely |
+| Follows code conventions | Yes | Only if specified in your style |
+| Claims success without verifying | Rarely | More often |
+
+**When `false` is appropriate:**
+- A documentation-only style where Claude should never touch code
+- A style that completely redefines Claude's behavior for a non-coding use case
+- A content generation style where engineering discipline is irrelevant
+
+**When `false` is a mistake:**
+- Any style used during coding sessions
+- Styles that add formatting or educational content but keep coding behavior
+- Most custom styles people write
+
+### With `keep-coding-instructions: true` (recommended)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  System Prompt                                          │
+│  ─────────────────────────────────────────────────────  │
+│  [Core Anthropic Prompt — always present]               │
+│                                                         │
+│  [SE Block — PRESERVED]   ← all engineering discipline  │
+│                                                         │
+│  [Your Style Content]     ← appended after SE block     │
+└─────────────────────────────────────────────────────────┘
+```
+
+The SE block is kept intact. Your style content adds to it. Claude behaves like a disciplined engineer AND follows your additional instructions.
+
+### Diagnosing Whether the Flag Is Working
+
+After activating a new style, run this test:
+
+```
+> Update the getUser function to return null instead of throwing an error when the user doesn't exist.
+```
+
+If `keep-coding-instructions: true` is working:
+- Claude reads the file first before editing
+- Claude updates the tests (which now need to test for `null` instead of catching an error)
+- Claude runs the tests and verifies they pass before finishing
+
+If Claude skips reading the file, skips updating tests, and just returns the code change, your style likely has `keep-coding-instructions: false` (or missing, which defaults to `false`).
+
+---
+
+## 14. When to Use Each Built-in Style
+
+### Choosing the Right Style
+
+```
+What is your primary goal for this session?
+│
+├── Ship production code efficiently and correctly
+│   └── Default
+│       Why: All SE discipline intact. Balanced explanations.
+│            No overhead. The right tool for everyday work.
+│
+├── Learn a new codebase or unfamiliar patterns
+│   └── Explanatory
+│       Why: Insights sections surface trade-offs you might miss.
+│            Builds understanding of WHY decisions are made.
+│            Worth the extra output tokens when learning.
+│
+├── Deliberately practice a skill (algorithm, pattern, language)
+│   └── Learning
+│       Why: TODO(human) gaps force you to think, not just read.
+│            Cheaper than Explanatory (less code generated).
+│            The gap-then-feedback loop accelerates retention.
+│
+├── Run automated tasks (CI, bulk file processing, scripted review)
+│   └── Terse (custom)
+│       Why: Minimal prose = lower cost + less noise to parse.
+│            Explanations waste tokens when no human reads them.
+│
+├── Design system architecture or make major decisions
+│   └── Architect (custom) or Explanatory
+│       Why: You need the alternatives and trade-off analysis.
+│            Decision rationale is as valuable as the code.
+│
+└── Teach or mentor another developer
+    └── Teaching (custom) or Learning
+        Why: Socratic questioning builds the mentee's model.
+             Giving answers directly produces shallow understanding.
+```
+
+### Style vs. Situation Matrix
+
+| Situation | Recommended Style | Why |
+|-----------|------------------|-----|
+| Daily feature work | Default | No overhead; full discipline |
+| Code review for a PR | Explanatory | Insights prepare review talking points |
+| Algorithm practice | Learning | Gaps force actual thinking |
+| Onboarding to new team | Explanatory | Understand the why behind decisions |
+| Writing infrastructure/IaC | Default | Need correctness, not explanation |
+| Architecture spike | Architect | Trade-off docs are the deliverable |
+| CI pipeline review | Terse | Automated — no human reads explanations |
+| Interview prep | Learning | Practice, not hand-holding |
+| Mentoring a junior | Teaching | Socratic method builds mental models |
+| Debugging production issue | Default | Speed and correctness matter most |
+| Writing documentation | Documentation | Doc-first forces good documentation |
+
+---
+
+## 15. Team Output Style Distribution
+
+When a project commits `.claude/settings.json` with an `outputStyle`, every team member gets that style. This section covers how to design a team style strategy.
+
+### Option A: Project Style for All (Opinionated)
+
+Commit a project-level style that all developers use by default:
+
+```
+.claude/
+├── settings.json              ← { "outputStyle": "team-standard" }
+└── output-styles/
+    └── team-standard.md       ← style file committed to git
+```
+
+**Best for:** Teams that want consistency; large codebases where documentation quality matters; projects with many contributors.
+
+**Team communication template:**
+
+```markdown
+<!-- Add to CLAUDE.md or CONTRIBUTING.md -->
+
+## Claude Code Output Style
+
+We use the `team-standard` output style, configured in `.claude/settings.json`.
+
+This style adds:
+- A "Watch for" section to every code change
+- Mandatory test coverage notes
+
+To override for your personal sessions (without affecting teammates):
+Create `.claude/settings.local.json` (git-ignored):
+  { "outputStyle": "explanatory" }
+```
+
+### Option B: CI-Only Override
+
+Use the default style for development but a Terse style for CI runs:
+
+```bash
+# .github/workflows/claude-review.yml
+- name: Run Claude Code review
+  env:
+    CLAUDE_OUTPUT_STYLE: terse    # environment override if supported
+  run: claude --append-system-prompt "Be extremely concise." review
+```
+
+Or commit a separate CI-specific project config:
+
+```json
+// .claude/settings.json (committed)
+{
+  "_comment": "Use terse in CI; developers override locally with settings.local.json",
+  "outputStyle": "team-terse"
+}
+```
+
+```json
+// .claude/settings.local.json (git-ignored, each developer creates their own)
+{
+  "outputStyle": "explanatory"
+}
+```
+
+### Option C: Role-Based Styles
+
+Different team members have different needs. Use personal styles rather than a project setting:
+
+```
+Junior developer:  ~/.claude/settings.json → "outputStyle": "explanatory"
+Senior developer:  ~/.claude/settings.json → "outputStyle": "default"
+Technical lead:    ~/.claude/settings.json → "outputStyle": "architect"
+CI system:         project .claude/settings.json → "outputStyle": "team-terse"
+```
+
+The CI system's project-level setting wins in automated runs. Developers override via their personal settings (which override the project setting per the precedence hierarchy).
+
+### Precedence Reminder
+
+```
+Managed policy   (highest — IT enforced)
+    ↓
+Local settings   (.claude/settings.local.json)
+    ↓
+Project settings (.claude/settings.json)
+    ↓
+User settings    (~/.claude/settings.json)
+    ↓
+Default          (lowest — "default" style)
+```
+
+A local settings file overrides a project setting. This is the correct escape hatch for individual style preferences on projects with a committed team style.
+
+---
+
+## 16. Performance and Token Cost Implications
+
+### Full Cost Breakdown by Style
+
+Input token cost matters mostly on the first turn (before caching kicks in). Output tokens are the real cost driver for verbose styles.
+
+```
+COST COMPARISON — same coding session, 50 turns
+
+                 Input (turn 1)  Input (turns 2-50)   Output/turn   Relative cost
+                 ─────────────  ──────────────────    ──────────    ─────────────
+Default          800 tokens      ~80 (cached)          ~400          1.0x (baseline)
+Explanatory      900 tokens      ~90 (cached)          ~900          2.1x
+Learning         850 tokens      ~85 (cached)          ~280          0.7x
+Terse (custom)   200 tokens      ~20 (cached)          ~120          0.3x
+Architect        600 tokens      ~60 (cached)          ~750          1.8x
+Teaching         700 tokens      ~70 (cached)          ~600          1.5x
+Documentation    650 tokens      ~65 (cached)          ~720          1.7x
+```
+
+Note: These are illustrative estimates. Actual costs vary significantly by task type. Use `/usage` to measure your actual style overhead.
+
+### Why Output Tokens Dominate
+
+After turn 1, the system prompt is cached. You pay ~10% of the input token price for cache reads, making input tokens nearly free for long sessions. But output tokens are never cached — every word Claude writes costs full output token price.
+
+A style that doubles Claude's prose output doubles your session cost. This is worth paying when the additional content is valuable (Explanatory during architecture work, Teaching during mentoring). It is not worth paying when content is automatically processed (CI) or when you just want fast iteration.
+
+### Measuring Your Style's Actual Cost
+
+```
+# Step 1: Run a typical 20-turn session with Default style
+/usage
+→ Note output tokens: 8,000
+
+# Step 2: Run the same task type with your custom style
+/usage
+→ Note output tokens: 15,000
+
+# Step 3: Calculate multiplier
+15,000 / 8,000 = 1.875x output overhead
+
+# Step 4: Estimate monthly cost impact
+Assume: 5 sessions/day × 20 days/month = 100 sessions
+Default:         100 × 8,000 × $15/million  = $12.00/month
+Custom style:    100 × 15,000 × $15/million = $22.50/month
+Overhead:        $10.50/month per developer for this style
+```
+
+### Cost Optimization Strategies
+
+**For high-volume workflows:**
+
+```markdown
+# Use Terse for anything automated
+CI/CD reviews, bulk file processing, scripted analysis:
+{ "outputStyle": "terse" }
+
+# Use Default for most daily work
+Feature development, debugging, refactoring:
+{ "outputStyle": "default" }
+
+# Reserve verbose styles for high-value sessions
+Architecture decisions, learning sessions, onboarding:
+{ "outputStyle": "explanatory" }
+```
+
+**For API-integrated usage:**
+
+```python
+# If calling Claude Code programmatically, pin to Terse
+# to keep output predictable and minimal
+import subprocess
+result = subprocess.run(
+    ["claude", "--append-system-prompt",
+     "Be maximally concise. Code only, no explanations."],
+    input=prompt,
+    capture_output=True
+)
+```
+
+**Monitor and adjust:**
+
+```
+/usage        → Check output token ratio in current session
+/context      → See if style content is a significant % of input
+```
+
+If output tokens are 3x+ what you'd expect for the task, your style may be too verbose. If you're in a learning/architecture context, that's intentional. If you're in a CI context, switch to Terse.

@@ -1606,3 +1606,1395 @@ Security Restrictions (plugin agents)
   mcpServers    — BLOCKED
   permissionMode — BLOCKED
 ```
+
+---
+
+## 15. Plugin Directory Structure — Complete ASCII Diagram
+
+This diagram shows the full layout of a maximally-featured plugin, with annotations explaining what each entry does.
+
+```
+my-plugin/                             ← npm package root
+│
+├── plugin.json                        ← REQUIRED: plugin manifest
+│   (declares all components, metadata, userConfig, dependencies)
+│
+├── package.json                       ← npm package manifest
+│   (name, version, description — separate from plugin.json)
+│
+├── commands/                          ← slash commands
+│   ├── release.md                     → /my-plugin:release
+│   ├── rollback.md                    → /my-plugin:rollback
+│   └── hotfix.md                      → /my-plugin:hotfix
+│
+├── agents/                            ← sub-agent definitions
+│   ├── deployment-agent.md            → my-plugin:deployment-agent
+│   └── review-agent.md               → my-plugin:review-agent
+│   (Note: hooks/mcpServers/permissionMode frontmatter blocked)
+│
+├── skills/                            ← auto-invoked instruction sets
+│   ├── deploy/
+│   │   └── SKILL.md                   → auto-invoked as my-plugin:deploy
+│   ├── rollback/
+│   │   └── SKILL.md                   → auto-invoked as my-plugin:rollback
+│   └── monitor/
+│       └── SKILL.md                   → auto-invoked as my-plugin:monitor
+│   (Each skill dir has ONE SKILL.md; extra files for supporting content)
+│
+├── output-styles/                     ← output style definitions
+│   ├── concise.md                     → appears as "my-plugin: concise" in /config
+│   └── verbose-debug.md              → appears as "my-plugin: verbose-debug"
+│
+├── monitors/                          ← background process monitors (v2.1.105+)
+│   └── monitors.json                  ← monitor definitions (name, command, when)
+│
+├── themes/                            ← UI color themes
+│   ├── dark-theme.json               → appears in /theme menu
+│   └── light-theme.json
+│
+├── bin/                               ← executable scripts added to Bash PATH
+│   ├── deploy-check                   ← available as `deploy-check` in any Bash cmd
+│   ├── rollback-safe                  ← chmod +x required
+│   └── changelog-gen
+│
+├── hooks/                             ← lifecycle event hooks
+│   └── hooks.json                     ← hook definitions (event, matcher, command)
+│
+├── .mcp.json                          ← MCP server definitions
+│   (servers start automatically; namespaced as my-plugin:server-name)
+│
+├── .lsp.json                          ← LSP server definitions
+│   (language servers for .deploy.yaml, etc.)
+│
+└── settings.json                      ← default settings overrides
+    (only: agent, subagentStatusLine)
+
+Runtime directories (created automatically, NOT in plugin source):
+  ${CLAUDE_PLUGIN_ROOT}  →  read-only, where the package is installed
+                             ~/.claude/plugins/node_modules/@org/my-plugin/
+  ${CLAUDE_PLUGIN_DATA}  →  writable, persistent across updates
+                             ~/.claude/plugin-data/my-plugin/
+```
+
+### Minimal Plugin Structure
+
+For a plugin with just one command and one skill:
+
+```
+my-plugin/
+├── plugin.json          ← required
+├── commands/
+│   └── my-command.md
+└── skills/
+    └── my-skill/
+        └── SKILL.md
+```
+
+`plugin.json` for this minimal plugin:
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "My minimal plugin"
+}
+```
+
+The `commands` and `skills` directories are discovered by default even without explicit manifest entries. Only non-default paths need to be declared in `plugin.json`.
+
+---
+
+## 16. All 10 Component Types — Examples and Details
+
+### Component Type 1: Commands (`commands/`)
+
+Commands are slash commands invoked as `/plugin-name:command-name`. They use the standard custom command format.
+
+**Example — a changelog generator command:**
+
+```markdown
+<!-- commands/changelog.md -->
+---
+description: Generate a changelog entry from commits since the last tag
+allowed-tools: Bash, Read, Write
+---
+
+# Changelog Generator
+
+Generate a changelog entry for the pending release.
+
+## Commits since last tag
+!`git log --oneline $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~20)..HEAD`
+
+## Format (Keep a Changelog)
+Group changes under:
+- Added: new features
+- Changed: changes in existing functionality
+- Fixed: bug fixes
+- Deprecated / Removed / Security: only if applicable
+
+Run: ${CLAUDE_PLUGIN_ROOT}/bin/changelog-gen --since-tag to get additional context.
+Write the entry to CHANGELOG.md above the previous version.
+```
+
+**Invocation:** `/my-plugin:changelog`
+
+---
+
+### Component Type 2: Agents (`agents/`)
+
+Agents are sub-agent personas. Invoked via the Task tool or `/agent` command. Security-restricted: cannot register hooks, MCP servers, or change permission mode.
+
+**Example — a security review agent:**
+
+```markdown
+<!-- agents/security-reviewer.md -->
+---
+description: >
+  Specialized security code reviewer. Reviews code for OWASP Top 10 risks,
+  authentication flaws, and injection vulnerabilities.
+allowed-tools: Read, Bash, Glob
+model: claude-opus-4-7
+---
+
+# Security Reviewer Agent
+
+You are a specialized security code reviewer with expertise in:
+- OWASP Top 10 (2021 edition)
+- Authentication and authorization flaws
+- Injection vulnerabilities (SQL, command, template)
+- Cryptographic weaknesses
+- Insecure direct object references
+
+When reviewing code:
+1. Read the file completely before commenting
+2. Check each function for security-relevant operations
+3. Reference specific OWASP categories in your findings
+4. Rate each finding: Critical / High / Medium / Low / Informational
+5. Provide specific remediation code, not just descriptions
+
+Log your findings to ${CLAUDE_PLUGIN_DATA}/security-reviews.log for trend tracking.
+```
+
+**Invocation:** `my-plugin:security-reviewer` (via Task tool orchestration)
+
+---
+
+### Component Type 3: Skills (`skills/*/SKILL.md`)
+
+Skills are auto-invoked by Claude when the task description semantically matches the skill's `description` field. Also callable as `/plugin-name:skill-name`.
+
+**Example — a deployment skill:**
+
+```markdown
+<!-- skills/deploy/SKILL.md -->
+---
+description: >
+  Deployment procedures — invoke when the user asks to deploy, release, ship code,
+  push to production, promote a build, create a release, or trigger CI/CD.
+  Also invoke for hotfix deployments and emergency releases.
+---
+
+# Deploy Skill
+
+When performing any deployment action:
+
+## Pre-deployment (mandatory)
+1. Run `deploy-check` — show output to user
+2. Confirm target environment: state it clearly and ask "Proceed?"
+3. Verify working tree is clean: `git status --short`
+
+## During deployment
+- Stream output from deployment script to user
+- Log all actions: `${CLAUDE_PLUGIN_DATA}/deployments.log`
+- If any step fails: stop immediately, do not auto-retry
+
+## Post-deployment
+- Verify health endpoint responds: `curl -f ${CLAUDE_PLUGIN_OPTION_HEALTHURL}`
+- Send Slack notification (if webhook configured)
+- Update ${CLAUDE_PLUGIN_DATA}/deployments.log with result
+```
+
+**Trigger phrases:** "deploy to staging", "release v2.3", "push to prod", "ship the feature"
+
+---
+
+### Component Type 4: Output Styles (`output-styles/`)
+
+Output styles contributed by plugins appear in the `/config` → Output Style menu with the plugin name as a namespace prefix.
+
+**Example — a minimal CI-focused output style:**
+
+```markdown
+<!-- output-styles/ci-minimal.md -->
+---
+name: "ci-minimal"
+description: "CI/automated mode — commands and exit codes only, no explanations"
+keep-coding-instructions: true
+---
+
+You are running in CI/automated mode. Rules:
+
+- No preamble or greeting
+- No explanation unless an error occurred
+- For shell commands: show the command and its exit code only
+- For code changes: show the diff only, not the full file
+- For errors: show the error message, the file:line, and the fix
+- For success: show "OK" or the success indicator only
+
+Total response length should not exceed 20 lines for routine operations.
+```
+
+**Appears in menu as:** `my-plugin: ci-minimal`
+
+---
+
+### Component Type 5: Monitors (`monitors/monitors.json`)
+
+Monitors are background processes that stream stdout to Claude as ambient context. Requires v2.1.105+.
+
+**Example — monitors.json with two monitors:**
+
+```json
+{
+  "monitors": [
+    {
+      "name": "ci-status",
+      "description": "CI pipeline status — build/test/deploy results streamed in real time",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/ci-watch",
+      "args": ["--project", "${user_config.projectId}", "--interval", "30"],
+      "env": {
+        "CI_TOKEN": "${user_config.ciToken}",
+        "DATA_DIR": "${CLAUDE_PLUGIN_DATA}"
+      },
+      "when": "always"
+    },
+    {
+      "name": "deploy-log",
+      "description": "Live deployment output — streams deploy script stdout after deploy skill is invoked",
+      "command": "tail",
+      "args": ["-f", "${CLAUDE_PLUGIN_DATA}/deployments.log"],
+      "when": "on-skill-invoke:my-plugin:deploy"
+    }
+  ]
+}
+```
+
+The `ci-status` monitor runs the entire session. The `deploy-log` monitor starts only after the deploy skill is first invoked.
+
+---
+
+### Component Type 6: Themes (`themes/`)
+
+Themes control the Claude Code REPL color scheme. Users can copy and edit them via Ctrl+E.
+
+**Example — a corporate dark theme:**
+
+```json
+{
+  "name": "Acme Dark",
+  "base": "dark",
+  "colors": {
+    "claude": "#4A9EFF",
+    "success": "#3DBA6A",
+    "error": "#FF5252",
+    "warning": "#FFB300",
+    "muted": "#78909C",
+    "highlight": "#1E2A3A",
+    "border": "#263040",
+    "text": "#B0BEC5",
+    "textStrong": "#ECEFF1",
+    "background": "#0D1520",
+    "backgroundSecondary": "#1A2535"
+  }
+}
+```
+
+**Appears in menu as:** `Acme Dark` (or `my-plugin: Acme Dark` if namespaced)
+
+---
+
+### Component Type 7: Bin Executables (`bin/`)
+
+Scripts in `bin/` are added to the Bash tool's PATH for the session duration. Any language works; shebang line required for interpreted scripts.
+
+**Example — a multi-language deploy-check script:**
+
+```bash
+#!/usr/bin/env bash
+# bin/deploy-check
+# Validates pre-deployment conditions
+
+set -euo pipefail
+
+TARGET="${CLAUDE_PLUGIN_OPTION_DEPLOYTARGET:-staging}"
+LOG="${CLAUDE_PLUGIN_DATA}/deploy-checks.log"
+VERBOSE="${CLAUDE_PLUGIN_OPTION_VERBOSELOGGING:-false}"
+
+mkdir -p "$(dirname "$LOG")"
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+log() {
+  echo "$TIMESTAMP $*" | tee -a "$LOG"
+}
+
+log "=== Pre-deployment check for $TARGET ==="
+
+# Check 1: Clean working tree
+if ! git diff --quiet HEAD 2>/dev/null; then
+  log "FAIL: Uncommitted changes present"
+  git status --short
+  exit 1
+fi
+log "OK: Working tree clean"
+
+# Check 2: Tests passing (if CI flag not set)
+if [ "${CI:-false}" != "true" ]; then
+  log "INFO: Running quick test check..."
+  if ! npm test --silent 2>&1 | tail -5; then
+    log "FAIL: Tests not passing"
+    exit 1
+  fi
+  log "OK: Tests passing"
+fi
+
+# Check 3: Required environment variables
+REQUIRED_VARS=(DEPLOY_API_KEY DEPLOY_REGION)
+for var in "${REQUIRED_VARS[@]}"; do
+  if [ -z "${!var:-}" ]; then
+    log "FAIL: Required variable $var is not set"
+    exit 1
+  fi
+done
+log "OK: All required env vars present"
+
+log "=== All checks passed — ready to deploy to $TARGET ==="
+```
+
+---
+
+### Component Type 8: Hooks (`hooks/hooks.json`)
+
+Hooks fire at session lifecycle events. Plugin hooks use the same event system as project hooks but reference `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}`.
+
+**Example — hooks.json with three events:**
+
+```json
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/deploy-check --quiet"
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": {
+        "tool": "Bash",
+        "commandContains": "git push"
+      },
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/push-guard --log ${CLAUDE_PLUGIN_DATA}/push.log"
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": {
+        "tool": "Bash",
+        "commandContains": "deploy"
+      },
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/notify-slack --webhook ${user_config.slackWebhook} --message 'Deploy command executed in session'"
+    },
+    {
+      "event": "Stop",
+      "command": "echo \"$(date -u) session ended\" >> ${CLAUDE_PLUGIN_DATA}/sessions.log"
+    }
+  ]
+}
+```
+
+**Hook event types available:** `SessionStart`, `Stop`, `PreToolUse`, `PostToolUse`, `InstructionsLoaded`, `SubagentStart`, `SubagentStop`, `ContextCompacted`
+
+---
+
+### Component Type 9: MCP Servers (`.mcp.json`)
+
+Plugin MCP servers start automatically and expose tools to Claude. Server names are namespaced with the plugin name.
+
+**Example — .mcp.json with a deployment API server:**
+
+```json
+{
+  "mcpServers": {
+    "deploy-api": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/server.js"],
+      "env": {
+        "API_KEY": "${user_config.apiKey}",
+        "REGION": "${user_config.region}",
+        "DATA_DIR": "${CLAUDE_PLUGIN_DATA}",
+        "LOG_LEVEL": "info"
+      }
+    },
+    "audit-log": {
+      "type": "stdio",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/audit-mcp",
+      "args": ["--db", "${CLAUDE_PLUGIN_DATA}/audit.db"]
+    }
+  }
+}
+```
+
+`deploy-api` is registered as `my-plugin:deploy-api` in Claude Code's MCP registry. Claude can use its tools without any manual MCP configuration by the user.
+
+---
+
+### Component Type 10: LSP Servers (`.lsp.json`)
+
+Language Server Protocol servers provide IDE-like intelligence for custom file types (deployment configs, DSLs, etc.).
+
+**Example — .lsp.json for a deployment DSL:**
+
+```json
+{
+  "lspServers": {
+    "deploy-dsl": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/deploy-lsp",
+      "args": ["--stdio", "--log", "${CLAUDE_PLUGIN_DATA}/lsp.log"],
+      "filetypes": ["*.deploy.yaml", "*.release.json", "*.pipeline.yml"],
+      "rootPatterns": [".deploy-config.json", "deploy.yaml", "Deployfile"],
+      "settings": {
+        "validateOnSave": true,
+        "schemaPath": "${CLAUDE_PLUGIN_ROOT}/schemas/deploy-schema.json"
+      }
+    }
+  }
+}
+```
+
+When Claude reads or edits a `*.deploy.yaml` file, this LSP server provides completions, validation, and hover information.
+
+---
+
+## 17. `plugin.json` — Complete Schema Reference
+
+Every field the plugin manifest supports, with types, defaults, and usage guidance.
+
+```json
+{
+  // ──────────────────────────────────────────────────────
+  // IDENTITY (all required)
+  // ──────────────────────────────────────────────────────
+
+  "name": "deploy-helper",
+  // string, required
+  // The namespace identifier for all plugin components.
+  // Must be unique within the user's installed plugins.
+  // Convention: lowercase-with-hyphens, no @scope prefix.
+  // This becomes the prefix: /deploy-helper:command-name
+
+  "version": "2.3.1",
+  // string, required
+  // Semver version string. Used for update detection.
+
+  "description": "Deployment automation for Claude Code",
+  // string, required
+  // One-sentence description shown in `claude plugin list` and marketplace.
+
+  // ──────────────────────────────────────────────────────
+  // OPTIONAL METADATA
+  // ──────────────────────────────────────────────────────
+
+  "author": "Acme Corp <tools@acme.com>",
+  // string, optional
+  // Author name and optional email in npm author format.
+
+  "homepage": "https://github.com/acme/deploy-helper",
+  // string, optional
+  // Shown in `claude plugin info` and marketplace listing.
+
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/acme/deploy-helper.git"
+  },
+  // object, optional
+  // Same shape as npm's repository field.
+
+  "license": "MIT",
+  // string, optional
+  // SPDX license identifier.
+
+  "keywords": ["deployment", "release", "CI/CD", "slack"],
+  // string[], optional
+  // Used for marketplace search. Include synonyms for discoverability.
+
+  // ──────────────────────────────────────────────────────
+  // COMPONENT DECLARATIONS
+  // ──────────────────────────────────────────────────────
+
+  "commands": "commands",
+  // string | null, optional, default: "commands"
+  // Directory containing command .md files.
+  // Set to null to disable command discovery.
+
+  "agents": "agents",
+  // string | null, optional, default: "agents"
+  // Directory containing agent .md files.
+
+  "skillsPath": "skills",
+  // string | null, optional, default: "skills"
+  // Directory containing skill subdirectories (each with SKILL.md).
+
+  "outputStyles": "output-styles",
+  // string | null, optional, default: "output-styles"
+  // Directory containing output style .md files.
+
+  "themes": "themes",
+  // string | null, optional, default: "themes"
+  // Directory containing theme .json files.
+
+  "hooks": "hooks/hooks.json",
+  // string, optional
+  // Path to hooks definition JSON file, relative to plugin root.
+  // No default — omit to disable hooks.
+
+  "mcpServers": ".mcp.json",
+  // string, optional
+  // Path to MCP server definitions JSON file.
+  // No default — omit if no MCP servers.
+
+  "lspServers": ".lsp.json",
+  // string, optional
+  // Path to LSP server definitions JSON file.
+
+  "monitors": "monitors/monitors.json",
+  // string, optional
+  // Path to monitors definition JSON file. Requires v2.1.105+.
+
+  // ──────────────────────────────────────────────────────
+  // RUNTIME DEPENDENCIES
+  // ──────────────────────────────────────────────────────
+
+  "dependencies": {
+    // Each key is a dependency name; value is a version spec.
+
+    "node": ">=20.0.0",
+    // Runtime: Node.js minimum version.
+
+    "python3": ">=3.11",
+    // Runtime: Python 3 minimum version.
+
+    "jq": "*",
+    // System binary: any version in PATH.
+
+    "git": ">=2.40",
+    // System binary: minimum version (checked via `git --version`).
+
+    "@acme/shared-lib": "^2.0.0",
+    // npm package: semver range, installed automatically.
+
+    "@private/sdk": {
+      "version": "1.2.3",
+      "registry": "https://npm.internal.acme.com"
+    }
+    // npm package: pinned install from specific registry.
+  },
+
+  // ──────────────────────────────────────────────────────
+  // USER CONFIGURATION
+  // ──────────────────────────────────────────────────────
+
+  "userConfig": {
+    // Each key is a user-settable configuration option.
+
+    "deployTarget": {
+      "description": "Deployment environment (staging, production, etc.)",
+      // string, required — shown to user in `claude plugin config list`
+
+      "type": "string",
+      // "string" | "boolean", required
+
+      "default": "staging"
+      // string | boolean, optional — value used when user has not configured
+    },
+
+    "slackWebhook": {
+      "description": "Slack incoming webhook URL for deployment notifications",
+      "type": "string",
+      "sensitive": true
+      // boolean, optional, default false
+      // If true: stored in OS keychain, never in plaintext on disk,
+      // never appears in process listings.
+    },
+
+    "verboseLogging": {
+      "description": "Enable verbose output from deploy scripts",
+      "type": "boolean",
+      "default": false
+    }
+  }
+}
+```
+
+### Field Quick Reference
+
+| Field | Type | Required | Default | Notes |
+|-------|------|----------|---------|-------|
+| `name` | string | Yes | — | Plugin namespace prefix |
+| `version` | string | Yes | — | Semver |
+| `description` | string | Yes | — | One-line description |
+| `author` | string | No | — | Name and optional email |
+| `homepage` | string | No | — | Plugin website |
+| `repository` | object | No | — | `{type, url}` |
+| `license` | string | No | — | SPDX identifier |
+| `keywords` | string[] | No | — | Search terms |
+| `commands` | string\|null | No | `"commands"` | Commands directory |
+| `agents` | string\|null | No | `"agents"` | Agents directory |
+| `skillsPath` | string\|null | No | `"skills"` | Skills directory |
+| `outputStyles` | string\|null | No | `"output-styles"` | Styles directory |
+| `themes` | string\|null | No | `"themes"` | Themes directory |
+| `hooks` | string | No | — | Path to hooks.json |
+| `mcpServers` | string | No | — | Path to .mcp.json |
+| `lspServers` | string | No | — | Path to .lsp.json |
+| `monitors` | string | No | — | Path to monitors.json |
+| `dependencies` | object | No | — | Runtime requirements |
+| `userConfig` | object | No | — | User-configurable settings |
+
+---
+
+## 18. `${CLAUDE_PLUGIN_ROOT}` vs `${CLAUDE_PLUGIN_DATA}` — Explained with Examples
+
+These two variables are the most important concept in plugin development. Every plugin author needs to understand exactly what they point to and why they behave differently.
+
+### What Each Variable Points To
+
+```
+${CLAUDE_PLUGIN_ROOT}  →  Where the plugin package is installed (read-only)
+${CLAUDE_PLUGIN_DATA}  →  Where the plugin stores persistent data (writable)
+```
+
+**Concrete paths:**
+
+```
+After: claude plugin install @acme/deploy-helper
+
+${CLAUDE_PLUGIN_ROOT}:
+  ~/.claude/plugins/node_modules/@acme/deploy-helper/
+  (the unpacked npm package directory)
+
+${CLAUDE_PLUGIN_DATA}:
+  ~/.claude/plugin-data/deploy-helper/
+  (created automatically; never deleted on update/reinstall)
+```
+
+### The Update Problem
+
+When you run `claude plugin update`:
+
+```
+Before update:
+  ${CLAUDE_PLUGIN_ROOT} = ~/.claude/plugins/node_modules/@acme/deploy-helper/
+  Contains: plugin.json (v2.3.1), bin/deploy-check, skills/...
+
+After update (to v2.4.0):
+  ${CLAUDE_PLUGIN_ROOT} = ~/.claude/plugins/node_modules/@acme/deploy-helper/
+  Contains: plugin.json (v2.4.0), bin/deploy-check (new version), skills/...
+
+Any files you wrote to ${CLAUDE_PLUGIN_ROOT} are GONE.
+Any files in ${CLAUDE_PLUGIN_DATA} are UNCHANGED.
+```
+
+This is why the rule is: **${CLAUDE_PLUGIN_ROOT} is static files; ${CLAUDE_PLUGIN_DATA} is everything dynamic**.
+
+### Where Each Type of Data Belongs
+
+```
+${CLAUDE_PLUGIN_ROOT}/          ← READ ONLY (plugin package files)
+├── plugin.json                 ← plugin metadata
+├── commands/                   ← command definitions
+├── skills/                     ← skill definitions
+├── bin/deploy-check            ← executable scripts
+├── config/defaults.json        ← static default configuration
+├── schemas/                    ← validation schemas
+└── mcp/server.js               ← MCP server code
+
+${CLAUDE_PLUGIN_DATA}/          ← WRITABLE (runtime data)
+├── deploy.log                  ← deployment history
+├── sessions.log                ← session audit log
+├── security-reviews.log        ← security review findings
+├── cache/                      ← cached API responses
+│   └── ci-status-cache.json
+├── config-override.json        ← user-specific config (if needed)
+└── audit.db                    ← SQLite audit database
+```
+
+### Code Examples
+
+**Correct usage in a bin script:**
+
+```bash
+#!/usr/bin/env bash
+# bin/deploy-check
+
+# Read static config from plugin root (OK — read-only)
+DEFAULTS="${CLAUDE_PLUGIN_ROOT}/config/defaults.json"
+SCHEMA="${CLAUDE_PLUGIN_ROOT}/schemas/deploy-config.json"
+
+# Write all dynamic data to plugin data directory
+LOG="${CLAUDE_PLUGIN_DATA}/deploy.log"
+CACHE="${CLAUDE_PLUGIN_DATA}/cache/"
+mkdir -p "$CACHE"
+
+# Read a cached value (from previous call)
+CACHED_STATUS="${CACHE}/last-ci-status.txt"
+if [ -f "$CACHED_STATUS" ]; then
+  echo "Last CI status: $(cat "$CACHED_STATUS")"
+fi
+
+# Write a new log entry
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) deploy-check run" >> "$LOG"
+
+# Validate user config against the bundled schema (root is fine for reading)
+jq -r '.' "$DEFAULTS"
+```
+
+**Incorrect usage (writes to plugin root — will be lost on update):**
+
+```bash
+# BAD — don't do this
+LOG="${CLAUDE_PLUGIN_ROOT}/logs/deploy.log"  ← written to package dir
+touch "${CLAUDE_PLUGIN_ROOT}/cache/api-key"  ← will be overwritten on update
+```
+
+**Correct usage in hooks.json:**
+
+```json
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/init-check --config ${CLAUDE_PLUGIN_ROOT}/config/defaults.json --log ${CLAUDE_PLUGIN_DATA}/sessions.log"
+    }
+  ]
+}
+```
+
+**Correct usage in monitors:**
+
+```json
+{
+  "monitors": [
+    {
+      "name": "error-tail",
+      "description": "Application error log monitor",
+      "command": "tail",
+      "args": ["-f", "${CLAUDE_PLUGIN_DATA}/app-errors.log"],
+      "when": "always"
+    }
+  ]
+}
+```
+
+### In MCP Server Processes
+
+Both variables are available as environment variables in all plugin subprocesses:
+
+```javascript
+// mcp/server.js
+const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;  // read-only files
+const pluginData = process.env.CLAUDE_PLUGIN_DATA;  // writable storage
+
+const config = JSON.parse(
+  fs.readFileSync(path.join(pluginRoot, 'config', 'schema.json'))
+);
+
+const db = new Database(
+  path.join(pluginData, 'audit.db')  // writable SQLite database
+);
+```
+
+---
+
+## 19. Plugin Development — Step-by-Step Tutorial
+
+This tutorial builds a complete, production-ready plugin from scratch: a `git-assistant` plugin that adds git workflow commands, a smart commit skill, and a CI status monitor.
+
+### Step 0: Prerequisites
+
+```bash
+# Ensure Claude Code is installed
+claude --version
+# → v2.1.126 (or later)
+
+# Ensure Node.js is available
+node --version
+# → v20.x or later recommended
+
+# Create working directory
+mkdir git-assistant-plugin
+cd git-assistant-plugin
+```
+
+### Step 1: Initialize the npm Package
+
+```bash
+npm init -y
+```
+
+Edit `package.json`:
+
+```json
+{
+  "name": "@youorg/git-assistant",
+  "version": "1.0.0",
+  "description": "Git workflow automation for Claude Code",
+  "license": "MIT",
+  "author": "Your Name <you@example.com>"
+}
+```
+
+### Step 2: Create the Plugin Manifest
+
+```bash
+touch plugin.json
+```
+
+```json
+{
+  "name": "git-assistant",
+  "version": "1.0.0",
+  "description": "Git workflow automation — smart commits, PR creation, branch management",
+  "author": "Your Name",
+  "license": "MIT",
+  "keywords": ["git", "commit", "pr", "branch", "workflow"],
+  "userConfig": {
+    "defaultBranch": {
+      "description": "Default base branch for PRs (main, master, develop, etc.)",
+      "type": "string",
+      "default": "main"
+    },
+    "conventionalCommits": {
+      "description": "Enforce conventional commit format (feat/fix/chore/etc.)",
+      "type": "boolean",
+      "default": true
+    }
+  }
+}
+```
+
+### Step 3: Create the Directory Structure
+
+```bash
+mkdir -p commands agents skills/commit skills/pr-review bin hooks
+```
+
+### Step 4: Write the Commit Skill
+
+The most-used component: auto-invoked whenever the user wants to commit.
+
+```bash
+cat > skills/commit/SKILL.md << 'EOF'
+---
+description: >
+  Git commit creation — invoke when the user asks to commit, create a commit,
+  stage changes and commit, or says "commit this", "save my work", "git commit".
+  Also invoke for conventional commit formatting and commit message generation.
+---
+
+# Smart Commit Skill
+
+When creating a git commit:
+
+1. Check what's staged: `git diff --staged --stat`
+   - If nothing staged, ask: "Nothing is staged. Stage specific files or all?"
+2. Review the diff: `git diff --staged`
+3. Generate a commit message:
+   - If ${CLAUDE_PLUGIN_OPTION_CONVENTIONALCOMMITS} is "true":
+     Format: `type(scope): description` where type ∈ {feat, fix, refactor, test, docs, chore, perf}
+   - Else: descriptive imperative-mood sentence
+4. Show the proposed message and ask: "Commit with this message? (Y/edit/cancel)"
+5. On approval: `git commit -m "proposed message"`
+6. Log the commit: `echo "$(date -u) $(git log --oneline -1)" >> ${CLAUDE_PLUGIN_DATA}/commit.log`
+EOF
+```
+
+### Step 5: Write a PR Command
+
+```bash
+cat > commands/pr.md << 'EOF'
+---
+description: Create a pull request for the current branch with auto-generated description
+allowed-tools: Bash
+---
+
+# Create Pull Request
+
+Create a GitHub PR for the current branch.
+
+## Repository context
+Branch: !`git rev-parse --abbrev-ref HEAD`
+Base: ${CLAUDE_PLUGIN_OPTION_DEFAULTBRANCH}
+Commits: !`git log --oneline $(git merge-base HEAD origin/${CLAUDE_PLUGIN_OPTION_DEFAULTBRANCH} 2>/dev/null || echo HEAD~5)..HEAD`
+Changed files: !`git diff --name-only origin/${CLAUDE_PLUGIN_OPTION_DEFAULTBRANCH} 2>/dev/null || git diff --name-only HEAD~5`
+
+## Generate and create the PR
+1. Write a PR title: imperative mood, ≤72 characters, no period
+2. Write a PR body:
+   - **Summary**: what changed and why (2–4 sentences)
+   - **Changes**: bullet list of specific changes
+   - **Testing**: how to verify
+3. Run: `gh pr create --title "TITLE" --body "BODY" --base ${CLAUDE_PLUGIN_OPTION_DEFAULTBRANCH}`
+
+Extra context from user: $ARGUMENTS
+EOF
+```
+
+### Step 6: Write a Pre-commit Hook Validator
+
+```bash
+cat > bin/commit-check << 'EOF'
+#!/usr/bin/env bash
+# Validates commit message format
+set -euo pipefail
+
+CONVENTIONAL="${CLAUDE_PLUGIN_OPTION_CONVENTIONALCOMMITS:-true}"
+LOG="${CLAUDE_PLUGIN_DATA}/hooks.log"
+mkdir -p "$(dirname "$LOG")"
+
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) commit-check called" >> "$LOG"
+
+if [ "$CONVENTIONAL" != "true" ]; then
+  echo "Conventional commits not enforced — skipping check"
+  exit 0
+fi
+
+# Check last commit message
+LAST_MSG=$(git log --format="%s" -1 2>/dev/null || echo "")
+PATTERN="^(feat|fix|refactor|test|docs|chore|perf|style|ci|build)(\([^)]+\))?: .+"
+
+if [ -n "$LAST_MSG" ] && ! echo "$LAST_MSG" | grep -qE "$PATTERN"; then
+  echo "WARNING: Last commit '$LAST_MSG' does not follow conventional commits format"
+  echo "  Expected: type(scope): description"
+  echo "  Types: feat|fix|refactor|test|docs|chore|perf|style|ci|build"
+fi
+
+echo "Commit check complete"
+EOF
+chmod +x bin/commit-check
+```
+
+### Step 7: Define Hooks
+
+```bash
+cat > hooks/hooks.json << 'EOF'
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/commit-check"
+    }
+  ]
+}
+EOF
+```
+
+Update `plugin.json` to declare the hooks file:
+
+```json
+{
+  "name": "git-assistant",
+  "version": "1.0.0",
+  "description": "Git workflow automation",
+  "hooks": "hooks/hooks.json",
+  "userConfig": {
+    "defaultBranch": {
+      "description": "Default base branch for PRs",
+      "type": "string",
+      "default": "main"
+    },
+    "conventionalCommits": {
+      "description": "Enforce conventional commit format",
+      "type": "boolean",
+      "default": true
+    }
+  }
+}
+```
+
+### Step 8: Test Locally
+
+```bash
+# Install from local path
+claude plugin install /path/to/git-assistant-plugin --scope local
+
+# Verify installation
+claude plugin list
+# → git-assistant  local  v1.0.0  Git workflow automation
+
+# Set configuration
+claude plugin config set git-assistant defaultBranch main
+claude plugin config set git-assistant conventionalCommits true
+
+# Verify config
+claude plugin config list git-assistant
+# → defaultBranch: main
+# → conventionalCommits: true
+
+# Start a session and test
+claude
+
+# Test the skill (auto-invoked)
+> commit my changes
+
+# Test the command
+> /git-assistant:pr
+
+# Verify skill appears in /skills
+> /skills
+# Should list: commit  git-assistant  [auto-invocation description]
+```
+
+### Step 9: Publish to npm
+
+```bash
+# Log in to npm
+npm login
+
+# Publish (use --access public for scoped packages)
+npm publish --access public
+
+# Verify publication
+npm view @youorg/git-assistant
+
+# Install from npm
+claude plugin install @youorg/git-assistant
+```
+
+---
+
+## 20. Plugin Debugging Guide
+
+When a plugin doesn't work as expected, follow this systematic debugging process.
+
+### Level 1: Installation Verification
+
+```bash
+# Check if plugin is installed
+claude plugin list
+# → git-assistant  user  v1.0.0  Git workflow automation
+
+# Check plugin details
+claude plugin info git-assistant
+# Shows: all declared components, config values, installation path
+
+# If plugin not showing: check the installation scope
+claude plugin list --scope user
+claude plugin list --scope project
+claude plugin list --scope local
+```
+
+### Level 2: Manifest Validation
+
+```bash
+# View the plugin root path
+claude plugin info git-assistant | grep "Root:"
+# → Root: ~/.claude/plugins/node_modules/@youorg/git-assistant/
+
+# Manually read the manifest
+cat ~/.claude/plugins/node_modules/@youorg/git-assistant/plugin.json
+
+# Check for JSON syntax errors
+cat plugin.json | python3 -m json.tool
+# If error: fix the JSON syntax
+```
+
+### Level 3: Component Discovery Debugging
+
+```bash
+# Check if commands are discovered
+ls ~/.claude/plugins/node_modules/@youorg/git-assistant/commands/
+# Expected: release.md  rollback.md  etc.
+
+# Check if skills are in the right structure
+ls ~/.claude/plugins/node_modules/@youorg/git-assistant/skills/
+# Expected: commit/  pr-review/  each with SKILL.md
+ls ~/.claude/plugins/node_modules/@youorg/git-assistant/skills/commit/
+# Expected: SKILL.md
+
+# Check bin permissions
+ls -la ~/.claude/plugins/node_modules/@youorg/git-assistant/bin/
+# Expected: -rwxr-xr-x (executable bit set)
+
+# Fix missing executable bit
+chmod +x ~/.claude/plugins/node_modules/@youorg/git-assistant/bin/*
+```
+
+### Level 4: Session Debugging
+
+```bash
+# Start Claude Code and inspect the debug panel
+claude
+> /debug
+
+# Look for:
+# - Plugin name in LOADED FILES section
+# - Hook entries in ACTIVE HOOKS section
+# - MCP server status in MCP SERVERS section
+
+> /skills
+# Check if plugin skills appear with correct namespace:
+# commit   git-assistant   [description...]
+
+> /help
+# Check if plugin commands appear:
+# /git-assistant:pr   Create a pull request...
+```
+
+### Level 5: Hook Debugging
+
+```bash
+# If hooks aren't firing, check the hook script directly
+bash ~/.claude/plugins/node_modules/@youorg/git-assistant/bin/commit-check
+# Watch for errors
+
+# Check plugin data directory for logs
+ls ~/.claude/plugin-data/git-assistant/
+cat ~/.claude/plugin-data/git-assistant/hooks.log
+
+# Check hook script permissions
+ls -la ~/.claude/plugins/node_modules/@youorg/git-assistant/bin/
+# Must be executable
+
+# Test the hook command manually with the env vars
+CLAUDE_PLUGIN_ROOT=~/.claude/plugins/node_modules/@youorg/git-assistant \
+CLAUDE_PLUGIN_DATA=~/.claude/plugin-data/git-assistant \
+CLAUDE_PLUGIN_OPTION_CONVENTIONALCOMMITS=true \
+~/.claude/plugins/node_modules/@youorg/git-assistant/bin/commit-check
+```
+
+### Level 6: Config Variable Debugging
+
+```bash
+# Verify config is set
+claude plugin config list git-assistant
+# → conventionalCommits: true
+# → defaultBranch: main
+
+# Check how config appears as env vars in scripts
+# In a bin script, add debug output:
+echo "OPTION_CONVENTIONALCOMMITS=${CLAUDE_PLUGIN_OPTION_CONVENTIONALCOMMITS:-not set}"
+echo "OPTION_DEFAULTBRANCH=${CLAUDE_PLUGIN_OPTION_DEFAULTBRANCH:-not set}"
+```
+
+### Level 7: Complete Reset
+
+If nothing works, clean install:
+
+```bash
+# Remove the plugin
+claude plugin remove git-assistant --scope local
+
+# Verify removal
+claude plugin list
+
+# Reinstall
+claude plugin install /path/to/git-assistant-plugin --scope local
+
+# Or from npm
+claude plugin install @youorg/git-assistant
+
+# Reconfigure
+claude plugin config set git-assistant defaultBranch main
+```
+
+### Common Error Patterns
+
+```
+Error: "Command not found: /git-assistant:pr"
+Cause:  plugin.json missing or has JSON syntax error
+Fix:    validate plugin.json with `python3 -m json.tool plugin.json`
+
+Error: "Skill 'git-assistant:commit' not auto-invoked"
+Cause:  description field in SKILL.md doesn't match user's phrasing
+Fix:    expand the description with more synonyms and trigger phrases
+
+Error: "Hook script failed with exit code 126"
+Cause:  bin script not executable
+Fix:    chmod +x bin/your-script
+
+Error: "${CLAUDE_PLUGIN_OPTION_KEY} not expanded"
+Cause:  config key not set by user
+Fix:    claude plugin config set plugin-name key value
+        or add a "default" to the userConfig declaration
+
+Error: "Monitor not starting"
+Cause:  v2.1.105+ required for monitors
+Fix:    claude --version; upgrade if needed
+```
+
+---
+
+## 21. Distributing Plugins
+
+### Option A: Public npm Registry
+
+The standard distribution method. Anyone can install with `claude plugin install`.
+
+```bash
+# Publish
+npm login
+npm publish --access public    # for @scoped packages
+
+# Users install with:
+claude plugin install @youorg/git-assistant
+```
+
+**package.json best practices for public plugins:**
+
+```json
+{
+  "name": "@youorg/claude-git-assistant",
+  "version": "1.0.0",
+  "description": "Git workflow automation for Claude Code",
+  "keywords": ["claude-code", "claude-plugin", "git", "workflow"],
+  "files": [
+    "plugin.json",
+    "commands/",
+    "agents/",
+    "skills/",
+    "output-styles/",
+    "themes/",
+    "monitors/",
+    "bin/",
+    "hooks/",
+    ".mcp.json",
+    ".lsp.json",
+    "settings.json"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
+```
+
+The `files` array is critical — it controls what's included in the npm package. Without it, everything gets published (including development files, tests, node_modules).
+
+---
+
+### Option B: Private npm Registry
+
+For internal organizational plugins:
+
+```bash
+# Set your registry (in .npmrc or via npm config)
+npm config set @youorg:registry https://npm.internal.acme.com
+
+# Publish to private registry
+npm publish
+
+# Users install with:
+claude plugin install @youorg/git-assistant
+# (their npm config must point @youorg to the private registry)
+```
+
+**GitHub Packages:**
+
+```bash
+# Authenticate with GitHub Packages
+npm login --registry=https://npm.pkg.github.com --scope=@yourorg
+
+# In package.json
+{
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
+}
+
+# Publish
+npm publish
+
+# Install
+claude plugin install @yourorg/git-assistant \
+  --registry https://npm.pkg.github.com
+```
+
+---
+
+### Option C: Git URL Installation
+
+Install directly from a git repository without publishing to npm:
+
+```bash
+# Install from GitHub
+claude plugin install github:youorg/claude-git-assistant
+
+# Install from a specific branch or tag
+claude plugin install github:youorg/claude-git-assistant#v2.0.0
+claude plugin install github:youorg/claude-git-assistant#feature-branch
+
+# Install from GitLab
+claude plugin install gitlab:youorg/claude-git-assistant
+
+# Install from any git URL
+claude plugin install git+https://github.com/youorg/claude-git-assistant.git
+```
+
+Git URL installation is useful for:
+- Installing pre-release versions
+- Installing forks of existing plugins
+- Internal plugins not ready for npm publication
+- Development/testing of specific branches
+
+---
+
+### Option D: Local Path Installation
+
+For development and testing, or for plugins too organization-specific to publish:
+
+```bash
+# Install from an absolute path
+claude plugin install /home/alice/dev/git-assistant --scope local
+
+# Install from a relative path (resolved to absolute at install time)
+claude plugin install ./git-assistant --scope local
+
+# For shared team plugins: commit the directory to git and install via relative path
+# (but prefer project-scoped install for team sharing)
+claude plugin install ./tools/claude-plugins/git-assistant --scope project
+```
+
+**Team sharing without npm:**
+
+```
+project-repo/
+├── tools/
+│   └── claude-plugins/
+│       └── git-assistant/       ← plugin directory committed to git
+│           ├── plugin.json
+│           ├── commands/
+│           └── ...
+└── CLAUDE.md:
+    ## Claude Code Plugins
+    Install the team plugin: claude plugin install ./tools/claude-plugins/git-assistant --scope project
+```
+
+Each team member installs the plugin once after cloning. Since it's in the git repo, everyone gets updates on `git pull`.
+
+---
+
+### Distribution Decision Matrix
+
+```
+Who needs the plugin?
+│
+├── Anyone on the internet
+│   └── Public npm registry (@scope/plugin-name)
+│
+├── Our organization only
+│   ├── Small team, simple setup
+│   │   └── Git URL or local path in project repo
+│   │
+│   └── Multiple teams, needs versioning
+│       └── Private npm registry (GitHub Packages, Artifactory, etc.)
+│
+└── Just me
+    └── Local path install (~/.claude/plugins or --scope local)
+        (No publication needed; your personal plugin directory)
+```

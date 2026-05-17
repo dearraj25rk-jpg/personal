@@ -3,12 +3,40 @@ title: Claude Code
 description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system, MCP servers, agent teams, CI/CD integration, permissions, context engineering, Agent SDK, worktrees, plugins, output styles, memory management, models & pricing, slash commands, and 11 interactive diagrams. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 1
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
 
 **Latest stable:** v2.1.126 (May 9, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions) · **Platforms:** macOS, Linux, WSL2, Windows native
+
+```
+┌────────────────────────── CLAUDE CODE ECOSYSTEM ──────────────────────────┐
+│                                                                             │
+│  ┌─────────────┐    ┌──────────────┐    ┌──────────────────────────────┐  │
+│  │  CONFIGURE  │    │    EXTEND    │    │        INTEGRATE             │  │
+│  │             │    │              │    │                              │  │
+│  │ CLAUDE.md   │    │ MCP Servers  │    │  GitHub Actions              │  │
+│  │ Rules       │    │ Hooks        │    │  GitLab CI                   │  │
+│  │ Skills      │    │ Plugins      │    │  Azure DevOps                │  │
+│  │ Settings    │    │ Agent Teams  │    │  Agent SDK (Python/TS)       │  │
+│  │ Output Sty. │    │ Subagents    │    │  AWS Bedrock / GCP Vertex    │  │
+│  └─────────────┘    └──────────────┘    └──────────────────────────────┘  │
+│                                                                             │
+│  ┌────────────────────────────────────────────────────────────────────┐   │
+│  │                     AGENTIC LOOP                                    │   │
+│  │                                                                     │   │
+│  │  Your prompt → Claude → tool_use? → Execute tool → loop            │   │
+│  │               (reads context:       Read/Edit/Bash/                 │   │
+│  │                CLAUDE.md, Rules,    Task/WebFetch/                  │   │
+│  │                Memory, Skills)      Monitor/...                    │   │
+│  └────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  MODELS: Opus 4.7 (1M ctx) · Opus 4.6 · Sonnet 4.6 (default) · Haiku 4.5 │
+│  EFFORT: low · normal · high · xhigh (extended thinking)                   │
+│  MEMORY: Enterprise CLAUDE.md > User > Project > Local > Rules > Skills    │
+└────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 

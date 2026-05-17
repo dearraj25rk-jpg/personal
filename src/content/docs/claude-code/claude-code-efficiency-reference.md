@@ -1,7 +1,7 @@
 ---
 title: "Claude Code: Context, Cost & Token Efficiency — Reference"
 description: "Complete reference for context management, prompt caching, token budgets, model selection, effort controls, hooks, environment variables, and the advisor tool in Claude Code v2.1.126+. Covers all five CCA-F exam domains."
-lastUpdated: 2026-05-10
+lastUpdated: 2026-05-17
 sidebar:
   order: 5
 ---
@@ -1341,4 +1341,357 @@ The exam rewards **programmatic enforcement over prompt-based guidance** — hoo
 
 ---
 
-*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Introducing Claude Opus 4.7](https://www.anthropic.com/news/claude-opus-4-7), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated May 6, 2026 (v2.1.126).*
+## 16. Token Budget Visualization
+
+### 16.1 Per-Session Token Stack
+
+Every Claude Code session builds a "token stack" that grows with each turn. This ASCII diagram shows a typical 50-turn coding session consuming a 200K context window:
+
+```
+200K tokens ┤
+            │  ░░░░░░░░░░░░░░░░░░ HEADROOM (buffer for tools + output)
+            │  ░░░░░░░░░░░░░░░░░░  ~33K–45K reserved
+170K tokens ┤──────────────────────────────────────────────────────
+            │  ████████████████████ CONVERSATION HISTORY (grows!)
+            │  ████████████████████  ~3K–8K tokens per turn average
+            │  ████████████████████  Grows linearly: 50 turns ≈ 150K–250K
+            │  ████████████████████
+            │  ████████████████████
+ 40K tokens ┤──────────────────────────────────────────────────────
+            │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ STABLE PREFIX (cached, cheap)
+            │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  Tool definitions:  ~8K
+            │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  System prompt:      ~4K
+            │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  CLAUDE.md stack:    ~6K typical
+            │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  Rules + memory:     ~4K
+  0K tokens ┤──────────────────────────────────────────────────────
+
+Legend:  ▓ = Prompt-cached (read at 0.1× or 0.2× cost)
+         █ = Conversation history (full input cost unless cached)
+         ░ = Reserved headroom (not billed)
+```
+
+**Insight:** The stable prefix (~22K tokens) is written once per session and cached; every subsequent turn pays only the cache-read price for it. The conversation history dominates cost on long sessions — compaction reclaims this space.
+
+### 16.2 Context Growth Per Turn
+
+```
+Tokens added per turn (representative values):
+
+Turn type                         Input added    Output added
+─────────────────────────────────────────────────────────────
+Simple question + answer           ~500 in        ~300 out
+File read (1K line file)          ~2,000 in       ~500 out
+Bash command + output             ~800 in        ~200 out
+Edit tool call (medium file)      ~3,000 in      ~1,200 out
+Multi-file read + analysis        ~8,000 in      ~2,000 out
+SubAgent task result              ~5,000 in         0 out
+─────────────────────────────────────────────────────────────
+50-turn active session total:  ~75K–200K in   ~15K–40K out
+```
+
+**Rule of thumb:** At $3/MTok (Sonnet 4.6), a 100K-input 20K-output session costs:
+- Without caching: (100K × $3) + (20K × $15) / 1,000,000 = **$0.60**
+- With 80% cache hit: (20K × $3 + 80K × $0.30 + 20K × $15) / 1,000,000 = **$0.42** (30% saving)
+
+### 16.3 Token Budget by File Type
+
+```
+File Type                  Typical Tokens    Loaded When
+──────────────────────────────────────────────────────────────────
+Tool schemas (built-in)        ~8,000         Every turn (prefix)
+System prompt                  ~4,000         Every turn (prefix)
+CLAUDE.md (root, typical)      ~2,000         Every turn (prefix)
+CLAUDE.md (verbose)           ~10,000         Every turn — DANGER
+Rules (global)                 ~1,500         Every turn (prefix)
+MEMORY.md (auto-memory)        ~3,000         Every turn (prefix)
+Path-scoped rules              ~1,000         On directory change
+Skill content                  ~2,000         When skill invoked
+MCP server instructions        ~1,000 each    Per connected server
+──────────────────────────────────────────────────────────────────
+Total stable prefix budget:  ~20K–35K        Lower = more savings
+```
+
+**Budget discipline:** Every 1,000 tokens added to CLAUDE.md costs ~$0.003/session at Sonnet 4.6 rates — but multiplied across 100 engineers × 10 sessions/day = **$3/day for 1K tokens**. Keep CLAUDE.md under 2,000 tokens; use `@import` for specialized content.
+
+---
+
+## 17. Prompt Caching — Calculation Examples
+
+### 17.1 Example 1 — Small Project (5 engineers, 30 sessions/day)
+
+```
+Setup:
+  CLAUDE.md:              1,500 tokens
+  Rules (3 files):        2,000 tokens
+  Tool schemas:           8,000 tokens
+  System prompt:          4,000 tokens
+  Total stable prefix:   15,500 tokens ≈ 15K tokens
+
+Per session:
+  Cache write (first turn):   15K × $0.30/MTok  =  $0.0045
+  Cache read (turns 2–30):    15K × $0.03/MTok × 29 = $0.013
+  Conversation (30 turns):   ~90K × $3/MTok     =  $0.27
+  ─────────────────────────────────────────────────────────
+  Session cost with caching:                       $0.288
+
+Without caching (every turn pays full input):
+  30K prefix × 30 turns × $3/MTok = $0.027 prefix only
+  Session cost without caching:                    $0.315
+
+Daily savings (5 engineers × 30 sessions):
+  With caching:    5 × 30 × $0.288 = $43.20/day
+  Without caching: 5 × 30 × $0.315 = $47.25/day
+  Saving: ~8.5% on stable prefix ($4.05/day)
+```
+
+### 17.2 Example 2 — Enterprise Monorepo (50 engineers, 5 sessions/day)
+
+```
+Setup:
+  CLAUDE.md stack (3 levels):   8,000 tokens
+  Rules (10 files):             6,000 tokens
+  MCP server instructions:      3,000 tokens (3 servers)
+  Tool schemas:                 8,000 tokens
+  System prompt:                4,000 tokens
+  Total stable prefix:         29,000 tokens ≈ 29K tokens
+
+Per session (1-hour active, 80 turns):
+  Cache write (first turn):    29K × $0.30/MTok    = $0.0087
+  Cache reads (turns 2–80):    29K × $0.03/MTok × 79 = $0.069
+  Conversation (80 turns):    240K × $3/MTok       = $0.72
+  Output (80 turns):           48K × $15/MTok      = $0.72
+  ──────────────────────────────────────────────────────────
+  Session cost with caching:                        $1.518
+
+Without caching:
+  29K prefix × 80 turns × $3/MTok = $6.96 prefix cost alone
+  Session cost without caching:                     $8.40
+
+Monthly saving (50 engineers × 5 sessions × 22 days):
+  With:     50 × 5 × 22 × $1.518 = $8,349/month
+  Without:  50 × 5 × 22 × $8.40  = $46,200/month
+  Saving: 82% ($37,851/month) — caching is critical at scale
+```
+
+### 17.3 Caching Decision Guide
+
+```
+Should you optimize for caching?
+
+Total daily sessions > 100?
+├── YES → High priority — savings compound quickly
+└── NO  ┐
+        │
+        ▼
+CLAUDE.md size > 5K tokens?
+├── YES → Refactor to @import pattern immediately
+└── NO  → Standard caching adequate
+
+Sessions typically > 30 turns?
+├── YES → Enable 1-hour cache TTL (ENABLE_PROMPT_CACHING_1H=1)
+└── NO  → 5-minute TTL sufficient (default)
+
+Using Opus 4.7?
+├── YES → Account for 1.35× tokenizer inflation in budget estimates
+└── NO  → Standard estimates apply
+```
+
+---
+
+## 18. Context Management Playbook
+
+### 18.1 Session Lifecycle Management
+
+Managing context actively across a session prevents hitting the 200K limit unexpectedly:
+
+```
+SESSION START
+│
+├── /memory — verify memory files loaded correctly
+├── /usage  — check baseline token count
+└── Begin work
+
+DURING SESSION (every ~20 turns or at natural task boundary)
+│
+├── /usage — check current token consumption
+│    │
+│    ├── < 40% used   → Continue normally
+│    ├── 40–70% used  → Consider subagents for large subtasks
+│    ├── 70–83% used  → Plan next compaction point
+│    └── > 83% used   → Auto-compaction imminent (cannot prevent)
+│
+└── At task completion:
+     ├── Summarize progress in MEMORY.md manually if critical
+     └── /compact — trigger manual compaction if context nearing limit
+
+SESSION END
+│
+├── Update MEMORY.md with session outcomes
+├── Commit key decisions to CLAUDE.md if architectural
+└── /exit
+```
+
+### 18.2 Auto vs. Manual Compaction Decision Guide
+
+```
+Choose MANUAL compaction (/compact or PreCompact hook) when:
+┌─────────────────────────────────────────────────────────────┐
+│ • Task has a clear logical boundary (feature complete)       │
+│ • You want to preserve specific decisions in the summary     │
+│ • You are switching to a very different task within session  │
+│ • Context is at 60–75% (compact while there's room to work) │
+│ • You have a custom PreCompact hook that enhances summaries  │
+└─────────────────────────────────────────────────────────────┘
+
+Rely on AUTO compaction when:
+┌─────────────────────────────────────────────────────────────┐
+│ • Task is continuous with no natural break                   │
+│ • Session is exploratory (no specific facts to preserve)     │
+│ • You trust Claude's default summarization                   │
+│ • Context < 70% (no urgency)                                 │
+└─────────────────────────────────────────────────────────────┘
+
+NEVER compact when:
+┌─────────────────────────────────────────────────────────────┐
+│ • Mid-tool-call (can corrupt state)                          │
+│ • MEMORY.md has unsaved changes you need                     │
+│ • Session will end in < 5 turns anyway                       │
+│ • In a subagent (compact the parent session instead)         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 18.3 MEMORY.md Writing Best Practices
+
+The `MEMORY.md` file persists across sessions in auto-memory mode. Writing it well is the single highest-leverage memory technique:
+
+```markdown
+# Project: [Name]                    ← Clear project identifier
+Last updated: 2026-05-17
+
+## Architecture Decisions             ← Decisions only; code is in files
+- Auth uses RS256 (not HS256) — migrated 2026-04-10; old JWTs invalid
+- No ORM — raw SQL via pg; never add an ORM (CTO mandate)
+
+## Current State                      ← Where we are RIGHT NOW
+- [ACTIVE] Implementing hybrid search (BM25 + semantic + RRF)
+- [BLOCKED] Embedding model selection — waiting for infra team
+- [DONE] PII detection pipeline (shipped 2026-05-01)
+
+## Known Dead Ends                    ← Prevent re-attempting failures
+- rank_bm25 BM25Okapi: OOM on docs > 50K tokens (tried 2026-04-28)
+- ChromaDB batch upsert > 5000: silent data loss bug
+
+## Environment                        ← Reproducible setup
+- Python 3.11 (NOT 3.12 — sentence-transformers incompatible)
+- Tests: pytest tests/ -x --tb=short
+- Lint: ruff check src/
+
+## Next Steps                         ← Concrete, actionable
+1. Choose embedding model (wait for infra approval)
+2. Implement RRF fusion in src/search/fusion.py
+3. Load test with 10K document corpus
+```
+
+**Anti-patterns to avoid:**
+- Storing file contents (use @import instead)
+- Storing verbose debugging output (deduplicate ruthlessly)
+- "See file X for details" without the actual detail (file content changes)
+- Over 200 lines / 25KB (truncated by auto-memory loader)
+
+### 18.4 Starting Fresh vs. Compacting
+
+```
+Scenario: Current session has 160K tokens used (80% of 200K)
+
+Option A: Let auto-compact trigger
+  Pros:  No action required; Claude continues seamlessly
+  Cons:  You cannot influence what is preserved in the summary
+  Cost:  Compaction itself costs ~3K–8K tokens
+  Best:  Exploratory sessions with no critical state
+
+Option B: Manual /compact now
+  Pros:  You control timing; can update MEMORY.md first
+  Cons:  Interrupts flow; costs same tokens as auto
+  Best:  At task boundaries; after major decisions
+
+Option C: Start a new session
+  Pros:  Clean slate; no compaction cost; can use different model
+  Cons:  No continuity with current session's conversation
+  Best:  When switching projects entirely; after major task completion
+
+Option D: Delegate remaining work to a subagent
+  Pros:  Parent session unaffected; subagent gets clean context
+  Cons:  Must pass all necessary context explicitly in task description
+  Best:  When remaining work is well-defined and self-contained
+```
+
+---
+
+## 19. Model Selection Mental Model
+
+### 19.1 Decision Flowchart
+
+```
+Is this a PLANNING or ARCHITECTURE task?
+│
+├── YES → Does it require extended reasoning or complex decisions?
+│         ├── YES → Opus 4.7 (xhigh effort, 1M ctx, $5/$25 MTok)
+│         └── NO  → Sonnet 4.6 with opusplan for Plan-mode turns
+│
+└── NO  → Is this a CODING or EDITING task?
+          │
+          ├── YES → Is the codebase large (>500 files)?
+          │         ├── YES → Sonnet 4.6 (200K ctx, $3/$15 MTok)
+          │         └── NO  → Haiku 4.5 for fast/cheap ($0.80/$4 MTok)
+          │
+          └── NO  → Is this DOCUMENT SEARCH or REVIEW?
+                    ├── YES → Sonnet 4.6 (best recall/cost balance)
+                    └── NO  → Haiku 4.5 for classification/routing
+
+```
+
+### 19.2 When Model Switching Breaks Caching
+
+Switching models mid-session invalidates the prompt cache for the new model. The cache is per-model, per-API-key. Implications:
+
+```
+Session on Sonnet 4.6 → switch to Opus 4.7:
+  Cache state:   All Sonnet cache INVALID for Opus 4.7
+  First Opus turn: Full input cost (cache miss)
+  Subsequent Opus turns: Cache builds fresh
+
+opusplan pattern (Plan-mode only):
+  Sonnet turns: Cache preserved for Sonnet
+  Opus turns:   Separate cache builds for Opus
+  Net effect:   Two active caches — costs slightly more
+                but saves significant output cost on Sonnet
+
+Recommendation: Pick one model for the session. If using opusplan,
+accept the dual-cache overhead in exchange for Opus reasoning quality
+on architecture turns.
+```
+
+### 19.3 Real-World Cost Scenarios
+
+```
+Scenario 1: 1-hour debugging session
+  Model: Sonnet 4.6 | Turns: 40 | Context: 120K in / 24K out
+  Cost: (120K × $3 + 24K × $15) / 1M = $0.36 + $0.36 = $0.72
+  With 70% cache hit: (36K × $3 + 84K × $0.30 + 24K × $15) / 1M
+                      = $0.108 + $0.025 + $0.36 = $0.493
+
+Scenario 2: Architecture planning with Opus 4.7
+  Model: Opus 4.7 | Turns: 15 | Context: 45K in / 12K out
+  Cost: (45K × $5 + 12K × $25) / 1M = $0.225 + $0.30 = $0.525
+  Note: Opus 4.7 tokenizer adds up to 35% more tokens for same text
+
+Scenario 3: CI/CD automated review pipeline
+  Model: Haiku 4.5 | 100 reviews/day | 8K in / 2K out each
+  Daily cost: 100 × (8K × $0.80 + 2K × $4) / 1M
+            = 100 × ($0.0064 + $0.008) = $1.44/day
+  Monthly: ~$43/month for 100 automated PR reviews/day
+```
+
+---
+
+*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Introducing Claude Opus 4.7](https://www.anthropic.com/news/claude-opus-4-7), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated May 17, 2026 (v2.1.126).*

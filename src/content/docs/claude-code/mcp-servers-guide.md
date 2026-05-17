@@ -23,25 +23,49 @@ The **Model Context Protocol (MCP)** is an open standard that allows AI systems 
 
 ## 1. Architecture Overview
 
+### Host → Client → Server Model
+
 ```
-┌─────────────────────────────────────┐
-│         Claude Code (Host)          │
-│  ┌───────────────────────────────┐  │
-│  │       MCP Client              │  │
-│  │  (built into Claude Code)     │  │
-│  └───────────┬───────────────┘  │
-└─────────────┕───────────────────────┘
-              │ JSON-RPC 2.0
-              │ (stdio / HTTP / SSE)
-              ▼
-┌─────────────────────────────────────┐
-│         MCP Server                  │
-│  ┌──────────┐ ┌────────┐ ┌───────┐ │
-│  │  Tools   │ │Resources│ │Prompts│ │
-│  └──────────┘ └────────┘ └───────┘ │
-│                                     │
-│   Connects to: DB / API / FS / etc  │
-└─────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                     Claude Code (HOST)                           │
+  │                                                                  │
+  │   User prompt ──► Claude model ──► tool_use decision            │
+  │                                         │                        │
+  │   ┌─────────────────────────────────────┴──────────────────┐    │
+  │   │                  MCP CLIENT                             │    │
+  │   │   (built into Claude Code, one instance per server)    │    │
+  │   │                                                         │    │
+  │   │   • Manages connection lifecycle                        │    │
+  │   │   • Serialises/deserialises JSON-RPC 2.0               │    │
+  │   │   • Routes tool calls to the correct server            │    │
+  │   │   • Handles authentication                             │    │
+  │   └──────────────┬──────────────────────┬──────────────────┘    │
+  └──────────────────┕──────────────────────┕──────────────────────-┘
+                     │                      │
+             JSON-RPC 2.0           JSON-RPC 2.0
+             over stdio             over HTTP
+                     │                      │
+  ┌──────────────────┴──┐       ┌───────────┴───────────────────────┐
+  │   LOCAL MCP SERVER  │       │        REMOTE MCP SERVER          │
+  │   (stdio transport) │       │        (HTTP transport)           │
+  │                     │       │                                    │
+  │  ┌───────────────┐  │       │  ┌───────────┐  ┌─────────────┐  │
+  │  │    Tools      │  │       │  │   Tools   │  │  Resources  │  │
+  │  │  (callable    │  │       │  │           │  │             │  │
+  │  │   functions)  │  │       │  └───────────┘  └─────────────┘  │
+  │  └───────────────┘  │       │  ┌─────────────────────────────┐  │
+  │  ┌───────────────┐  │       │  │         Prompts             │  │
+  │  │   Resources   │  │       │  └─────────────────────────────┘  │
+  │  │  (data URIs)  │  │       │                                    │
+  │  └───────────────┘  │       │  Connects to: SaaS APIs,          │
+  │  ┌───────────────┐  │       │  cloud services, databases        │
+  │  │   Prompts     │  │       └───────────────────────────────────┘
+  │  │  (templates)  │  │
+  │  └───────────────┘  │
+  │                     │
+  │  Connects to: local  │
+  │  DB, filesystem, CLI │
+  └─────────────────────┘
 ```
 
 **Model:** Host → Client → Server
@@ -52,11 +76,46 @@ The **Model Context Protocol (MCP)** is an open standard that allows AI systems 
 
 **Protocol:** JSON-RPC 2.0 — every message is a structured JSON object with `method`, `params`, `id`.
 
+### JSON-RPC 2.0 Message Flow
+
+```
+  Claude Code (Client)                    MCP Server
+        │                                     │
+        │── initialize ──────────────────────►│
+        │◄── initialized ─────────────────────│
+        │                                     │
+        │── tools/list ──────────────────────►│
+        │◄── tools/list result ───────────────│
+        │                                     │
+        │── tools/call {name, arguments} ────►│
+        │                    [server executes tool]
+        │◄── tools/call result ───────────────│
+        │                                     │
+        │── resources/list ──────────────────►│
+        │◄── resources/list result ───────────│
+        │                                     │
+        │── resources/read {uri} ────────────►│
+        │◄── resources/read result ───────────│
+```
+
 ---
 
 ## 2. Transport Types
 
 MCP supports three transports (SSE is deprecated; use HTTP streaming):
+
+### Transport Comparison
+
+| Feature | stdio (local) | HTTP (remote) | SSE (deprecated) |
+|---------|--------------|---------------|-----------------|
+| Process management | Claude Code spawns process | Server runs independently | Server runs independently |
+| Scalability | 1 client per server | Many clients per server | Many clients per server |
+| Security | Process isolation, no network | TLS, token auth, firewall | Same as HTTP |
+| Latency | Minimal (pipe) | Network round-trip | Network + SSE overhead |
+| Debugging | Easy (local logs) | Requires remote log access | Same as HTTP |
+| Best for | Local tools, dev secrets | Shared team services, SaaS | Legacy only |
+| Authentication | OS process isolation | Bearer token, OAuth 2.0 | Same as HTTP |
+| Startup | Spawned on session start | Pre-running server | Pre-running server |
 
 ### 2.1 stdio (Local Process)
 
@@ -80,6 +139,17 @@ MCP supports three transports (SSE is deprecated; use HTTP streaming):
 - Process lifecycle tied to Claude Code session
 - Environment variables from Claude Code process are inherited (can add extras in `env`)
 
+**stdio startup sequence:**
+```
+1. Claude Code spawns: node index.js
+2. Claude Code sends: {"jsonrpc":"2.0","method":"initialize","params":{...},"id":1}
+3. Server responds:   {"jsonrpc":"2.0","result":{"protocolVersion":"1.1","capabilities":{...}},"id":1}
+4. Claude Code sends: {"jsonrpc":"2.0","method":"initialized","params":{}}
+5. Connection established — tools are now available
+```
+
+**Critical for stdio servers:** Any non-JSON output on stdout (startup banners, debug logs, print statements) will corrupt the JSON-RPC protocol and crash the connection. Always direct all debug output to stderr.
+
 ### 2.2 HTTP (Remote Server)
 
 ```json
@@ -100,6 +170,16 @@ MCP supports three transports (SSE is deprecated; use HTTP streaming):
 - Best for: shared team servers, cloud services, production APIs
 - Server can serve multiple clients simultaneously
 - Supports OAuth 2.0 and bearer token authentication
+
+**HTTP request format:**
+```http
+POST /v1 HTTP/1.1
+Host: mcp.example.com
+Content-Type: application/json
+Authorization: Bearer tok_...
+
+{"jsonrpc":"2.0","method":"tools/call","params":{"name":"query_db","arguments":{"sql":"SELECT..."}},"id":42}
+```
 
 ### 2.3 SSE (Server-Sent Events — Deprecated)
 
@@ -298,7 +378,9 @@ Claude will respond with all tools from all connected MCP servers, grouped by se
 
 ## 6. Building a Custom MCP Server
 
-### 6.1 TypeScript / Node.js
+### 6.1 TypeScript / Node.js — Complete Example with All Primitives
+
+This is a full-featured MCP server demonstrating Tools, Resources, and Prompts together:
 
 ```bash
 npm create mcp-server@latest my-server
@@ -313,90 +395,371 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 
 const server = new McpServer({
-  name: 'my-server',
+  name: 'analytics-server',
   version: '1.0.0',
+  description: 'Analytics and reporting MCP server',
 });
 
-// Define a tool
+// ─── TOOLS ────────────────────────────────────────────────────────────────────
+
+// Tool 1: Query analytics data
 server.tool(
-  'get_weather',
-  'Get current weather for a city',
+  'query_analytics',
+  'Query analytics data for a date range. Returns JSON with metrics.',
   {
-    city: z.string().describe('City name, e.g. "London"'),
-    units: z.enum(['celsius', 'fahrenheit']).default('celsius'),
+    metric: z.enum(['pageviews', 'sessions', 'conversions', 'revenue'])
+      .describe('The metric to query'),
+    start_date: z.string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .describe('Start date in YYYY-MM-DD format'),
+    end_date: z.string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .describe('End date in YYYY-MM-DD format'),
+    group_by: z.enum(['day', 'week', 'month']).default('day')
+      .describe('Aggregation period'),
   },
-  async ({ city, units }) => {
-    // Your implementation here
-    const weather = await fetchWeather(city, units);
+  async ({ metric, start_date, end_date, group_by }) => {
+    // Implementation: query your analytics backend
+    const data = await fetchAnalytics({ metric, start_date, end_date, group_by });
     return {
-      content: [{ type: 'text', text: JSON.stringify(weather) }],
+      content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
     };
   }
 );
 
-// Define a resource
+// Tool 2: Get top pages
+server.tool(
+  'get_top_pages',
+  'Get the top N pages by pageviews for a date range.',
+  {
+    limit: z.number().int().min(1).max(100).default(10)
+      .describe('Number of top pages to return'),
+    date: z.string().describe('Date in YYYY-MM-DD format (uses last 30 days from this date)'),
+  },
+  async ({ limit, date }) => {
+    const pages = await fetchTopPages(date, limit);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(pages) }],
+    };
+  }
+);
+
+// Tool 3: Export report (side-effect — documented in description)
+server.tool(
+  'export_report',
+  'Export an analytics report to CSV. WRITES a file to /reports/. Returns the file path.',
+  {
+    report_type: z.enum(['weekly', 'monthly', 'custom']),
+    email: z.string().email().optional()
+      .describe('If provided, email the report to this address'),
+  },
+  async ({ report_type, email }) => {
+    const filePath = await generateAndSaveReport(report_type);
+    if (email) {
+      await sendReportByEmail(filePath, email);
+    }
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({ success: true, file: filePath, emailed: !!email })
+      }],
+    };
+  }
+);
+
+// ─── RESOURCES ────────────────────────────────────────────────────────────────
+
+// Resource 1: Live dashboard metrics
 server.resource(
-  'config://app-settings',
-  'Application Settings',
+  'analytics://dashboard/live',
+  'Live Dashboard Metrics',
   async (uri) => ({
     contents: [{
       uri: uri.href,
       mimeType: 'application/json',
-      text: JSON.stringify({ theme: 'dark', language: 'en' }),
+      text: JSON.stringify(await fetchLiveDashboard()),
     }],
   })
 );
 
-// Start server
+// Resource 2: Available metrics catalog
+server.resource(
+  'analytics://metrics/catalog',
+  'Available Metrics Catalog',
+  async (uri) => ({
+    contents: [{
+      uri: uri.href,
+      mimeType: 'application/json',
+      text: JSON.stringify({
+        metrics: ['pageviews', 'sessions', 'bounce_rate', 'conversion_rate', 'revenue', 'arpu'],
+        dimensions: ['country', 'device', 'source', 'campaign', 'page'],
+        granularities: ['hour', 'day', 'week', 'month'],
+      }),
+    }],
+  })
+);
+
+// ─── PROMPTS ──────────────────────────────────────────────────────────────────
+
+// Prompt 1: Weekly report generation
+server.prompt(
+  'weekly_report',
+  'Generate a weekly analytics report with insights and recommendations',
+  [
+    { name: 'week_ending', description: 'End date of the week (YYYY-MM-DD)', required: true },
+    { name: 'focus', description: 'Focus area: conversion|acquisition|retention', required: false },
+  ],
+  async ({ week_ending, focus }) => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: `Generate a comprehensive weekly analytics report for the week ending ${week_ending}.
+${focus ? `Focus particularly on ${focus} metrics.` : ''}
+Use the query_analytics tool to fetch data. Include:
+1. Key metrics summary (pageviews, sessions, conversions, revenue)
+2. Week-over-week comparison
+3. Top performing pages
+4. Notable trends or anomalies
+5. 3 actionable recommendations for next week`,
+      },
+    }],
+  })
+);
+
+// ─── START SERVER ─────────────────────────────────────────────────────────────
+
+// IMPORTANT: All console.log go to stderr to avoid corrupting stdio JSON-RPC
+console.error('Analytics MCP server starting...');
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+console.error('Analytics MCP server ready');
 ```
 
-### 6.2 Python
+### 6.2 Python — Complete Example
 
 ```bash
 pip install mcp
 ```
 
 ```python
-# server.py
+# server.py — Complete Python MCP server with Tools, Resources, and Prompts
+import asyncio
+import json
+import sys
+from datetime import datetime, timedelta
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import (
+    Tool, Resource, Prompt, PromptArgument,
+    TextContent, EmbeddedResource
+)
 import mcp.types as types
 
-server = Server("my-python-server")
+# IMPORTANT: redirect all debug output to stderr
+print("Server starting...", file=sys.stderr)
+
+server = Server("analytics-python-server")
+
+
+# ─── TOOLS ────────────────────────────────────────────────────────────────────
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="run_query",
-            description="Run a SQL SELECT query on the analytics database",
+            description=(
+                "Run a SQL SELECT query on the analytics database. "
+                "Read-only. Returns results as a JSON array of objects. "
+                "Maximum 1000 rows returned."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "sql": {"type": "string", "description": "SQL SELECT statement"},
-                    "limit": {"type": "integer", "default": 100}
+                    "sql": {
+                        "type": "string",
+                        "description": "SQL SELECT statement"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 100,
+                        "maximum": 1000,
+                        "description": "Maximum rows to return"
+                    }
                 },
                 "required": ["sql"]
             }
-        )
+        ),
+        Tool(
+            name="get_metric_summary",
+            description="Get a summary of key metrics for today vs yesterday.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "metrics": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["pageviews", "sessions", "conversions", "revenue"]
+                        },
+                        "description": "List of metrics to summarise",
+                        "default": ["pageviews", "sessions", "conversions"]
+                    }
+                }
+            }
+        ),
     ]
+
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "run_query":
-        result = await execute_query(arguments["sql"], arguments.get("limit", 100))
-        return [TextContent(type="text", text=str(result))]
+        sql = arguments["sql"]
+        limit = arguments.get("limit", 100)
+
+        # Security: only allow SELECT
+        if not sql.strip().upper().startswith("SELECT"):
+            raise ValueError("Only SELECT queries are permitted")
+
+        result = await execute_analytics_query(sql, limit)
+        return [TextContent(type="text", text=json.dumps(result, default=str))]
+
+    elif name == "get_metric_summary":
+        metrics = arguments.get("metrics", ["pageviews", "sessions", "conversions"])
+        today = datetime.now().date()
+        yesterday = today - timedelta(days=1)
+
+        summary = {}
+        for metric in metrics:
+            today_val = await get_metric(metric, str(today))
+            yesterday_val = await get_metric(metric, str(yesterday))
+            pct_change = ((today_val - yesterday_val) / yesterday_val * 100) if yesterday_val else 0
+            summary[metric] = {
+                "today": today_val,
+                "yesterday": yesterday_val,
+                "change_pct": round(pct_change, 2),
+            }
+
+        return [TextContent(type="text", text=json.dumps(summary))]
+
     raise ValueError(f"Unknown tool: {name}")
+
+
+# ─── RESOURCES ────────────────────────────────────────────────────────────────
+
+@server.list_resources()
+async def list_resources() -> list[Resource]:
+    return [
+        Resource(
+            uri="analytics://schema",
+            name="Database Schema",
+            mimeType="application/json",
+            description="Current analytics database schema with table descriptions",
+        ),
+        Resource(
+            uri="analytics://kpi-targets",
+            name="KPI Targets",
+            mimeType="application/json",
+            description="Current quarter KPI targets for all key metrics",
+        ),
+    ]
+
+
+@server.read_resource()
+async def read_resource(uri: str) -> str:
+    if uri == "analytics://schema":
+        schema = await get_database_schema()
+        return json.dumps(schema)
+    elif uri == "analytics://kpi-targets":
+        targets = await get_kpi_targets()
+        return json.dumps(targets)
+    raise ValueError(f"Unknown resource URI: {uri}")
+
+
+# ─── PROMPTS ──────────────────────────────────────────────────────────────────
+
+@server.list_prompts()
+async def list_prompts() -> list[Prompt]:
+    return [
+        Prompt(
+            name="data_investigation",
+            description="Investigate an analytics anomaly or question",
+            arguments=[
+                PromptArgument(
+                    name="question",
+                    description="The analytics question or anomaly to investigate",
+                    required=True,
+                ),
+                PromptArgument(
+                    name="time_range",
+                    description="Time range to investigate (e.g. 'last 7 days', '2026-05-01 to 2026-05-15')",
+                    required=False,
+                ),
+            ],
+        ),
+    ]
+
+
+@server.get_prompt()
+async def get_prompt(name: str, arguments: dict) -> types.GetPromptResult:
+    if name == "data_investigation":
+        question = arguments["question"]
+        time_range = arguments.get("time_range", "last 7 days")
+        return types.GetPromptResult(
+            description=f"Investigate: {question}",
+            messages=[
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(
+                        type="text",
+                        text=f"""Investigate this analytics question: {question}
+
+Time range: {time_range}
+
+Steps:
+1. Use run_query to pull relevant data
+2. Look for patterns, anomalies, and correlations
+3. Check the analytics://schema resource if you need table structure
+4. Compare against analytics://kpi-targets if relevant
+5. Provide a clear explanation with supporting data
+6. Suggest follow-up queries if the investigation warrants deeper analysis""",
+                    ),
+                )
+            ],
+        )
+    raise ValueError(f"Unknown prompt: {name}")
+
+
+# ─── HELPERS (stubs — replace with real implementations) ──────────────────────
+
+async def execute_analytics_query(sql: str, limit: int) -> list[dict]:
+    # Replace with actual DB connection
+    return [{"example": "row", "count": 42}]
+
+async def get_metric(metric: str, date: str) -> float:
+    return 1000.0  # stub
+
+async def get_database_schema() -> dict:
+    return {"tables": [{"name": "events", "columns": ["id", "event_type", "user_id", "ts"]}]}
+
+async def get_kpi_targets() -> dict:
+    return {"pageviews": 100000, "conversions": 1000, "revenue": 50000}
+
+
+# ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 async def main():
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options()
+        )
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
 ```
 
@@ -544,6 +907,119 @@ MCP servers can return content that contains text designed to hijack Claude's in
 
 **CVE-2025-6514** — `mcp-remote` OS command injection: a vulnerability in the `mcp-remote` proxy package allowed a malicious MCP server response to inject OS commands. Patched in `mcp-remote@0.1.3`. Update if using `mcp-remote`.
 
+### Common MCP Security Mistakes
+
+**Mistake 1: Hardcoding credentials in `.mcp.json`**
+
+```json
+// WRONG — credentials committed to git
+{
+  "mcpServers": {
+    "db": {
+      "command": "node",
+      "args": ["server.js"],
+      "env": { "DB_PASSWORD": "supersecret123" }
+    }
+  }
+}
+
+// RIGHT — use environment variable expansion
+{
+  "mcpServers": {
+    "db": {
+      "command": "node",
+      "args": ["server.js"],
+      "env": { "DB_PASSWORD": "${DB_PASSWORD}" }
+    }
+  }
+}
+```
+
+**Mistake 2: Exposing write operations without explicit documentation**
+
+```typescript
+// WRONG — reads like a query tool but actually deletes data
+server.tool(
+  'manage_records',
+  'Manage database records',  // ← too vague
+  { id: z.string(), action: z.enum(['get', 'delete']) },
+  handler
+);
+
+// RIGHT — name and describe side effects clearly
+server.tool(
+  'delete_record',
+  'PERMANENTLY DELETES a record by ID. This cannot be undone. Requires confirmation.',
+  { id: z.string(), confirm: z.literal(true).describe('Must be true to confirm deletion') },
+  handler
+);
+```
+
+**Mistake 3: No input validation — SQL injection via MCP**
+
+```typescript
+// WRONG — passes user-controlled SQL directly to DB
+server.tool('run_sql', 'Run SQL', { sql: z.string() }, async ({ sql }) => {
+  return await db.query(sql);  // ← SQL injection risk
+});
+
+// RIGHT — validate and restrict
+server.tool('run_sql', 'Run read-only SQL SELECT queries', { sql: z.string() }, async ({ sql }) => {
+  const cleaned = sql.trim().toUpperCase();
+  if (!cleaned.startsWith('SELECT')) {
+    throw new Error('Only SELECT queries are permitted');
+  }
+  // Use parameterised queries for any user-provided values inside SQL
+  return await db.query(sql);
+});
+```
+
+**Mistake 4: Printing to stdout in stdio servers (breaks the protocol)**
+
+```python
+# WRONG — corrupts JSON-RPC on stdio
+print("Starting server...")       # goes to stdout → breaks protocol
+print(f"Connected to DB: {url}")  # same problem
+
+# RIGHT — always use stderr for non-protocol output
+import sys
+print("Starting server...", file=sys.stderr)
+print(f"Connected to DB: {url}", file=sys.stderr)
+```
+
+**Mistake 5: Exceeding the token budget**
+
+```
+# Check your server's token cost:
+/mcp status
+
+# Each tool definition uses ~150–400 tokens.
+# 50 tools × 300 tokens = 15,000 tokens consumed at every session start.
+# Keep total MCP tokens under 20,000.
+```
+
+**Mistake 6: Running an HTTP MCP server without authentication**
+
+```typescript
+// WRONG — any network client can call your tools
+app.post('/mcp', async (req, res) => {
+  const transport = new HttpServerTransport(req, res);
+  await server.connect(transport);
+});
+
+// RIGHT — validate token before handling
+app.post('/mcp', (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (token !== process.env.MCP_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}, async (req, res) => {
+  const transport = new HttpServerTransport(req, res);
+  await server.connect(transport);
+});
+```
+
 ### Tool Token Budget
 
 Keep total MCP tool definitions under **20,000 tokens**. Every tool schema is loaded into Claude's context at session start. Exceeding this degrades performance significantly.
@@ -566,7 +1042,83 @@ For HTTP MCP servers:
 
 ---
 
-## 9. Advanced Patterns
+## 9. MCP Server Debugging Guide
+
+### Enable MCP debug logging
+
+```bash
+CLAUDE_MCP_DEBUG=1 claude
+```
+
+### Check server connection
+
+```
+/mcp
+```
+
+Shows: server name, status (connected/error), tool count, resource count, last error.
+
+### Test a stdio server manually (without Claude Code)
+
+```bash
+# Step 1: Start the server and send it an initialize request
+echo '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"1.1","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}' \
+  | node my-server/index.js
+
+# Step 2: List all tools
+echo '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":2}' \
+  | node my-server/index.js
+
+# Step 3: Call a specific tool
+echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"my_tool","arguments":{"param":"value"}},"id":3}' \
+  | node my-server/index.js
+```
+
+### Test an HTTP MCP server with curl
+
+```bash
+# Initialize
+curl -X POST https://mcp.example.com/v1 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $MCP_TOKEN" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"1.1","capabilities":{},"clientInfo":{"name":"curl-test","version":"1.0"}},"id":1}'
+
+# List tools
+curl -X POST https://mcp.example.com/v1 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $MCP_TOKEN" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":2}'
+```
+
+### Debugging checklist
+
+```
+[ ] Server starts without errors in terminal (run it directly, not via Claude)
+[ ] No non-JSON output on stdout (check with: node server.js | head -1)
+[ ] JSON schema for all tools is valid (use https://jsonschema.net to validate)
+[ ] All required tool input fields are in "required" array
+[ ] Environment variables are set in shell before starting Claude Code
+[ ] For HTTP: server is reachable from Claude Code's network
+[ ] For HTTP: authentication token is correct
+[ ] Token budget: /mcp status shows < 20,000 tokens total
+```
+
+### Common MCP problems
+
+| Problem | Likely cause | Fix |
+|---------|-------------|-----|
+| Server fails to start | Node/Python version mismatch | Check runtime version requirements |
+| `ENOENT` error | Command not found | Use full path or check npm global bin |
+| `JSON parse error` | Non-JSON output on stdio | Use `CreateEmptyApplicationBuilder` (.NET), redirect all logs to stderr |
+| Tool not appearing in `/mcp` | Schema validation failed | Check inputSchema is valid JSON Schema; validate with jsonschema.net |
+| Token budget exceeded | Too many tools defined | Remove unused tools, split into multiple servers |
+| `401 Unauthorized` | Wrong token | Check `${ENV_VAR}` expansion, set variable in shell |
+| Server connects then immediately disconnects | initialize handshake failure | Check server sends correct `initialized` response |
+| Tool returns empty response | Handler returned nothing | Ensure handler returns `{ content: [{ type: 'text', text: '...' }] }` |
+
+---
+
+## 10. Advanced Patterns
 
 ### Pattern 1: Conditional MCP Loading via Hooks
 
@@ -664,7 +1216,7 @@ app.post('/mcp', async (req, res) => {
   await server.connect(transport);
 });
 
-app.listen(3000, () => console.log('MCP server listening on :3000'));
+app.listen(3000, () => console.error('MCP server listening on :3000'));
 ```
 
 ```json
@@ -677,43 +1229,6 @@ app.listen(3000, () => console.log('MCP server listening on :3000'));
   }
 }
 ```
-
----
-
-## 10. Debugging MCP Servers
-
-### Enable MCP debug logging
-
-```bash
-CLAUDE_MCP_DEBUG=1 claude
-```
-
-### Check server connection
-
-```
-/mcp
-```
-
-Shows: server name, status (connected/error), tool count, resource count, last error.
-
-### Test a server manually
-
-```bash
-# For stdio servers: pipe JSON-RPC directly
-echo '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":1}' \
-  | node my-server/index.js
-```
-
-### Common MCP problems
-
-| Problem | Likely cause | Fix |
-|---------|-------------|-----|
-| Server fails to start | Node/Python version mismatch | Check runtime version requirements |
-| `ENOENT` error | Command not found | Use full path or check npm global bin |
-| `JSON parse error` | Non-JSON output on stdio | Use `CreateEmptyApplicationBuilder` (.NET), suppress logs |
-| Tool not appearing in `/mcp` | Schema validation failed | Check inputSchema is valid JSON Schema |
-| Token budget exceeded | Too many tools defined | Remove unused tools, split into multiple servers |
-| `401 Unauthorized` | Wrong token | Check `${ENV_VAR}` expansion, set variable in shell |
 
 ---
 

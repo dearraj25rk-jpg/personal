@@ -1859,3 +1859,943 @@ Key Settings (settings.json):
   "autoMemoryDirectory": "/custom/path"  Custom auto-memory location
   "autoMemory": false                    Disable auto-memory persistently
 ```
+
+---
+
+## 18. Memory Hierarchy — Expanded ASCII Diagram
+
+The following diagram shows all 7 memory types with their scopes, persistence characteristics, and the context window injection order. Use this as a reference when designing your memory architecture.
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║           CLAUDE CODE — COMPLETE MEMORY TYPE HIERARCHY (v2.1.126)               ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                  ║
+║  SCOPE: ORGANIZATION (enforced by IT)                                            ║
+║  ┌────────────────────────────────────────────────────────────────────────────┐  ║
+║  │  1. ENTERPRISE CLAUDE.md                                                   │  ║
+║  │     macOS:   /Library/Application Support/ClaudeCode/CLAUDE.md             │  ║
+║  │     Linux:   /etc/claude-code/CLAUDE.md                                    │  ║
+║  │     Windows: %PROGRAMDATA%\ClaudeCode\CLAUDE.md                            │  ║
+║  │                                                                             │  ║
+║  │     Load:     Always first, before any user/project settings                │  ║
+║  │     Excludable: No — cannot be blocked by any user or project config        │  ║
+║  │     /compact:  Survives — re-read from disk after compaction               │  ║
+║  │     Token cost: Fixed per-turn. Always paid. Keep focused.                 │  ║
+║  └────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                  ║
+║  SCOPE: USER (cross-project, one user)                                           ║
+║  ┌────────────────────────────────────────────────────────────────────────────┐  ║
+║  │  2. USER CLAUDE.md                                                         │  ║
+║  │     ~/.claude/CLAUDE.md                                                    │  ║
+║  │     + CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD paths                  │  ║
+║  │                                                                             │  ║
+║  │     Load:     Session start, after enterprise                               │  ║
+║  │     Excludable: Yes — via claudeMdExcludes in project settings             │  ║
+║  │     /compact:  Does NOT survive — was in compacted context                 │  ║
+║  │     Token cost: Fixed per-turn. Personal preferences & cross-project style │  ║
+║  └────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                  ║
+║  SCOPE: PROJECT (all users, one project)                                         ║
+║  ┌────────────────────────────────────────────────────────────────────────────┐  ║
+║  │  3. PROJECT CLAUDE.md                                                      │  ║
+║  │     ./CLAUDE.md  OR  ./.claude/CLAUDE.md                                   │  ║
+║  │     (both loaded if both exist; @import supported)                         │  ║
+║  │                                                                             │  ║
+║  │     Load:     Session start, after user                                    │  ║
+║  │     Excludable: Yes — via claudeMdExcludes                                 │  ║
+║  │     /compact:  SURVIVES — explicitly re-read from disk after compact       │  ║
+║  │     Token cost: Fixed per-turn. Primary team collaboration file.           │  ║
+║  └────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                  ║
+║  SCOPE: LOCAL (one user, one project, one machine)                               ║
+║  ┌────────────────────────────────────────────────────────────────────────────┐  ║
+║  │  4. CLAUDE.local.md                                                        │  ║
+║  │     ./CLAUDE.local.md  OR  ./.claude/CLAUDE.local.md                       │  ║
+║  │     (auto-gitignored; does not cross worktree boundaries)                  │  ║
+║  │                                                                             │  ║
+║  │     Load:     Session start, after project                                 │  ║
+║  │     Excludable: Yes                                                        │  ║
+║  │     /compact:  Does NOT survive                                            │  ║
+║  │     Token cost: Fixed per-turn. Personal dev environment overrides.        │  ║
+║  └────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                  ║
+║  SCOPE: AUTO-MEMORY (one user, one project, machine-local)                       ║
+║  ┌────────────────────────────────────────────────────────────────────────────┐  ║
+║  │  5. AUTO-MEMORY MEMORY.md                                                  │  ║
+║  │     ~/.claude/projects/<project-hash>/memory/MEMORY.md                    │  ║
+║  │     (hash = deterministic from project root path)                         │  ║
+║  │                                                                             │  ║
+║  │     Load:     Session start — first 200 lines or 25KB (whichever smaller) │  ║
+║  │     Managed:  By Claude automatically; /memory command to inspect          │  ║
+║  │     /compact:  PARTIAL — re-injected from disk, 200-line window applies   │  ║
+║  │     Token cost: Capped. Max ~1,500 tokens. Bounded overhead.              │  ║
+║  └────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                  ║
+║  SCOPE: AGENT (one named agent, configurable scope)                              ║
+║  ┌────────────────────────────────────────────────────────────────────────────┐  ║
+║  │  6. SUBAGENT MEMORY.md                                                     │  ║
+║  │     User scope:    ~/.claude/agent-memory/<agent-name>/MEMORY.md           │  ║
+║  │     Project scope: .claude/agent-memory/<agent-name>/MEMORY.md            │  ║
+║  │     Local scope:   .claude/agent-memory/local/<agent-name>/MEMORY.md      │  ║
+║  │                                                                             │  ║
+║  │     Load:     At agent invocation — first 200 lines or 25KB               │  ║
+║  │     /compact:  N/A — agents have independent sessions                     │  ║
+║  │     Token cost: Per-agent, capped same as auto-memory                     │  ║
+║  └────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                  ║
+║  SCOPE: DIRECTORY (conditional — loaded on first file access)                    ║
+║  ┌────────────────────────────────────────────────────────────────────────────┐  ║
+║  │  7. SUBTREE CLAUDE.md                                                      │  ║
+║  │     any/subdirectory/CLAUDE.md  (any depth in the project tree)            │  ║
+║  │                                                                             │  ║
+║  │     Load:     LAZY — only when Claude reads/writes files in that dir      │  ║
+║  │     /compact:  Does NOT survive — not re-loaded automatically              │  ║
+║  │     Token cost: Conditional. Only when the directory is accessed.         │  ║
+║  └────────────────────────────────────────────────────────────────────────────┘  ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                  ║
+║  CONTEXT WINDOW INJECTION ORDER (each turn):                                     ║
+║                                                                                  ║
+║  [Enterprise CLAUDE.md]                                                          ║
+║        ↓                                                                         ║
+║  [User CLAUDE.md] + [Additional Dirs]                                            ║
+║        ↓                                                                         ║
+║  [Project CLAUDE.md] + [@imports resolved]                                       ║
+║        ↓                                                                         ║
+║  [CLAUDE.local.md]                                                               ║
+║        ↓                                                                         ║
+║  [MEMORY.md: first 200 lines]                                                    ║
+║        ↓                                                                         ║
+║  [Subtree CLAUDE.md files: lazily added as accessed]                             ║
+║        ↓                                                                         ║
+║  [Conversation history]                                                          ║
+║        ↓                                                                         ║
+║  [Current message]                                                               ║
+║                                                                                  ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+```
+
+---
+
+## 19. Compaction Survival Decision Chart
+
+Use this chart before and after running `/compact` to understand exactly what survives and what you need to proactively save.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  WHAT SURVIVES /compact?                                                      │
+│                                                                              │
+│  For each piece of information, ask:                                          │
+│                                                                              │
+│  Is it in a file that Claude Code re-reads from disk after compaction?       │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐     │
+│  │  Re-read from disk after /compact:                                   │     │
+│  │                                                                      │     │
+│  │  ✓ Enterprise CLAUDE.md  (/etc/claude-code/CLAUDE.md, etc.)         │     │
+│  │  ✓ Project CLAUDE.md     (./CLAUDE.md and ./.claude/CLAUDE.md)      │     │
+│  │  ✓ All @imports from project CLAUDE.md                              │     │
+│  │  ✓ MEMORY.md             (re-injected, first 200 lines)             │     │
+│  └─────────────────────────────────────────────────────────────────────┘     │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐     │
+│  │  NOT re-read — summarized or lost:                                   │     │
+│  │                                                                      │     │
+│  │  ✗ User CLAUDE.md        (was in context; now in summary)           │     │
+│  │  ✗ CLAUDE.local.md       (was in context; now in summary)           │     │
+│  │  ✗ Subtree CLAUDE.md     (not re-loaded automatically)              │     │
+│  │  ✗ Mid-conversation facts ("use the v2 API, not v1")                │     │
+│  │  ✗ Decisions made in conversation ("we agreed to use Redis")        │     │
+│  │  ✗ Discovered bugs or gotchas not saved to memory                   │     │
+│  └─────────────────────────────────────────────────────────────────────┘     │
+│                                                                              │
+│  DECISION CHART: Before running /compact                                      │
+│                                                                              │
+│  "I told Claude something important in conversation"                          │
+│  └── Is it in MEMORY.md?                                                     │
+│      ├── Yes → Safe (re-injected after compact, within 200-line window)      │
+│      └── No  → SAVE IT FIRST:                                                │
+│                > Note for memory: [your fact here]                           │
+│                                                                              │
+│  "We made a design decision in this session"                                  │
+│  └── Is it in project CLAUDE.md?                                             │
+│      ├── Yes → Safe (re-read from disk)                                      │
+│      └── No  → SAVE IT:                                                      │
+│                > Add to CLAUDE.md: [design decision + rationale]             │
+│                                                                              │
+│  "I have a personal preference Claude is following"                           │
+│  └── Is it in user CLAUDE.md or project CLAUDE.md?                          │
+│      ├── User CLAUDE.md → Lost after compact (user file not re-read)        │
+│      │   Fix: Add to project CLAUDE.md if it's project-relevant             │
+│      └── Project CLAUDE.md → Safe                                            │
+│                                                                              │
+│  "We're deep in debugging a specific subtree"                                 │
+│  └── Is there a subtree CLAUDE.md in that directory?                         │
+│      ├── Yes → Will be re-loaded when Claude next accesses that dir          │
+│      └── No  → Consider @importing it from root CLAUDE.md                   │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Compaction Checklist
+
+Run through this before any long session that needs its context preserved:
+
+```
+Before /compact:
+  [ ] Critical mid-session discoveries saved to MEMORY.md?
+  [ ] Design decisions documented in project CLAUDE.md?
+  [ ] Any "from now on, use X" instructions saved to MEMORY.md?
+  [ ] Debugging context: is the relevant subtree CLAUDE.md imported?
+
+After /compact:
+  [ ] Run /memory to verify project CLAUDE.md re-loaded correctly
+  [ ] Run /memory to check MEMORY.md is present (auto-memory enabled)
+  [ ] If personal preferences seem lost: they were in user CLAUDE.md
+      (which doesn't survive) — add them to project CLAUDE.md instead
+```
+
+### Proactive Save Pattern
+
+Before long compaction cycles, use this prompt to save everything important:
+
+```
+> Before we compact, please save the following to project memory:
+  1. [Fact 1]
+  2. [Fact 2]
+  3. [Design decision and its rationale]
+  
+  Then add these to CLAUDE.md:
+  - [Convention we established that the whole team should know]
+```
+
+---
+
+## 20. @import Syntax — Deep Dive
+
+The `@import` syntax is available in all CLAUDE.md files at all levels. This section covers every supported form, edge cases, and organizational patterns.
+
+### All Supported Path Forms
+
+```markdown
+# Form 1: Relative to the importing file's directory
+@api-conventions.md
+@./api-conventions.md      (explicit relative — identical behavior)
+
+# Form 2: Parent directory traversal
+@../shared/conventions.md  (one level up)
+@../../corp/policies.md    (two levels up)
+
+# Form 3: Absolute path
+@/etc/corp-policy/claude-guidelines.md
+@/shared/team/standards.md
+
+# Form 4: Home directory expansion
+@~/personal-style-guide.md
+@~/.claude/shared/preferences.md
+@~/code/corp-standards/api-guide.md
+```
+
+### Path Resolution Examples
+
+```
+Project at: /home/alice/projects/widget-service/
+CLAUDE.md at: /home/alice/projects/widget-service/CLAUDE.md
+
+@.claude/api-conventions.md
+  → /home/alice/projects/widget-service/.claude/api-conventions.md
+
+@../shared/coding-standards.md
+  → /home/alice/projects/shared/coding-standards.md
+
+@/home/alice/.company/enterprise-policy.md
+  → /home/alice/.company/enterprise-policy.md (absolute)
+
+@~/standards/ts-guide.md
+  → /home/alice/standards/ts-guide.md (home-expanded)
+```
+
+### Recursion Rules
+
+Imports can nest up to **5 levels deep**:
+
+```
+Level 0: CLAUDE.md
+  @.claude/architecture.md           (level 1)
+    @.claude/api/rest-conventions.md (level 2)
+      @.claude/api/http-codes.md     (level 3)
+        @.claude/api/errors.md       (level 4)
+          @.claude/api/error-fmt.md  (level 5 — maximum)
+            @.claude/api/deeper.md   (level 6 — SILENTLY IGNORED)
+```
+
+**Circular import detection:** If file A imports file B which imports file A, the second occurrence of file A is skipped. Claude Code logs a warning about the cycle.
+
+```markdown
+# CLAUDE.md
+@.claude/api.md      ← imports api.md
+
+# .claude/api.md
+@.claude/models.md   ← imports models.md
+
+# .claude/models.md
+@CLAUDE.md           ← CIRCULAR — skipped, warning logged
+```
+
+### Import in Code Blocks: Not Processed
+
+```markdown
+# CLAUDE.md — example
+This document uses @import syntax:
+@.claude/standards.md     ← This IS processed (outside code block)
+
+Here is an example of the syntax for documentation:
+```
+@path/to/file.md    ← This is NOT processed (inside code block)
+```
+```
+
+### Full Import Chain Example
+
+A well-organized monorepo with a thin root and deep imports:
+
+**Root CLAUDE.md:**
+```markdown
+<!--
+  Widget Platform CLAUDE.md
+  Owner: #platform-eng | Updated: 2026-04-01
+  All imports below are eagerly loaded at session start.
+-->
+
+# Widget Platform
+
+## Quick Reference
+- Package manager: pnpm
+- Node version: 22.x (see .nvmrc)
+
+## Detailed Guides
+@.claude/architecture.md
+@.claude/api-conventions.md
+@.claude/database-patterns.md
+@.claude/security-policy.md
+```
+
+**.claude/api-conventions.md:**
+```markdown
+# API Conventions
+
+## REST Design
+@.claude/api/rest-patterns.md
+
+## Error Handling
+@.claude/api/error-responses.md
+```
+
+**.claude/api/rest-patterns.md:**
+```markdown
+# REST Patterns
+All endpoints use the standard envelope:
+{ "data": ..., "error": null, "meta": { "requestId": "..." } }
+```
+
+**Token cost of this chain:**
+```
+CLAUDE.md:                50 tokens
+  + architecture.md:      200 tokens
+  + api-conventions.md:   30 tokens
+    + rest-patterns.md:   150 tokens
+    + error-responses.md: 100 tokens
+  + database-patterns.md: 300 tokens
+  + security-policy.md:   400 tokens
+─────────────────────────────────────
+Total per turn:          1,230 tokens
+```
+
+### @import for Shared Organizational Standards
+
+Organizations with multiple repositories can share a single canonical policy file:
+
+```
+corp-standards/                 ← separate git repo or submodule
+├── security-policy.md          ← OWASP, internal security requirements
+├── api-design-guide.md         ← REST/gRPC standards across all services
+├── data-handling.md            ← PII, GDPR, data retention
+└── accessibility-requirements.md
+
+widget-service/
+└── CLAUDE.md:
+    @../corp-standards/security-policy.md
+    @../corp-standards/api-design-guide.md
+```
+
+For absolute-path sharing:
+```markdown
+# In any project's CLAUDE.md
+@/shared/corp-standards/security-policy.md
+```
+
+Or via environment variable path in user CLAUDE.md:
+```markdown
+# ~/.claude/CLAUDE.md
+@~/corp-standards/security-policy.md
+```
+
+### Dynamic @import with claudeMdExcludes
+
+You can combine `@import` with `claudeMdExcludes` to fine-tune loading:
+
+```json
+// .claude/settings.json
+{
+  "claudeMdExcludes": [
+    "packages/legacy-app/**",
+    "tools/scripts/**"
+  ]
+}
+```
+
+With this config, `@packages/legacy-app/CLAUDE.md` in an import chain would be silently skipped. This is useful in monorepos where some subtrees have outdated or irrelevant CLAUDE.md files.
+
+---
+
+## 21. MEMORY.md Writing Best Practices
+
+MEMORY.md is maintained by Claude, but understanding what makes a good entry helps you guide Claude toward high-quality memory management.
+
+### What Belongs in MEMORY.md
+
+MEMORY.md is for **facts Claude discovered or you told it** that are:
+- **True right now** (not permanent conventions — those belong in CLAUDE.md)
+- **Project-specific or personal** (not universal best practices)
+- **Machine-local or user-local** (not team-shared — those belong in project CLAUDE.md)
+
+```markdown
+# Good MEMORY.md Entries
+
+## Active Work Context
+- Currently implementing billing refactor (WGT-1892)
+- Feature flag: ENABLE_NEW_BILLING=1 enables new flow
+- Old billing code should not be touched — replacing it entirely
+
+## Discovered Environment Facts
+- Local PostgreSQL runs on port 5433 (not default 5432)
+- Stripe webhook forwarding: stripe listen --forward-to localhost:3001/webhooks/stripe
+- The CI environment has a 10-minute timeout on integration tests
+
+## Session Preferences
+- I prefer verbose output for this session — show all intermediate steps
+- For this project, always check the payments module before suggesting changes
+
+## Temporary Context
+- Working with John from Stripe on the API integration this week
+- The auth-service team is migrating to OAuth2 — coordinate before touching auth
+```
+
+```markdown
+# Bad MEMORY.md Entries (these belong in CLAUDE.md instead)
+
+## Team Conventions   ← Belongs in project CLAUDE.md
+- Always use pnpm, never npm or yarn
+- API responses use RFC 7807 error format
+
+## Architecture       ← Belongs in project CLAUDE.md
+- Database access only through repositories
+- Never import Prisma directly
+
+## Build Commands     ← Belongs in project CLAUDE.md
+- Run: pnpm test
+- Deploy: ./scripts/deploy.sh staging
+```
+
+### MEMORY.md Structure Guidelines
+
+Because only the **first 200 lines** are loaded, structure matters:
+
+```markdown
+# [Project Name] Memory
+
+## CRITICAL — Read First
+[Most time-sensitive, high-priority facts at the very top]
+- Active incident: payments service degraded (started 2026-05-14)
+- Do NOT deploy until INC-4421 is resolved
+
+## Active Work
+[Current sprint/feature context]
+- Working on WGT-1892 (billing refactor)
+- Feature branch: feat/WGT-1892-billing-v2
+
+## Environment Facts
+[Machine-specific discoveries]
+- Local DB: port 5433
+- Stripe CLI: running in separate terminal
+
+## Preferences (This Session)
+[Temporary style/output preferences]
+- Verbose output requested
+
+## Accumulated Knowledge
+[Facts discovered over multiple sessions]
+- The legacy createOrder() in orders-v1.js must not be modified (mobile app dependency)
+- Payment service has a 30-second SLA on webhook processing
+- The `formatCurrency` function is locale-sensitive — always pass 'en-US'
+
+[Older entries below — may be cut off at 200 lines]
+```
+
+### Pruning MEMORY.md
+
+Over time, MEMORY.md accumulates stale entries. Prune regularly:
+
+```
+> /memory edit
+
+Review MEMORY.md and delete:
+1. Any entries more than 3 months old that are no longer accurate
+2. Entries about completed tickets or resolved incidents
+3. Preferences I've changed since then
+4. Duplicate information that now lives in CLAUDE.md
+```
+
+Or ask Claude to prune it:
+
+```
+> Please review the project memory and remove any entries that are:
+  - Older than 30 days and no longer relevant
+  - About tickets that are closed
+  - Information that duplicates what's in CLAUDE.md
+  Keep everything about active work, current environment setup, and permanent gotchas.
+```
+
+### The 200-Line Window — What It Means in Practice
+
+At 200 lines, roughly 1,500 tokens, you have space for approximately:
+- 30-50 bullet-point facts at typical length
+- 5-8 sections with headers and content
+- ~3,000-4,000 characters of text
+
+If your MEMORY.md grows beyond 200 lines, line 201 onward is loaded into context and will be silently cut. You will not see a warning. Symptoms: Claude seems to forget things you know you told it in earlier sessions.
+
+Diagnose with:
+```
+> /memory
+# Check: "Lines: X / 200"
+# If X > 180: prune soon
+# If X is exactly 200: lines 201+ are being cut silently
+```
+
+---
+
+## 22. Memory Debugging Guide
+
+When Claude Code's memory system isn't behaving as expected, use this guide to diagnose the issue.
+
+### Symptom: Claude Ignores a Rule I Put in CLAUDE.md
+
+**Step 1: Verify the file is loading**
+```
+> /memory
+
+# Look for your file in the "LOADED CLAUDE.md FILES" section.
+# If it's missing:
+```
+
+**Step 2: Check if the file is excluded**
+```bash
+# Look in .claude/settings.json for claudeMdExcludes
+cat .claude/settings.json | grep claudeMdExcludes
+cat ~/.claude/settings.json | grep claudeMdExcludes
+```
+
+**Step 3: For subtree CLAUDE.md — verify it was triggered**
+```
+> Read src/billing/invoice.ts   ← Touch a file in the directory
+> /memory                        ← Now check if src/billing/CLAUDE.md appears
+```
+
+**Step 4: Check file permissions**
+```bash
+ls -la CLAUDE.md
+# Must be readable by the current user (mode 644 or similar)
+```
+
+**Step 5: Check if the rule is actually in the file**
+```bash
+grep -n "your-rule-text" CLAUDE.md
+# If not found: the file is loaded but the rule isn't in it
+# If found: note the line number
+```
+
+**Step 6: Check if the rule is inside an HTML comment (stripped)**
+```bash
+# HTML comments are stripped — ensure your rule is NOT inside <!-- -->
+grep -B5 -A5 "your-rule-text" CLAUDE.md
+```
+
+---
+
+### Symptom: Claude Seems to Forget Things After /compact
+
+This is expected behavior for certain memory types. Use the following to identify what was lost and recover it:
+
+```
+After /compact, which file held the information?
+│
+├── User CLAUDE.md → Does NOT survive compact.
+│   Fix: Move the critical info to project CLAUDE.md
+│        or re-add it to MEMORY.md
+│
+├── CLAUDE.local.md → Does NOT survive compact.
+│   Fix: Move to project CLAUDE.md if team-relevant,
+│        or re-establish via /memory
+│
+├── Subtree CLAUDE.md → NOT re-loaded automatically.
+│   Fix: Touch a file in that directory to trigger reload,
+│        OR import that subtree CLAUDE.md from root CLAUDE.md
+│
+└── Mid-conversation fact → Gone (not in any file).
+    Fix: Say the fact to Claude again, then:
+    > Remember this for the rest of the session:
+      [your fact]
+```
+
+---
+
+### Symptom: MEMORY.md Is Not Being Updated
+
+**Check if auto-memory is enabled:**
+```
+> /memory
+# Look for "Auto-Memory: ENABLED" or "DISABLED"
+```
+
+**Check if it's disabled via environment:**
+```bash
+echo $CLAUDE_CODE_DISABLE_AUTO_MEMORY
+# If "1" or "true": auto-memory is disabled for all sessions
+```
+
+**Check if it's disabled via settings:**
+```bash
+cat ~/.claude/settings.json | grep autoMemory
+cat .claude/settings.json | grep autoMemory
+# If "false": auto-memory is disabled
+```
+
+**Re-enable:**
+```
+> /memory enable
+# Or: unset CLAUDE_CODE_DISABLE_AUTO_MEMORY
+```
+
+---
+
+### Symptom: Context Window Filling Too Fast
+
+Diagnose with `/context` to see which memory file is the biggest consumer:
+
+```
+> /context
+
+ Section                          Tokens   % Window
+─────────────────────────────────────────────────────
+ System / CLAUDE.md                14,821    7.4 %   ← large! investigate
+ Rules (7 files)                    2,108    1.1 %
+ Auto-Memory                          312    0.2 %
+ ...
+```
+
+**If CLAUDE.md is large:**
+```bash
+wc -l CLAUDE.md
+# Large? Split into @imports for domain-specific subtrees
+
+# Which section is largest?
+grep -c "^" CLAUDE.md  # total lines
+# Use @imports to move large sections to subtree files
+```
+
+**If many rules files are loading:**
+```bash
+ls -la .claude/rules/
+# Consider combining related rules files
+# Or use claudeMdExcludes to skip rarely-used rules
+```
+
+**If conversation history is ballooning:**
+```
+> /compact focus on [what matters] ignore [what doesn't]
+```
+
+---
+
+### Symptom: Subtree CLAUDE.md Rules Not Applying
+
+Subtree CLAUDE.md files are loaded lazily. If Claude is working in a directory but the subtree rules aren't active:
+
+```
+# Option 1: Manually trigger the load
+> Read src/payments/service.ts
+> /memory
+# Should now show src/payments/CLAUDE.md in the list
+
+# Option 2: Import from root to make it eager (always loaded)
+# In ./CLAUDE.md:
+@src/payments/CLAUDE.md
+
+# Option 3: Check if it's excluded
+cat .claude/settings.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('claudeMdExcludes',[]))"
+```
+
+---
+
+### Full Memory Debug Workflow
+
+```
+1. /memory                    → See what's loaded and sizes
+2. /context                   → See token consumption by section
+3. /debug                     → See session state, recent tool calls
+4. Check file permissions     → ls -la CLAUDE.md .claude/CLAUDE.local.md
+5. Check excludes             → grep claudeMdExcludes .claude/settings.json
+6. For subtrees: touch a file → Read src/target/file.ts; then /memory
+7. For compact issues:        → Check which file type held the info
+8. For MEMORY.md issues:      → /memory; check enabled/disabled status
+```
+
+---
+
+## 23. Enterprise Memory Patterns
+
+Large organizations face specific memory architecture challenges. This section covers patterns that work at scale.
+
+### Pattern: Layered Policy with Delegation
+
+```
+                 [IT-controlled layer]
+                 /etc/claude-code/CLAUDE.md
+                 - Security mandates
+                 - Compliance requirements
+                 - Data handling rules
+                        ↓
+                 [Department layer]
+                 /shared/dept/engineering/CLAUDE.md
+                 (loaded via CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD)
+                 - Engineering standards
+                 - Internal tools and libraries
+                 - Department-specific workflows
+                        ↓
+                 [Team layer]
+                 ./CLAUDE.md (project git)
+                 - Service-specific conventions
+                 - Team processes
+                        ↓
+                 [Individual layer]
+                 ~/.claude/CLAUDE.md
+                 - Personal preferences
+                 CLAUDE.local.md
+                 - Machine-local overrides
+```
+
+**Deployment configuration:**
+
+```bash
+# In corporate .bashrc / .zshrc deployed via MDM:
+export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD="/shared/dept/engineering:/shared/corp/ai-policy"
+```
+
+Each developer automatically gets the department and corporate standards loaded, in addition to their personal preferences and team project files.
+
+---
+
+### Pattern: Compliance-Tagged Memory
+
+Organizations subject to regulatory requirements (SOX, HIPAA, PCI-DSS) need audit trails in their memory files without paying token overhead:
+
+```markdown
+<!--
+  ENTERPRISE CLAUDE.md
+  Classification: INTERNAL-POLICY
+  
+  Compliance requirements documented here:
+  SOX: Section 404 — internal controls over financial reporting
+  PCI-DSS: Requirement 6.2.4 — software engineering techniques
+  HIPAA: Section 164.312 — technical safeguards
+  
+  Review cycle: Quarterly
+  Last reviewed: 2026-03-15
+  Next review: 2026-06-15
+  Reviewers: CISO, General Counsel, VP Engineering
+  Approval ticket: COMP-2241
+  
+  Distribution: All Claude Code users on managed machines
+  Enforced via: Jamf Pro policy ID 441 (macOS), Intune policy (Windows)
+-->
+
+# Enterprise AI Policy — Claude Code
+
+## Data Classification Rules
+Never output RESTRICTED or CONFIDENTIAL data in response text.
+Use placeholder values when demonstrating with sensitive schemas.
+
+## Code Generation Mandates
+- All AI-assisted code must be disclosed in commit messages: prefix [AI-ASSISTED]
+- Security-sensitive code (auth, payments, crypto) requires human review
+  before merging regardless of test coverage
+
+## Approved External Services
+Claude Code may interact with: GitHub, npm registry, PyPI, Go module proxy.
+All other external services require pre-approval via the API allowlist.
+```
+
+All the compliance metadata is in HTML comments — zero token cost. Claude sees only the policy rules.
+
+---
+
+### Pattern: Multi-Tenant Memory Isolation
+
+In consulting or agency contexts where one machine serves multiple clients:
+
+```bash
+# ~/.bashrc — configure per-client
+
+# When working on Acme Corp project:
+export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD="$HOME/clients/acme/claude-policies"
+
+# When working on Globex Corp project:
+# export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD="$HOME/clients/globex/claude-policies"
+```
+
+Or use project-level exclusion to prevent personal preferences from bleeding:
+
+```json
+// client-project/.claude/settings.json
+{
+  "claudeMdExcludes": [
+    "~/.claude/CLAUDE.md"
+  ]
+}
+```
+
+This prevents your personal preferences (language choices, output style preferences) from being applied to client work.
+
+---
+
+### Pattern: Memory Rotation for Active Projects
+
+For high-velocity projects with rapidly-changing context:
+
+```bash
+# Weekly rotation script (add to crontab)
+#!/usr/bin/env bash
+# rotate-memory.sh — archive old MEMORY.md, start fresh
+
+PROJECT_HASH=$(cd /home/alice/projects/widget-service && \
+  cat ~/.claude/projects/*/memory/MEMORY.md 2>/dev/null | head -1)
+
+MEMORY_DIR=~/.claude/projects/${PROJECT_HASH}/memory
+ARCHIVE_DIR=~/.claude/projects/${PROJECT_HASH}/memory/archive
+
+mkdir -p "$ARCHIVE_DIR"
+DATE=$(date +%Y-%m-%d)
+
+# Archive current memory
+cp "$MEMORY_DIR/MEMORY.md" "$ARCHIVE_DIR/MEMORY-${DATE}.md"
+
+# Keep only the "permanent" sections (first 50 lines by convention)
+head -50 "$MEMORY_DIR/MEMORY.md" > /tmp/memory-permanent.md
+cat /tmp/memory-permanent.md > "$MEMORY_DIR/MEMORY.md"
+echo "" >> "$MEMORY_DIR/MEMORY.md"
+echo "<!-- Archived on $DATE — see archive/ for full history -->" >> "$MEMORY_DIR/MEMORY.md"
+```
+
+---
+
+## 24. Auto-Memory vs. Manual Memory — Comparison
+
+Understanding when to use auto-memory (MEMORY.md managed by Claude) versus manual memory (CLAUDE.md files you write) is key to an efficient workflow.
+
+### Decision Matrix
+
+```
+What kind of information is it?
+│
+├── Permanent team convention?
+│   ("Use pnpm, never npm")
+│   └── Project CLAUDE.md  ← team-owned, in git, survives compact
+│
+├── Permanent personal preference?
+│   ("Explain WHY before showing code")
+│   └── User CLAUDE.md  ← personal, cross-project
+│
+├── Discovered during this session / this week?
+│   ("The staging DB was reset — need to reseed")
+│   └── MEMORY.md (auto-memory)  ← Claude manages it
+│
+├── Active work context?
+│   ("Working on WGT-1892, billing refactor")
+│   └── MEMORY.md (auto-memory)  ← temporal, Claude updates it
+│
+├── Machine-local environment fact?
+│   ("Local DB is on port 5433")
+│   └── MEMORY.md (auto-memory)  OR  CLAUDE.local.md
+│       MEMORY.md: Claude updates it automatically
+│       CLAUDE.local.md: You write it explicitly once
+│
+└── Current session temporary preference?
+    ("For this session, be very verbose")
+    └── MEMORY.md (auto-memory)  ← just tell Claude
+```
+
+### How They Differ in Practice
+
+| Dimension | CLAUDE.md (manual) | MEMORY.md (auto) |
+|-----------|-------------------|------------------|
+| Who writes it | You (or team) | Claude (with your guidance) |
+| When written | Before the session | During the session |
+| In git | Yes (project) / No (user/local) | No — machine-local |
+| Token cost | Fixed per-turn | Fixed per-turn, capped at 200 lines |
+| Survives /compact | Yes (project CLAUDE.md) | Partial (200-line window) |
+| Update friction | Medium (open file, edit, save) | Low (just tell Claude) |
+| Staleness risk | Medium (needs manual maintenance) | Low (Claude prunes) |
+| Cross-machine | Yes (via git) | No (machine-local path) |
+| Best for | Stable conventions, team standards | Ephemeral context, discoveries |
+
+### Auto-Memory Trigger Phrases
+
+These phrases reliably cause Claude to save to MEMORY.md:
+
+```
+> Remember that...          → saves to MEMORY.md
+> Note that...              → saves to MEMORY.md
+> Always use...             → saves as standing preference
+> From now on...            → saves as behavioral instruction
+> Don't forget that...      → saves to MEMORY.md
+> Save this for later...    → saves to MEMORY.md
+> Keep in mind that...      → often saves (context-dependent)
+> For this project...       → saves with project scope marker
+```
+
+Compare with phrases that do NOT save to MEMORY.md:
+```
+> I want you to...          → session instruction, not saved
+> Please...                 → session request, not saved
+> Can you...                → session request, not saved
+```
+
+### Auto-Memory for Teams via Shared Directory
+
+For small teams that want shared auto-memory (not in git, but on a network share):
+
+```json
+// .claude/settings.json
+{
+  "autoMemoryDirectory": "/mnt/team-memory/widget-service"
+}
+```
+
+All team members pointing to the same NFS/SMB mount share the same MEMORY.md. Useful for:
+- Shared pairing sessions
+- Remote teams on the same internal network
+- Short-lived project teams
+
+**Warning:** Concurrent writes are not protected by locking. Use this pattern only when team members take turns using Claude Code, not simultaneously.

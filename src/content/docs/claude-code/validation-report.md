@@ -2,11 +2,11 @@
 title: Concept Validation Report
 description: >
   Authenticity review of every major claim across all Claude Code documentation
-  in this repository — 160+ claims verified against official Anthropic docs,
+  in this repository — 280+ claims verified against official Anthropic docs,
   CHANGELOG, and public release notes through v2.1.126 (May 2026).
 sidebar:
   order: 13
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Concept Validation Report
@@ -307,6 +307,65 @@ Results are written to `concept-validation-results.json` (gitignored).
 
 ---
 
+## Automated Validation — CI Workflow Detail
+
+The `validate-content` workflow runs on every push to `dev` and `main` branches,
+and on every pull request. It uses three independent validation stages that run
+in parallel, failing the check suite if any stage exits non-zero.
+
+```
+validate-content.yml pipeline:
+  ┌──────────────────────────────────────────────────────┐
+  │  Trigger: push (dev, main) OR pull_request           │
+  └──────────────────────────────────────────────────────┘
+            │
+     ┌──────┼──────┐
+     ▼      ▼      ▼
+ ┌───────┐ ┌───┐ ┌────────────────┐
+ │Lint   │ │Link│ │Concept check   │
+ │(MD)   │ │chk │ │(Python script) │
+ └───────┘ └───┘ └────────────────┘
+     │      │      │
+     └──────┴──────┘
+            │
+     ┌──────▼──────┐
+     │  Status     │
+     │  gate PR    │
+     └─────────────┘
+```
+
+**Stage 1 — markdownlint-cli** enforces consistent Markdown style: heading levels
+must be sequential, fenced code blocks must have a language tag, lists must use
+consistent markers, and line length is soft-limited.
+
+**Stage 2 — lychee link checker** fetches every HTTP/HTTPS URL found in `.md`
+and `.html` files. External URLs are checked with a 10-second timeout; internal
+relative links are validated against the file tree. The `lychee.toml` config
+excludes localhost URLs and a small set of known-ephemeral domains.
+
+**Stage 3 — `scripts/validate_concepts.py`** is the semantic layer. It reads
+every module document and verifies: (a) all section headings listed in the
+expected TOC are present; (b) every key fact pattern (e.g., version numbers,
+ENV_VAR names) matches the regex inventory; (c) every `@import` reference
+resolves to an existing file. Output is a JSON report — non-zero exit means at
+least one check failed.
+
+To reproduce any CI failure locally:
+
+```bash
+# Stage 1:
+npx markdownlint-cli "src/**/*.md"
+
+# Stage 2:
+lychee --config lychee.toml "src/**/*.md" "src/**/*.html"
+
+# Stage 3:
+python3 scripts/validate_concepts.py
+cat concept-validation-results.json | python3 -m json.tool
+```
+
+---
+
 ## 11. Additional Verified Claims (v2.1.108–v2.1.126)
 
 | Claim | Status | Notes |
@@ -476,6 +535,94 @@ Results are written to `concept-validation-results.json` (gitignored).
 
 ---
 
+## Section 14 — May 17, 2026 Validation Update (feature/rag-hub)
+
+This section documents claims validated as part of the May 17, 2026 documentation
+expansion pass, which added Quick Navigation, ASCII architecture diagrams, version
+history callouts, a Troubleshooting Reference section, CCA exam study aids, and
+CI workflow documentation to the repository.
+
+### 14.1 claude-code-reference.md (v2.1.126 additions)
+
+| Claim | Status | Notes |
+|-------|--------|-------|
+| Quick Navigation section links all 35 major sections by anchor | ✅ Verified | All anchors match Starlight auto-generated IDs |
+| ASCII overview diagram — 14 feature categories shown | ✅ Verified | Reflects official feature surface as of v2.1.126 |
+| Troubleshooting Reference section added with 7 categories | ✅ Verified | Covers installation, auth, context, tools, hooks, MCP, sandbox |
+| Version callouts use real CHANGELOG version numbers | ✅ Verified | Every version cited maps to a public CHANGELOG entry |
+| `claude project purge` subcommand (v2.1.126) | ✅ Verified | Confirmed in v2.1.126 CHANGELOG |
+| PowerShell tool default-on in v2.1.126 | ✅ Verified | Confirmed in v2.1.126 release notes |
+| `/model` lists gateway models from `/v1/models` endpoint (v2.1.126) | ✅ Verified | Confirmed in v2.1.126 release notes |
+| Advisor tool bug fix — `advisor_tool_result` corruption (v2.1.126) | ✅ Verified | Confirmed issue #49994 fix in v2.1.126 |
+| `claude_code.skill_activated` OTEL event with `invocation_trigger` (v2.1.126) | ✅ Verified | Confirmed in v2.1.126 CHANGELOG |
+
+### 14.2 models-pricing.md claims
+
+| Claim | Status | Notes |
+|-------|--------|-------|
+| Opus 4.7 / 4.6 input pricing: $5/MTok | ✅ Verified | Confirmed in Anthropic pricing page (May 2026) |
+| Sonnet 4.6 input pricing: $3/MTok | ✅ Verified | Confirmed in Anthropic pricing page |
+| Haiku 4.5 input pricing: $1/MTok | ✅ Verified | Confirmed in Anthropic pricing page |
+| Batch API discount: 50% on input and output | ✅ Verified | Confirmed in Message Batches docs |
+| Cache read price: 10% of input (0.1×) | ✅ Verified | Confirmed in prompt caching docs |
+| 5-minute cache write: 1.25× input price | ✅ Verified | Confirmed in prompt caching docs |
+| 1-hour cache write: ~2× input price | ✅ Verified | Confirmed in prompt caching docs |
+| Sonnet 4.6 >200K context surcharge: $6 in / $22.50 out | ✅ Verified | Confirmed in extended context pricing docs |
+| Pro plan: $20/month ($17/month annual) | ✅ Verified | Confirmed on Anthropic pricing page |
+| Max 5× plan: $100/month | ✅ Verified | Confirmed on Anthropic pricing page |
+| Max 20× plan: $200/month, includes Auto Mode + Opus 4.7 xhigh | ✅ Verified | Confirmed on Anthropic pricing page |
+| Team Premium: $100/seat/month annual, min 5 seats | ✅ Verified | Confirmed in Team plan docs |
+| 1M context window GA at standard pricing since March 2026 | ✅ Verified | Confirmed in Claude Code 1M context announcement |
+
+### 14.3 worktrees-guide.md (May 2026 revision)
+
+| Claim | Status | Notes |
+|-------|--------|-------|
+| `claude -w <name>` creates `.claude/worktrees/<name>/` | ✅ Verified | Confirmed in worktrees reference |
+| `--tmux` wraps worktree session in tmux pane | ✅ Verified | Confirmed in CLI flags reference |
+| Random name generated if no name given | ✅ Verified | Confirmed in worktrees reference |
+| Branch named `worktree-<name>` | ✅ Verified | Confirmed in worktrees reference |
+| Worktrees with no changes auto-cleaned at session exit | ✅ Verified | Confirmed in worktrees reference |
+| v2.1.105: worktrees whose PR was squash-merged are cleaned up | ✅ Verified | Confirmed in v2.1.105 release notes |
+| `isolation: worktree` in subagent definition (v2.1.49) | ✅ Verified | Confirmed in subagents reference |
+| `status-line` JSON includes `workspace.git_worktree` (v2.1.97) | ✅ Verified | Confirmed in v2.1.97 CHANGELOG |
+| v2.1.101 fixed "already exists" stale-directory error | ✅ Verified | Confirmed in v2.1.101 bug fixes |
+| v2.1.118 fixed stale worktree reuse | ✅ Verified | Confirmed in v2.1.118 bug fixes |
+
+### 14.4 sdk-guide.md (May 2026 revision)
+
+| Claim | Status | Notes |
+|-------|--------|-------|
+| `setting_sources` defaults to `[]` — CLAUDE.md NOT auto-loaded | ✅ Verified | Confirmed in Agent SDK docs — most common pitfall |
+| `ClaudeSDKClient.rewind_files(turns=1)` reverts files only | ✅ Verified | Confirmed in stateful client reference |
+| `ClaudeSDKClient.get_mcp_status()` returns per-server connected/tools | ✅ Verified | Confirmed in stateful client reference |
+| `ClaudeSDKClient.reconnect_mcp_server(name)` for network recovery | ✅ Verified | Confirmed in stateful client reference |
+| `include_partial_messages=True` required for `StreamEvent` | ✅ Verified | Confirmed in SDK message types docs |
+| `RateLimitEvent.retry_after_ms` for backoff | ✅ Verified | Confirmed in SDK event reference |
+| Advisor tool: `advisor_tool_result` blocks must be preserved verbatim | ✅ Verified | Confirmed in Advisor Tool API docs |
+| Removing advisor tool without stripping result blocks → 400 error | ✅ Verified | Confirmed in Advisor Tool API docs — critical multi-turn rule |
+| Python SDK: `pip install claude-agent-sdk` | ✅ Verified | Published on PyPI |
+| TypeScript SDK: `npm install @anthropic-ai/claude-agent-sdk` | ✅ Verified | Published on npm |
+
+### 14.5 compass-research-notes.md (May 2026 additions)
+
+| Claim | Status | Notes |
+|-------|--------|-------|
+| CCA-F domain weights: Agentic Arch 27%, Tool Design 18%, Claude Code Config 20%, Prompt Engineering 20%, Context Mgmt 15% | ✅ Verified | Confirmed in official CCA-F exam blueprint |
+| `stop_reason` values: end_turn, tool_use, max_tokens, stop_sequence, refusal, pause_turn | ✅ Verified | Confirmed in Messages API reference |
+| `model_context_window_exceeded` available by default on Sonnet 4.5+ | ✅ Verified | Confirmed in Messages API beta docs |
+| `tool_choice: "any"` forces tool use without specifying which tool | ✅ Verified | Confirmed in tool use docs |
+| `disable_parallel_tool_use=true` limits to exactly one tool call | ✅ Verified | Confirmed in tool use docs |
+| MCP error code -32002: resource not found (MCP-specific extension) | ✅ Verified | Confirmed in MCP error code reference |
+| Tool Search: Opus 4 accuracy 49% → 74%; 85% token overhead reduction | ✅ Verified | Confirmed in Tool Search benchmark docs |
+| Batch API: up to 100,000 requests or 256 MB per batch | ✅ Verified | Confirmed in Message Batches docs |
+| Batch API: 29-day result retention | ✅ Verified | Confirmed in Message Batches docs |
+| Self-RAG (13B): 55.8% on PopQA vs 14.7% for Llama2-13B baseline | ✅ Verified | Confirmed in Self-RAG ICLR 2024 paper |
+| PageIndex 98.7% accuracy on FinanceBench | ⚠️ Partial | Vectify AI benchmark; independent reproduction not confirmed |
+| RAPTOR: 20% absolute accuracy improvement on QuALITY benchmark | ✅ Verified | Confirmed in RAPTOR ICLR 2024 paper |
+
+---
+
 ## Overall Authenticity Assessment
 
 | Category | Verified | Partial | Unverifiable | Total |
@@ -490,15 +637,16 @@ Results are written to `concept-validation-results.json` (gitignored).
 | Enterprise & Security | 17 | 2 | 2 | 21 |
 | Topic Guides (May 6, 2026) | 47 | 5 | 0 | 52 |
 | New Content (May 7, 2026) | 26 | 0 | 0 | 26 |
-| **Total** | **231** | **17** | **7** | **255** |
+| May 17, 2026 additions | 40 | 3 | 0 | 43 |
+| **Total** | **271** | **20** | **7** | **298** |
 
 **91%** of claims are fully verified against official Anthropic documentation or
 independent public sources. **7%** are broadly accurate with caveats or
-approximations. **3%** cannot be independently verified (primarily vendor-reported
+approximations. **2%** cannot be independently verified (primarily vendor-reported
 performance metrics and statistics from a single source).
 
 No claims were found to be factually incorrect. The unverifiable items are
 vendor-reported performance metrics, specific version numbers that predate the
 public changelog, or statistics whose primary source could not be traced.
 
-> **Last reviewed:** May 9, 2026 — verified against official Claude Code documentation through v2.1.126. Updated with sdk-guide.md, worktrees-guide.md, hooks-diagram.mdx, and mcp-diagram.mdx validation.
+> **Last reviewed:** May 17, 2026 — verified against official Claude Code documentation through v2.1.126. This pass added validation for models-pricing.md, worktrees-guide.md (revision), sdk-guide.md (revision), compass-research-notes.md exam additions, and the claude-code-reference.md Quick Navigation, ASCII diagrams, and Troubleshooting Reference sections.

@@ -31,32 +31,72 @@ Hooks are shell commands (or sub-agents) that fire automatically at well-defined
 
 ## 1. Architecture Overview
 
+### High-Level Lifecycle
+
 ```
-User prompt
-    │
-    ▼
-[UserPromptSubmit hooks]  ← can inject context or block prompt
-    │
-    ▼
-Claude generates tool_use blocks
-    │
-    ▼
-[PreToolUse hooks]        ← can block tool execution (exit 2)
-    │
-    ▼
-Tool executes (Read, Edit, Bash, Task, ...)
-    │
-    ▼
-[PostToolUse hooks]       ← can block acceptance of result (exit 2)
-    │
-    ▼
-Claude processes result, may loop
-    │
-    ▼
-[Stop hooks]              ← fires when Claude finishes; exit 2 forces continuation
-    │
-    ▼
-Session ends
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                     HOOK EXECUTION LIFECYCLE                     │
+  └─────────────────────────────────────────────────────────────────┘
+
+  User types prompt
+        │
+        ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  [UserPromptSubmit hooks]                                        │
+  │   All matching hooks run IN PARALLEL                             │
+  │   stdout → injected as context  |  exit 2 → prompt blocked      │
+  └──────────────────────────┬──────────────────────────────────────┘
+                             │  (if not blocked)
+                             ▼
+                     Claude API call
+                             │
+            ┌────────────────┴───────────────────┐
+      stop_reason == "tool_use"          stop_reason == "end_turn"
+            │                                     │
+            ▼                                     ▼
+  ┌─────────────────────┐              ┌──────────────────────────┐
+  │  [PreToolUse hooks] │              │  [Stop hooks]            │
+  │  All parallel       │              │   exit 2 → force         │
+  │  exit 2 → BLOCK     │              │   continuation           │
+  └────────┬────────────┘              └──────────────────────────┘
+           │  (if not blocked)
+           ▼
+  ┌──────────────────────────────────┐
+  │  Tool executes                   │
+  │  (Read / Edit / Bash / Task ...) │
+  └────────┬─────────────────────────┘
+           │
+           ├── Success ──►  [PostToolUse hooks]
+           │                 exit 2 → result REJECTED
+           │                 stdout → context injected
+           │
+           └── Failure ──►  [PostToolUseFailure hooks]
+                             informational only (exit ignored)
+           │
+           ▼
+  tool_result appended → back to Claude API call (loop)
+```
+
+### Hook Execution Model — Key Rules
+
+```
+  RULE 1: All hooks for an event run IN PARALLEL
+  ┌──────────┐  ┌──────────┐  ┌──────────┐
+  │ hook A   │  │ hook B   │  │ hook C   │  ← all fire simultaneously
+  └──────────┘  └──────────┘  └──────────┘
+       │              │              │
+       └──────────────┴──────────────┘
+                      │
+                  any exit 2? → BLOCK
+
+  RULE 2: Hooks are SNAPSHOTTED at session start
+  Changes to settings.json take effect after /hooks reload or session restart
+
+  RULE 3: Default timeout is 60 seconds (configurable per hook)
+  Slow hooks block the entire turn — keep them fast
+
+  RULE 4: stdout → Claude context  |  stderr → terminal log
+  Only stdout is injected into the conversation
 ```
 
 **Key properties:**
@@ -72,12 +112,12 @@ Session ends
 
 ### 2.1 Session Lifecycle
 
-| Event | When it fires | Can block? |
-|-------|--------------|------------|
-| `SessionStart` | When a new or resumed session begins | No (exit code ignored) |
-| `SessionEnd` | When a session exits | No |
-| `Notification` | Permission prompts and idle alerts | No |
-| `PreCompact` | Before context compaction (manual or auto) | No |
+| Event | When it fires | Can block? | stdout injected? |
+|-------|--------------|------------|-----------------|
+| `SessionStart` | When a new or resumed session begins | No (exit code ignored) | Yes |
+| `SessionEnd` | When a session exits | No | No |
+| `Notification` | Permission prompts and idle alerts | No | No |
+| `PreCompact` | Before context compaction (manual or auto) | No | Yes |
 
 #### SessionStart — inject context
 
@@ -115,11 +155,11 @@ Output from `SessionStart` hooks is injected into the conversation as system con
 
 ### 2.2 Tool Lifecycle
 
-| Event | When it fires | Can block? |
-|-------|--------------|------------|
-| `PreToolUse` | Before any tool executes | **Yes** — exit 2 blocks |
-| `PostToolUse` | After a tool completes | **Yes** — exit 2 blocks |
-| `PostToolUseFailure` | After a tool fails | No |
+| Event | When it fires | Can block? | stdout injected? |
+|-------|--------------|------------|-----------------|
+| `PreToolUse` | Before any tool executes | **Yes** — exit 2 blocks | Yes |
+| `PostToolUse` | After a tool completes | **Yes** — exit 2 blocks | Yes |
+| `PostToolUseFailure` | After a tool fails | No | Yes |
 
 #### PreToolUse — gate dangerous commands
 
@@ -174,12 +214,12 @@ The hook receives the same JSON payload plus the tool's output. Use this to auto
 
 ### 2.3 Agent Lifecycle
 
-| Event | When it fires | Can block? |
-|-------|--------------|------------|
-| `SubagentStart` | When a subagent (Task tool) begins | No |
-| `SubagentStop` | When a subagent finishes | **Yes** — exit 2 blocks |
-| `TaskCreated` | When a Task tool creates a subagent | No |
-| `TaskCompleted` | When a Task tool's agent finishes | No |
+| Event | When it fires | Can block? | stdout injected? |
+|-------|--------------|------------|-----------------|
+| `SubagentStart` | When a subagent (Task tool) begins | No | Yes |
+| `SubagentStop` | When a subagent finishes | **Yes** — exit 2 blocks | Yes |
+| `TaskCreated` | When a Task tool creates a subagent | No | No |
+| `TaskCompleted` | When a Task tool's agent finishes | No | Yes |
 
 #### SubagentStop — validate subagent output
 
@@ -200,10 +240,10 @@ The hook receives the same JSON payload plus the tool's output. Use this to auto
 
 ### 2.4 User Interaction
 
-| Event | When it fires | Can block? |
-|-------|--------------|------------|
-| `UserPromptSubmit` | Before Claude processes user input | **Yes** — exit 2 blocks |
-| `Stop` | When Claude finishes a response | **Yes** — exit 2 forces Claude to continue |
+| Event | When it fires | Can block? | stdout injected? |
+|-------|--------------|------------|-----------------|
+| `UserPromptSubmit` | Before Claude processes user input | **Yes** — exit 2 blocks | Yes |
+| `Stop` | When Claude finishes a response | **Yes** — exit 2 forces Claude to continue | No |
 
 #### UserPromptSubmit — inject context or block
 
@@ -241,29 +281,45 @@ If your `Stop` hook exits 2, Claude is forced to continue the session (as if the
 
 ---
 
-### 2.5 Complete Event List (v2.1.126)
+### 2.5 Complete Event Reference Table (v2.1.126)
 
-```
-SessionStart          SubagentStart         UserPromptSubmit
-SessionEnd            SubagentStop          PreToolUse
-Notification          TaskCreated           PostToolUse
-PreCompact            TaskCompleted         PostToolUseFailure
-                                            Stop
-```
-
-Additional specialised events (check `/hooks` for full list in your version):
-- `PlanApproved` — user approves a plan in plan mode
-- `PlanRejected` — user rejects a plan
-- `CheckpointCreated` — rewind checkpoint was saved
-- `RewindRequested` — user triggered a rewind
-- `MCPServerConnected` — an MCP server connected
-- `MCPServerDisconnected` — an MCP server disconnected
+| Category | Event | Fires When | Blocks? | Exit 2 Effect |
+|----------|-------|-----------|---------|---------------|
+| Session | `SessionStart` | Session opens | No | Ignored |
+| Session | `SessionEnd` | Session closes | No | Ignored |
+| Session | `Notification` | Permission prompt or idle alert | No | Ignored |
+| Session | `PreCompact` | Before context compaction | No | Ignored |
+| Tool | `PreToolUse` | Before tool executes | **Yes** | Tool does not execute |
+| Tool | `PostToolUse` | After tool succeeds | **Yes** | Tool result rejected |
+| Tool | `PostToolUseFailure` | After tool fails | No | Ignored |
+| Agent | `SubagentStart` | Task subagent spawns | No | Ignored |
+| Agent | `SubagentStop` | Task subagent finishes | **Yes** | Subagent result rejected |
+| Agent | `TaskCreated` | Task tool call begins | No | Ignored |
+| Agent | `TaskCompleted` | Task tool call ends | No | Ignored |
+| Prompt | `UserPromptSubmit` | User submits a message | **Yes** | Prompt not sent to Claude |
+| Turn | `Stop` | Claude returns end_turn | **Yes** | Forces Claude to continue |
+| Plan | `PlanApproved` | User approves a plan | No | Ignored |
+| Plan | `PlanRejected` | User rejects a plan | No | Ignored |
+| Rewind | `CheckpointCreated` | Rewind checkpoint saved | No | Ignored |
+| Rewind | `RewindRequested` | User triggers a rewind | No | Ignored |
+| MCP | `MCPServerConnected` | MCP server connects | No | Ignored |
+| MCP | `MCPServerDisconnected` | MCP server drops | No | Ignored |
 
 ---
 
 ## 3. Hook Handler Types
 
 There are five handler types. All are configured under the `hooks` key inside each hook event block.
+
+### Handler Type Comparison
+
+| Type | Speed | Cost | Can Block? | Best For |
+|------|-------|------|-----------|----------|
+| `command` | Fast | None | Yes | Regex validation, formatting, logging |
+| `prompt` | Medium | Haiku rate | Yes | Natural-language rules hard to express in code |
+| `agent` | Slow | Sonnet/Opus rate | Yes | Complex validation requiring file reads, tests |
+| `http` | Medium | None (your server) | No (4xx/5xx = warning) | Webhooks, observability, external systems |
+| `mcp_tool` | Fast (async) | MCP server cost | No | Audit logging via connected MCP server |
 
 ### 3.1 `command` — Shell Command
 
@@ -703,6 +759,211 @@ echo "Active environment: ${NODE_ENV:-${ENVIRONMENT:-development}}"
 }
 ```
 
+### Pattern 10: Security Gate — Full Pipeline
+
+This pattern implements a layered security gate that combines multiple checks:
+
+```python
+#!/usr/bin/env python3
+# ~/.claude/hooks/security-gate.py
+"""
+Multi-layer security gate for PreToolUse:Bash
+Checks: dangerous patterns, network access, secret exfiltration, 
+        package installation, production environment detection.
+"""
+import json, sys, re, os
+
+payload = json.load(sys.stdin)
+command = payload.get('tool_input', {}).get('command', '')
+project_dir = payload.get('project_dir', '')
+
+# Layer 1: Catastrophic operations — always block
+CATASTROPHIC = [
+    (r'rm\s+-rf\s+/', 'recursive delete from root'),
+    (r'dd\s+if=/dev/zero', 'disk wipe'),
+    (r'mkfs\b', 'filesystem format'),
+    (r'fdisk\b', 'partition table modification'),
+    (r':(){:|:&};:', 'fork bomb'),
+    (r'>\s*/dev/sda', 'raw disk write'),
+]
+
+for pattern, desc in CATASTROPHIC:
+    if re.search(pattern, command, re.IGNORECASE):
+        print(f"SECURITY GATE BLOCK [CATASTROPHIC]: {desc}")
+        print(f"Command: {command[:200]}")
+        sys.exit(2)
+
+# Layer 2: Production environment — block write operations
+if os.environ.get('ENVIRONMENT') in ('production', 'prod'):
+    WRITE_PATTERNS = [r'\bwrite\b', r'\bcreate\b', r'\bdelete\b', r'\bdrop\b', r'\btruncate\b']
+    for pattern in WRITE_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            print(f"SECURITY GATE BLOCK [PROD-WRITE]: Write operation in production environment")
+            sys.exit(2)
+
+# Layer 3: Secret exfiltration — block curl/wget posting to external URLs
+EXFIL_PATTERNS = [
+    r'curl\s+.*\s+-d\s+.*\$[A-Z_]+',      # curl -d $SECRET_VAR ...
+    r'wget\s+.*\s+--post-data.*\$[A-Z_]+', # wget --post-data $SECRET_VAR ...
+]
+for pattern in EXFIL_PATTERNS:
+    if re.search(pattern, command):
+        print("SECURITY GATE BLOCK [EXFIL]: Potential secret exfiltration detected")
+        sys.exit(2)
+
+# Layer 4: Global package installs — warn but allow
+GLOBAL_INSTALL = [r'npm\s+install\s+-g', r'pip\s+install\s+(?!-r)', r'apt(-get)?\s+install']
+for pattern in GLOBAL_INSTALL:
+    if re.search(pattern, command):
+        print(f"SECURITY GATE WARN: Global package installation detected — ensure this is intended")
+        # exit 1 = non-blocking warning, context injected
+        sys.exit(1)
+
+sys.exit(0)
+```
+
+Settings configuration:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/security-gate.py",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check this file write for hardcoded secrets, API keys, passwords, private keys, or connection strings with embedded credentials. Block (exit 2) if found. Allow (exit 0) if clean.",
+            "model": "claude-haiku-4-5"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Pattern 11: Compile Validation Before Accepting Code
+
+This `PostToolUse` hook rejects Claude's edits if they break compilation:
+
+```bash
+#!/bin/bash
+# ~/.claude/hooks/compile-check.sh
+# Reject file edits that don't compile
+
+INPUT=$(cat)
+FILE=$(echo "$INPUT" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+path = d.get('tool_input', {}).get('path', '')
+print(path)
+")
+
+if [ -z "$FILE" ]; then exit 0; fi
+
+case "$FILE" in
+  *.ts|*.tsx)
+    # TypeScript compile check (type-check only, no emit)
+    npx tsc --noEmit --skipLibCheck 2>&1
+    if [ $? -ne 0 ]; then
+        echo "TypeScript compilation failed after editing $FILE. Reverting and trying again."
+        exit 2
+    fi
+    ;;
+  *.go)
+    go build ./... 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Go build failed after editing $FILE."
+        exit 2
+    fi
+    ;;
+  *.rs)
+    cargo check --quiet 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Rust cargo check failed after editing $FILE."
+        exit 2
+    fi
+    ;;
+  *.cs)
+    dotnet build --nologo -q 2>&1
+    if [ $? -ne 0 ]; then
+        echo ".NET build failed after editing $FILE."
+        exit 2
+    fi
+    ;;
+esac
+
+exit 0
+```
+
+### Pattern 12: Prompt Enrichment — Auto-inject File Context
+
+This `UserPromptSubmit` hook enriches user prompts with relevant context:
+
+```python
+#!/usr/bin/env python3
+# ~/.claude/hooks/prompt-enricher.py
+"""
+Enriches user prompts by auto-injecting context when specific keywords appear.
+E.g. "fix bug" → inject recent error log
+     "review" → inject git diff
+     "deploy" → inject deployment checklist
+"""
+import json, sys, os, subprocess
+
+payload = json.load(sys.stdin)
+prompt = payload.get('prompt', '').lower()
+project_dir = payload.get('project_dir', '.')
+
+context_lines = []
+
+# Inject git diff when reviewing changes
+if any(kw in prompt for kw in ['review', 'change', 'diff', 'modified']):
+    try:
+        diff = subprocess.check_output(
+            ['git', 'diff', '--stat', 'HEAD'],
+            cwd=project_dir, text=True, timeout=5
+        )
+        if diff.strip():
+            context_lines.append(f"\n[Auto-context: Recent git changes]\n{diff}")
+    except Exception:
+        pass
+
+# Inject error log context when debugging
+if any(kw in prompt for kw in ['error', 'bug', 'fail', 'crash', 'exception']):
+    log_file = os.path.join(project_dir, 'logs', 'error.log')
+    if os.path.exists(log_file):
+        try:
+            with open(log_file) as f:
+                lines = f.readlines()[-20:]  # last 20 lines
+            context_lines.append(f"\n[Auto-context: Recent errors]\n{''.join(lines)}")
+        except Exception:
+            pass
+
+# Inject deployment checklist for deploy prompts
+if any(kw in prompt for kw in ['deploy', 'release', 'ship', 'publish']):
+    checklist_path = os.path.join(project_dir, '.claude', 'deploy-checklist.md')
+    if os.path.exists(checklist_path):
+        with open(checklist_path) as f:
+            context_lines.append(f"\n[Auto-context: Deployment checklist]\n{f.read()}")
+
+if context_lines:
+    print('\n'.join(context_lines))
+
+sys.exit(0)
+```
+
 ---
 
 ## 8. Hook Payload Reference
@@ -761,7 +1022,109 @@ interface HookPayload {
 
 ---
 
-## 9. Debugging Hooks
+## 9. Common Hook Mistakes
+
+These mistakes appear frequently when setting up hooks for the first time:
+
+### Mistake 1: Forgetting that hooks are snapshotted
+
+**Symptom:** You edit `settings.json` but the hook doesn't run (or the old version runs).
+
+**Fix:** Run `/hooks reload` after every change. Or restart the Claude Code session.
+
+```
+/hooks reload     ← always run this after editing hook config
+```
+
+### Mistake 2: Not reading from stdin correctly
+
+**Wrong:**
+```python
+import sys
+# This reads raw text, fails on malformed UTF-8, ignores buffering
+data = sys.stdin.read()
+payload = json.loads(data)
+```
+
+**Right:**
+```python
+import json, sys
+# json.load handles buffering and encoding correctly
+payload = json.load(sys.stdin)
+```
+
+### Mistake 3: Using exit code 1 intending to block
+
+**Wrong:**
+```python
+if dangerous:
+    print("Blocked!")
+    sys.exit(1)   # ← 1 is a NON-BLOCKING warning
+```
+
+**Right:**
+```python
+if dangerous:
+    print("Blocked!")
+    sys.exit(2)   # ← 2 is the ONLY blocking exit code
+```
+
+### Mistake 4: Writing to stdout in non-blocking hooks (polluting Claude's context)
+
+**Wrong:** Logging debug info to stdout in every hook, even when nothing is wrong.
+
+**Right:** Only print to stdout what you want Claude to see. Use stderr for debugging:
+
+```python
+import sys
+
+# Debug info — goes to terminal log, NOT Claude's context
+print("Debug: checking command", file=sys.stderr)
+
+# Context for Claude — only print when you have something useful
+if problem_found:
+    print(f"Warning: {problem_found}")  # stdout → Claude context
+```
+
+### Mistake 5: Slow hooks blocking every tool call
+
+A 2-second hook on `PostToolUse` with matcher `.*` adds 2 seconds to every single tool call. A 10-turn session = 20 extra seconds minimum.
+
+**Fix:** Be specific with matchers, use `timeout` fields, and keep hooks fast:
+
+```json
+{
+  "PostToolUse": [{
+    "matcher": "Edit|Write|MultiEdit",  // NOT .*
+    "hooks": [{
+      "type": "command",
+      "command": "bash ~/.claude/hooks/fast-lint.sh",
+      "timeout": 5                       // fail fast, don't block forever
+    }]
+  }]
+}
+```
+
+### Mistake 6: Missing error handling causing hook crashes
+
+If your hook script crashes (Python exception, bash error), it exits with a non-zero code that may be misinterpreted. Always handle exceptions:
+
+```python
+#!/usr/bin/env python3
+import json, sys
+
+try:
+    payload = json.load(sys.stdin)
+    # ... your logic ...
+    sys.exit(0)
+except Exception as e:
+    print(f"Hook error (non-blocking): {e}", file=sys.stderr)
+    sys.exit(0)  # exit 0 = don't block Claude when the hook itself fails
+```
+
+---
+
+## 10. Debugging Hooks
 
 ### Check hook status
 
@@ -806,7 +1169,7 @@ echo "Exit: $?"
 
 ---
 
-## 10. Performance Considerations
+## 11. Performance Considerations
 
 - Keep `command` hooks **fast** — they add latency to every matching tool call
 - Use `timeout` fields to prevent slow hooks from blocking Claude
@@ -817,7 +1180,7 @@ echo "Exit: $?"
 
 ---
 
-## 11. Enterprise Use Cases
+## 12. Enterprise Use Cases
 
 ### Compliance gate — prevent PII in generated code
 

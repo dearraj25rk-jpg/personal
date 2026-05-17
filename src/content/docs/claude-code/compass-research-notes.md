@@ -10,6 +10,378 @@ sidebar:
 
 ---
 
+## CCA-F Exam Study Overview
+
+### Domain Map — 5 Domains, 100% of the Exam
+
+```
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │            CLAUDE CERTIFIED ARCHITECT — FOUNDATIONS (CCA-F)        │
+  │                         DOMAIN MAP                                  │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  D1: AGENTIC ARCHITECTURE & ORCHESTRATION        (27% — highest)  │
+  │                                                                   │
+  │  • Agentic loop & stop_reason routing                            │
+  │  • Multi-agent coordinator-subagent patterns                     │
+  │  • Hub-and-spoke / orchestrator-worker topology                  │
+  │  • Agent SDK hooks (PreToolUse, PostToolUse, Stop, SessionStart) │
+  │  • Session state, resumption, forking                            │
+  │  • Task decomposition: fixed pipelines vs. adaptive              │
+  └──────────────────────────────────────────────────────────────────┘
+             │                              │
+             │  cross-domain connections    │
+             ▼                              ▼
+  ┌─────────────────────────┐  ┌────────────────────────────────────┐
+  │  D2: TOOL DESIGN & MCP  │  │  D3: CLAUDE CODE CONFIGURATION     │
+  │        (18%)            │  │            (20%)                   │
+  │                         │  │                                    │
+  │  • Tool descriptions    │  │  • CLAUDE.md hierarchy (6 levels) │
+  │  • isError flag vs.     │  │  • Skills vs. commands             │
+  │    protocol errors      │  │  • Path-scoped rules               │
+  │  • tool_choice options  │  │  • Plan mode vs. direct exec       │
+  │  • Tool count & search  │  │  • CI/CD: -p, --output-format      │
+  │  • MCP: 3 transports    │  │  • Hooks in configuration context  │
+  │  • MCP: 4 config scopes │  │                                    │
+  └─────────────────────────┘  └────────────────────────────────────┘
+             │                              │
+             ▼                              ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  D4: PROMPT ENGINEERING & STRUCTURED OUTPUT      (20%)           │
+  │                                                                   │
+  │  • Explicit criteria vs. vague instructions                      │
+  │  • Few-shot prompting: 3-5 examples in <example> tags            │
+  │  • Structured outputs: syntax guaranteed, semantics NOT          │
+  │  • Retry loops: format errors yes, missing info NO               │
+  │  • Message Batches API: 50% discount, 24h window                 │
+  │  • Independent review instances vs. self-review                  │
+  └──────────────────────────────────────────────────────────────────┘
+             │
+             ▼
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  D5: CONTEXT MANAGEMENT & RELIABILITY            (15% — lowest)  │
+  │                                                                   │
+  │  • Progressive summarization risks                               │
+  │  • Escalation triggers: 3 explicit types, NOT sentiment-based    │
+  │  • Error propagation: structured context, not silent suppression │
+  │  • Large codebase: scratchpad files, Explore subagent            │
+  │  • Field-level confidence scoring & calibration                  │
+  │  • Source attribution: claim-source mappings, citations API      │
+  └──────────────────────────────────────────────────────────────────┘
+
+  Cross-Domain Connections:
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  Hooks:     D1 (SDK hooks) ←→ D3 (hooks in config)              │
+  │  Subagents: D1 (coordinator pattern) ←→ D5 (isolation for RAG)  │
+  │  Tools:     D2 (design) ←→ D3 (built-in tools in Claude Code)   │
+  │  Errors:    D2 (isError flag) ←→ D5 (error propagation)         │
+  │  Structure: D4 (structured output) ←→ D5 (confidence scoring)   │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Domain Summary Tables
+
+#### Domain 1 — Agentic Architecture (27%)
+
+| Task | Core Concept | Key Distinction / Trap |
+|------|-------------|------------------------|
+| 1.1 Stop reasons | Route on `stop_reason`, never on parsed text | 6 values: end_turn, tool_use, max_tokens, stop_sequence, refusal, pause_turn |
+| 1.2 Multi-agent patterns | Hub-and-spoke; subagents get **fresh** context | Subagents do NOT inherit parent conversation history |
+| 1.3 Subagent invocation | `allowedTools` must include "Agent" for coordinator | Never include "Agent" in subagent's own tools |
+| 1.4 Hooks vs. prompts | Hooks = **deterministic**; prompts = **probabilistic** | Permission flow: PreToolUse → Deny → Allow → Ask → Mode |
+| 1.5 Hook API | PreToolUse can block/allow/ask/modify input | PostToolUse cannot undo — tool already ran |
+| 1.6 Task decomposition | Adaptive = dynamic; fixed pipeline = workflow | Per-file + cross-file integration pass pattern |
+| 1.7 Session management | Resume with `session_id`; fork with `fork_session=True` | Forking branches conversation, NOT filesystem |
+
+#### Domain 2 — Tool Design & MCP (18%)
+
+| Task | Core Concept | Key Distinction / Trap |
+|------|-------------|------------------------|
+| 2.1 Tool descriptions | At least 3-4 sentences; most important factor | Consolidate related ops (not split) — `github_pr` with actions |
+| 2.2 Error handling | `isError: true` in result = LLM sees error | Protocol-level `error` field = LLM does NOT see it |
+| 2.3 Tool count | >20 tools degrades accuracy; use Tool Search | Tool Search: 85% token overhead reduction |
+| 2.4 MCP config | 4 scopes: project / user / local / enterprise | `${VAR:-default}` expansion; unset + no default = error |
+| 2.5 Built-in tools | Glob→Grep→Read incremental understanding | Always prefer built-in over shell equivalents |
+
+#### Domain 3 — Claude Code Configuration (20%)
+
+| Task | Core Concept | Key Distinction / Trap |
+|------|-------------|------------------------|
+| 3.1 CLAUDE.md hierarchy | 6 levels; subdirectory files load ON DEMAND | `@import` max 5 hops; HTML comments hidden from auto-inject |
+| 3.2 Skills vs. commands | Skills auto-invokable by Claude; commands manual | SKILL.md frontmatter: `context: fork` = isolated subagent |
+| 3.3 Path-scoped rules | `.claude/rules/` with `paths:` frontmatter | Glob patterns starting `*` or `{` MUST be quoted in YAML |
+| 3.4 Plan mode | Read-only; enforced via system prompt, NOT hard block | `PreToolUse` hooks for deterministic plan enforcement |
+| 3.5 Iterative refinement | TDD gives external oracle outside context | "Interview pattern" — surface ambiguities before acting |
+| 3.6 CI/CD | `-p`/`--print` headless; `--output-format json` | `--json-schema` enforces structured output from CLI |
+
+#### Domain 4 — Prompt Engineering & Structured Output (20%)
+
+| Task | Core Concept | Key Distinction / Trap |
+|------|-------------|------------------------|
+| 4.1 Explicit criteria | Specific categorical rules with thresholds | "Be conservative" is an anti-pattern — unmeasurable |
+| 4.2 Few-shot prompting | 3-5 diverse examples in `<example>` XML tags | Claude 4.x pays close attention to example details |
+| 4.3 Structured outputs | Constrained decoding = syntax guaranteed | Semantic correctness is NOT guaranteed — "correct format, wrong answer" |
+| 4.4 Retry loops | Works for format errors; NOT for missing info | Retrying won't hallucinate absent information |
+| 4.5 Batch API | 50% cost savings; 24h window; 100K requests | No multi-turn tool calling in batch mode |
+| 4.6 Independent review | Fresh API call, no shared history | Self-review in-context = sycophancy risk (correct → incorrect) |
+
+#### Domain 5 — Context Management & Reliability (15%)
+
+| Task | Core Concept | Key Distinction / Trap |
+|------|-------------|------------------------|
+| 5.1 Context preservation | U-shaped attention — middle of context gets missed | Tool result clearing is safest form of compaction |
+| 5.2 Escalation triggers | 3 explicit types (request, policy gap, can't progress) | Sentiment-based escalation is unreliable |
+| 5.3 Error propagation | Structured error context with type + partial results | Silent suppression = anti-pattern; empty ≠ access failure |
+| 5.4 Large codebase | Scratchpad files survive context resets | Spawn Explore subagent for verbose discovery |
+| 5.5 Accuracy stratification | 97% overall can mask 85% on one doc type | Stratified random sampling by document type |
+| 5.6 Source attribution | Claim-source mappings with dates + excerpts | Conflicting sources: annotate both, don't average |
+
+---
+
+### High-Yield Facts — Per Domain
+
+**Domain 1 (27% — study hardest here)**
+
+- `stop_reason` values in order of frequency: `end_turn` > `tool_use` > `max_tokens` > `stop_sequence` > `refusal` > `pause_turn`
+- `model_context_window_exceeded` is a 7th stop reason, available by default on Sonnet 4.5+
+- Subagents NEVER inherit parent conversation history — they get a FRESH context window
+- Permission evaluation order (memorize this sequence): Deny Rules → Permission Mode → Allow Rules → Hooks → `canUseTool` callback → User Prompt
+- `forkSession: true` (TS) / `fork_session=True` (Python) — branches conversation history only; filesystem changes are real and shared
+- The `description` field of an `AgentDefinition` is what Claude reads to decide which agent to delegate to
+- Parallel subagent spawning: Claude can emit multiple Agent tool calls in ONE response; SDK executes them in parallel
+- `pause_turn` stop reason: server-side loop hit its iteration limit (default 10); send response back to continue
+
+**Domain 2 (18%)**
+
+- Protocol-level MCP error: in `error` field of JSON-RPC response → **NOT visible to LLM**
+- Tool execution error: `isError: true` in `result` object → **IS visible to LLM** for self-correction
+- The MCP spec states: "Errors that originate from the tool SHOULD be reported inside the result object with `isError: true`"
+- `tool_choice: "any"` = must use a tool, model chooses which; API prefills assistant message — no natural language precedes `tool_use` block
+- With extended thinking, only `tool_choice: "auto"` and `"none"` are supported
+- Tool Search: Opus 4 accuracy jumped 49% → 74%; token overhead dropped 85% (77K → 8.7K)
+- Auto-defer threshold: when MCP tool descriptions exceed ~10% of context window
+- MCP error codes: -32700 (parse), -32600 (invalid request), -32601 (method not found), -32602 (invalid params), -32603 (internal), -32002 (resource not found — MCP-specific)
+
+**Domain 3 (20%)**
+
+- CLAUDE.md load order: Managed enterprise → User global (`~/.claude/CLAUDE.md`) → Parent dirs walking up → Project root → Subdirs ON DEMAND
+- `@import` max 5 recursive hops; paths resolve relative to the containing CLAUDE.md
+- Rule files in `.claude/rules/`: without `paths:` = load at launch; with `paths:` = load when matching file is read
+- YAML quoting: glob patterns starting with `*` or `{` MUST be quoted — `"**/*.ts"` not `**/*.ts`
+- Skills vs. commands: SKILL.md `disable-model-invocation: false` = both user and Claude can invoke; `true` = user only
+- `context: fork` in SKILL.md = skill runs in isolated subagent with its own context window
+- CI/CD pattern: `--exclude-dynamic-system-prompt-sections` moves cwd/env/memory to user message → better cache hit rate across users
+- `--dangerously-skip-permissions` for isolated CI containers; `--permission-mode bypassPermissions` for controlled bypass
+
+**Domain 4 (20%)**
+
+- Structured output GUARANTEES: valid JSON, correct types, required fields — does NOT guarantee semantic correctness
+- Schema design: every optional parameter roughly DOUBLES grammar state space → mark as `required` where possible
+- Strict tool limits per request: 20 strict tools, 24 optional parameters total, 16 union-type parameters
+- Compiled grammar cache: 24 hours from last use; invalidates on schema structure change NOT name/description change
+- Batch API: results may arrive OUT OF ORDER — always use `custom_id` to match; `errored` / `canceled` / `expired` are not billed
+- `stop_reason: "refusal"` with structured output means safety override — output may not match schema
+- Few-shot: 3-5 examples standard; 20+ with prompt caching for complex tasks
+
+**Domain 5 (15%)**
+
+- "Lost in the middle" effect: U-shaped attention; place key findings at the BEGINNING of aggregated inputs
+- Three escalation triggers: (1) customer explicitly requests human, (2) policy exception/gap, (3) can't make progress after retries
+- Self-reported confidence scores are unreliable — use explicit criteria + few-shot examples for escalation decisions
+- Multiple customer matches: ask for ADDITIONAL IDENTIFIERS — never select by heuristics
+- Scratchpad file: `claude-progress.txt` is Anthropic's recommended name for crash recovery
+- Claim-source mapping structure: `claim`, `sources[]` with `source_id`, `source_name`, `relevant_quote`, `confidence`, `date`
+- Temporal data: always include publication/collection dates; 2020 vs. 2024 is temporal change, not contradiction
+
+---
+
+### Gap-Fill Reference — Key Facts for Self-Testing
+
+Fill in the blanks (answers follow each set in brackets):
+
+**Set 1 — Stop Reasons**
+
+1. The agentic loop should always route on `_______`, never on parsed text content. [`stop_reason`]
+2. When Claude needs tool execution, `stop_reason` equals `_______`. [`tool_use`]
+3. The stop reason `_______` means the server-side sampling loop hit its default iteration limit of 10. [`pause_turn`]
+4. `model_context_window_exceeded` is available by default on _______ and later. [Sonnet 4.5]
+5. After receiving `stop_reason: "tool_use"`, you append the assistant response then send results back as a _______ message with `tool_result` blocks. [`user`]
+
+**Set 2 — Subagents**
+
+6. Subagents _______ inherit the parent coordinator's conversation history. [do NOT]
+7. `allowedTools` must include `_______` for the coordinator to spawn subagents. [`"Agent"` (or `"Task"`)]
+8. The `_______` field of an `AgentDefinition` is what Claude reads to decide delegation. [`description`]
+9. `fork_session: true` branches the _______, not the filesystem. [conversation history]
+10. The built-in _______ subagent uses Haiku and is strictly read-only for codebase exploration. [Explore]
+
+**Set 3 — MCP Errors**
+
+11. Tool execution errors use `isError: true` in the _______ object. [`result`]
+12. Protocol-level errors use the standard JSON-RPC `_______` field. [`error`]
+13. The model _______ see protocol-level errors; it _______ see tool-result errors. [does NOT; DOES]
+14. MCP-specific error code for resource not found: `_______`. [`-32002`]
+
+**Set 4 — Structured Output**
+
+15. Structured outputs guarantee _______ compliance but NOT _______. [syntactic; semantic correctness]
+16. Max strict tools per request: _______. [20]
+17. Max optional parameters across all strict schemas in one request: _______. [24]
+18. Compiled grammars are cached for _______ from last use. [24 hours]
+19. `stop_reason: "refusal"` with structured output means _______ intervened. [safety classifiers]
+
+**Set 5 — Claude Code Configuration**
+
+20. Path-scoped rules in `.claude/rules/` load _______ (not at launch). [on demand, when matching files are read]
+21. Glob patterns starting with `*` or `{` in YAML frontmatter MUST be _______. [quoted]
+22. `@import` recursion max depth: _______ hops. [5]
+23. Plan mode is enforced via _______ instructions, not hard tool blocks. [system prompt]
+24. `context: fork` in SKILL.md gives the skill its own _______. [context window / isolated subagent]
+
+**Set 6 — Context & Reliability**
+
+25. The _______ effect means models pay more attention to the beginning and end of context than the middle. ["lost in the middle" / U-shaped attention]
+26. Three valid escalation triggers: _______, _______, _______. [explicit human request; policy exception/gap; inability to make progress]
+27. Sentiment-based escalation is unreliable because sentiment does not correlate with _______. [case complexity]
+28. Anthropic's recommended crash recovery file name: `_______`. [`claude-progress.txt`]
+
+---
+
+### Cross-Domain Concept Connections
+
+The exam often presents scenarios that span multiple domains. Understanding these
+connections is essential for the multi-step scenario questions.
+
+```
+HOOKS appear in D1 (SDK) and D3 (Claude Code config):
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  D1: PreToolUse hook in Agent SDK                                │
+  │      → Receives tool_name, tool_input, tool_use_id              │
+  │      → Can return permissionDecision: "allow"/"deny"/"ask"      │
+  │      → Can return updatedInput to modify tool arguments         │
+  │                                                                  │
+  │  D3: PreToolUse hook in settings.json                           │
+  │      → Configured under "hooks" key                             │
+  │      → "matcher" regex against tool name                        │
+  │      → handler types: command, prompt, agent, http, mcp_tool    │
+  │      → Exit 2 = blocking; stdout injected as context           │
+  │                                                                  │
+  │  KEY: Both provide DETERMINISTIC control (vs. prompt = prob.)   │
+  └──────────────────────────────────────────────────────────────────┘
+
+SUBAGENTS span D1 (patterns) and D5 (context isolation for reliability):
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  D1: Coordinator spawns subagents for parallel research          │
+  │      → Context isolation prevents parent history pollution      │
+  │      → Only FINAL result returns to parent                      │
+  │                                                                  │
+  │  D5: Subagent delegation for large codebase exploration         │
+  │      → Explore subagent absorbs verbose discovery               │
+  │      → Parent gets summarized findings; saves main context      │
+  │      → Subagent scratchpad files persist across context resets  │
+  └──────────────────────────────────────────────────────────────────┘
+
+TOOL ERRORS span D2 (MCP design) and D5 (error propagation):
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  D2: MCP isError: true in tool result → LLM sees error          │
+  │      → Model can self-correct and retry                         │
+  │                                                                  │
+  │  D5: Error propagation to coordinator                           │
+  │      → Subagent returns structured error context                │
+  │      → Includes: failure type, attempted query, partial results │
+  │      → Anti-pattern: silently returning empty results as success│
+  │      → Access failure ≠ valid empty result                      │
+  └──────────────────────────────────────────────────────────────────┘
+
+STRUCTURED OUTPUT spans D4 (design) and D5 (confidence scoring):
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  D4: Structured outputs guarantee JSON schema conformance        │
+  │      → Constrained decoding enforces syntax, NOT semantics      │
+  │      → Combine tool_choice: any + strict: true for max control  │
+  │                                                                  │
+  │  D5: Field-level confidence scoring                             │
+  │      → Returns value + confidence + reasoning per field         │
+  │      → Stratify by confidence bands for calibration            │
+  │      → Verbalized confidence outperforms raw token probabilities│
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Practice Question Format
+
+Use this format for self-testing. Cover the answer section before reading.
+
+**SCENARIO 1 (D1 — Stop Reason Routing)**
+
+A team built an agentic customer service bot. Their loop checks `response.content[0].text` for the string "DONE" to determine when Claude has finished. In testing, the agent occasionally hangs or makes unnecessary additional calls. What is the root cause and fix?
+
+*Root cause:* Parsing natural language for termination is an anti-pattern. If Claude's final response text doesn't contain "DONE" (formatting variation, language change, etc.), the loop never terminates. The agent may also produce `end_turn` with empty responses (2-3 tokens) that contain no text.
+
+*Fix:* Route exclusively on `stop_reason == "end_turn"`. Remove all text-content parsing for control flow. The loop should be:
+```python
+if response.stop_reason == "end_turn":
+    return [b.text for b in response.content if b.type == "text"]
+# stop_reason == "tool_use" → execute tools and continue
+```
+
+---
+
+**SCENARIO 2 (D2 — MCP Error Handling)**
+
+An MCP server returns a database error as a standard JSON-RPC error response with `"error": {"code": -32603, "message": "Database connection failed"}`. The model keeps trying to call the tool without any awareness that the database is down. Why?
+
+*Root cause:* Protocol-level JSON-RPC errors are captured by the MCP client and discarded — they are never injected into the LLM's context window. The model has no visibility into the failure.
+
+*Fix:* Return the error as a successful JSON-RPC response with `isError: true` in the result:
+```json
+{
+  "result": {
+    "content": [{"type": "text", "text": "Database connection failed: retry after 30s"}],
+    "isError": true
+  }
+}
+```
+This injects the error into the LLM's context so it can self-correct.
+
+---
+
+**SCENARIO 3 (D3 — Plan Mode Enforcement)**
+
+A team enables plan mode via `--permission-mode plan` but discovers that Claude still writes files when the user has a blanket `allow: ["Write(**)"]` in their project's `settings.json`. How do they guarantee plan mode blocks all writes?
+
+*Root cause:* Plan mode is enforced via system prompt instructions, not hard tool-level blocks. The allow rule in settings.json overrides the system prompt guidance.
+
+*Fix:* Use a `PreToolUse` hook that exits with code 2 to deterministically block Write/Edit/MultiEdit when in plan mode:
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Write|Edit|MultiEdit|Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "if [ \"$CLAUDE_PERMISSION_MODE\" = 'plan' ]; then echo 'Plan mode: writes blocked'; exit 2; fi"
+      }]
+    }]
+  }
+}
+```
+
+---
+
+**SCENARIO 4 (D4 — Structured Output Semantics)**
+
+A financial extraction pipeline uses structured outputs with a JSON schema to extract revenue figures from earnings reports. The schema validation always passes. However, business reviewers find that ~8% of extracted figures are wrong — sometimes the correct number from a different year or the wrong line item. The team concludes that structured outputs aren't working. Are they right?
+
+*Root cause:* No — structured outputs are working as designed. They guarantee SYNTACTIC conformance (valid JSON, correct field types, all required fields present). They do NOT guarantee SEMANTIC correctness. The model can produce a perfectly-formatted JSON object containing semantically incorrect data.
+
+*Fix:* Structured outputs are necessary but not sufficient for accurate extraction. Add: (a) field-level confidence scores with reasoning, (b) independent reviewer instances (separate API calls with no shared history), (c) explicit criteria specifying which table/section to extract from, and (d) few-shot examples showing correct extraction from similar documents.
+
+---
+
 # Part 1: Claude Certified Architect – Foundations: Complete Study Guide
 
 The Claude Certified Architect exam tests deep, applied knowledge across five domains spanning agentic architecture, tool design, Claude Code configuration, prompt engineering, and context management. This guide covers **every task statement** with exact syntax, code examples, and the precise distinctions the exam tests. The five domains are weighted: Agentic Architecture (27%), Tool Design & MCP (18%), Claude Code Configuration (20%), Prompt Engineering & Structured Output (20%), and Context Management & Reliability (15%).

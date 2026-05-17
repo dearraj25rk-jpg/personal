@@ -20,10 +20,140 @@ head:
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
-lastUpdated: 2026-05-06
+lastUpdated: 2026-05-17
 ---
 
 > **Document scope:** All officially documented Claude Code features from February 2025 through **v2.1.126 (May 6, 2026)**. Sources: `code.claude.com/docs`, `github.com/anthropics/claude-code` (CHANGELOG.md), official Anthropic news posts, and the Agent SDK repos. Every version number cited maps to a real entry in the public CHANGELOG. Where official documentation is sparse, that is explicitly flagged.
+
+---
+
+## Quick Navigation
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  CLAUDE CODE REFERENCE — QUICK NAVIGATION                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│  CORE FEATURES                                                          │
+│  §1  Overview & Product History    §2  Installation & Setup             │
+│  §3  Agentic Loop Architecture     §4  Built-In Tools Reference         │
+│  §5  Slash Commands Reference      §6  CLI Flags Reference              │
+│                                                                         │
+│  CONFIGURATION                                                          │
+│  §7  Configuration System          §8  CLAUDE.md — Project Memory       │
+│  §9  Skills                        §10 Hooks — Lifecycle Reference       │
+│  §11 MCP — Model Context Protocol  §12 Plugins System                   │
+│                                                                         │
+│  AGENTIC FEATURES                                                       │
+│  §13 Subagents                     §14 Agent Teams (Experimental)       │
+│  §15 Git Worktrees                 §16 Remote Control                   │
+│  §17 Cloud Sessions (Web)          §18 Sandbox & Security Model         │
+│                                                                         │
+│  MODELS & INFRASTRUCTURE                                                │
+│  §19 Permission System             §20 Models & Configuration           │
+│  §21 Context & Memory Management   §22 IDE Integrations                 │
+│  §23 GitHub & CI/CD Integration    §24 Prompt Caching Architecture      │
+│                                                                         │
+│  OBSERVABILITY & ADVANCED                                               │
+│  §25 Pricing & Plans               §26 OpenTelemetry & Observability    │
+│  §27 Voice Mode                    §28 Multi-Directory Workspaces        │
+│  §29 Keyboard Shortcuts            §30 Plan Mode                        │
+│                                                                         │
+│  REFERENCE                                                              │
+│  §31 Version Release Timeline      §32 Notable Bug Fixes                │
+│  §33 Best Practices                §34 Agent SDK                        │
+│  §35 Documentation Gaps            §36 Troubleshooting Reference (NEW)  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Feature Architecture Overview
+
+```
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │               CLAUDE CODE — ALL MAJOR FEATURE CATEGORIES            │
+  │                         v2.1.126 (May 2026)                         │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐
+  │   INSTALLATION   │  │  AUTHENTICATION  │  │   DEPLOYMENT SURFACE │
+  │                  │  │                  │  │                      │
+  │  Native binary   │  │  Browser OAuth   │  │  Terminal CLI        │
+  │  Homebrew cask   │  │  API key         │  │  VS Code extension   │
+  │  WinGet / apt    │  │  AWS Bedrock     │  │  JetBrains plugin    │
+  │  npm (legacy)    │  │  Google Vertex   │  │  Claude Desktop      │
+  │                  │  │  Azure Foundry   │  │  claude.ai/code (web)│
+  └──────────────────┘  └──────────────────┘  │  iOS / Android       │
+                                               │  Slack / Chrome      │
+                                               └──────────────────────┘
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                     CORE AGENTIC ENGINE                          │
+  │                                                                  │
+  │  3-Phase Loop: Gather Context → Plan & Act → Verify             │
+  │  Context: 200K default / 1M GA (Sonnet 4.6, Opus 4.6/4.7)       │
+  │  Compaction: /compact · auto-compact at ~92% capacity            │
+  │  Caching: 5-min TTL default / 1-hour for Pro/Max subscribers    │
+  └──────────────────────────────────────────────────────────────────┘
+         │              │              │              │
+         ▼              ▼              ▼              ▼
+  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────────┐
+  │  BUILT-IN  │ │  SLASH     │ │  CLI FLAGS │ │  CONFIGURATION │
+  │  TOOLS     │ │  COMMANDS  │ │            │ │  SYSTEM        │
+  │            │ │            │ │  --print   │ │                │
+  │  Read      │ │  /compact  │ │  --effort  │ │  settings.json │
+  │  Write     │ │  /plan     │ │  --max-    │ │  175+ env vars │
+  │  Edit      │ │  /review   │ │  budget    │ │  5-scope merge │
+  │  Bash      │ │  /model    │ │  --agent   │ │  Managed/MDM   │
+  │  Grep      │ │  60+ total │ │  60+ total │ │  enterprise    │
+  │  Glob      │ │            │ │            │ │                │
+  │  Task      │ └────────────┘ └────────────┘ └────────────────┘
+  │  WebFetch  │
+  │  + 20 more │
+  └────────────┘
+         │
+         ▼
+  ┌────────────────────────────────────────────────────────────────┐
+  │                  EXTENSIBILITY LAYER                            │
+  │                                                                │
+  │  CLAUDE.md    Skills      Hooks       MCP Servers   Plugins    │
+  │  (6-level     (auto-      (30+        (stdio/HTTP/  (bundles   │
+  │  hierarchy)   invoke)     events)     SSE deprc)    of above) │
+  └────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+  ┌────────────────────────────────────────────────────────────────┐
+  │                   AGENTIC WORKFLOWS                             │
+  │                                                                │
+  │  Subagents     Agent Teams    Git Worktrees    Remote Control  │
+  │  (Task tool,   (experimental, (parallel        (bridge local  │
+  │  isolated      peer-to-peer   branches,        CLI to web/    │
+  │  context)      filesystem     isolation:       mobile)        │
+  │                mailbox)       worktree)                       │
+  └────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+  ┌────────────────────────────────────────────────────────────────┐
+  │               MODELS & INTELLIGENCE                             │
+  │                                                                │
+  │  claude-opus-4-7    (1M ctx, xhigh effort)                    │
+  │  claude-opus-4-6    (1M ctx, flagship quality)                │
+  │  claude-sonnet-4-6  (1M ctx, default for Pro/Max)             │
+  │  claude-haiku-4-5   (200K, fast/cheap routing)                │
+  │                                                                │
+  │  Advisor Tool: Executor + Advisor pairing (experimental)      │
+  │  Effort levels: low / medium / high / xhigh / max / auto      │
+  └────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+  ┌────────────────────────────────────────────────────────────────┐
+  │              SECURITY & OBSERVABILITY                           │
+  │                                                                │
+  │  Sandbox: Apple Seatbelt (macOS) / bubblewrap (Linux)         │
+  │  Permissions: 5 modes · allow/deny/ask rules · enterprise mgd │
+  │  OpenTelemetry: spans, metrics, traces, full-body logging      │
+  │  CI/CD: GitHub Action v1 · GitLab · Bitbucket headless        │
+  └────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -345,6 +475,8 @@ A scheduled routine stores its configuration in `.claude/routines/` at the proje
 ---
 
 ## 4. Built-In Tools Reference
+
+> **Version History:** The core toolset (Read, Write, Edit, Bash, Grep, Glob) has been stable since v1.0. MultiEdit was added in v1.0.x. Task was renamed to Agent in v2.1.63 (Task still works as alias). Monitor added v2.1.97. Skill tool auto-discovery of built-in commands added v2.1.108. PowerShell tool graduated from opt-in to default in v2.1.126. EnterWorktree `path` parameter added v2.1.105.
 
 > **Prefer built-in tools over Bash equivalents.** Read, Grep, Glob, Write, and Edit are tracked in the audit log, integrate with hooks and permissions, work correctly inside the sandbox, and feed results to the model in token-efficient form. Use Bash only when no built-in tool fits.
 
@@ -919,6 +1051,8 @@ Since v2.1.108, the Skill tool can discover and invoke built-in slash commands l
 
 ## 10. Hooks — Lifecycle Reference
 
+> **Version History:** Hook system (command/prompt/agent handlers) launched v1.0. HTTP handler type added v2.1.63. `mcp_tool` handler type added v2.1.118. `PreToolUse` `defer` field added v2.1.89. `PostToolUse` `updatedToolOutput` for ALL tools added v2.1.121. `PostToolUseFailure` event received `error`, `is_interrupt`, `duration_ms` fields in v2.1.119. `PreCompact` blockable via JSON response added v2.1.105. Conditional `if` hooks (Week 17 research preview). `CLAUDE_TOOL_INPUT_FILE_PATH` env var added v2.1.89.
+
 Hooks are deterministic processes — shell commands, LLM prompts, subagents, MCP tools, or HTTP endpoints — that fire at lifecycle events. They are **guarantees**, not suggestions: if a hook returns a block decision, the action does not proceed.
 
 ### Hook Execution Lifecycle — Visual Flow
@@ -1111,6 +1245,8 @@ Input JSON on stdin includes: `session_id`, `cwd`, `tool_name`, `tool_input`, `t
 
 ## 11. MCP — Model Context Protocol
 
+> **Version History:** MCP support launched v1.0 with stdio transport. HTTP transport added as `sse` (now deprecated); `http` is the current standard (spec 1.1). OAuth RFC 9728 discovery added v2.1.85. `alwaysLoad: true` to bypass Tool Search deferral added v2.1.121. Server-pushed events via channels added v2.1.110. `ENABLE_TOOL_SEARCH=1` on Vertex AI for server-side tool search caching added v2.1.110. `ENABLE_CLAUDEAI_MCP_SERVERS=1` for claude.ai connectors in CLI/SDK added alongside `claude mcp serve` (v2.1.101). MCP transient error retry (3×) added v2.1.121. `resources/templates/list` deferred until first `@`-mention added v2.1.116.
+
 MCP is the open protocol for connecting Claude Code to external services — "USB-C for AI tools." It supports tools, resources, prompts, and (v2.1.110) server-pushed events via channels.
 
 ### 11.1 Managing Servers
@@ -1199,6 +1335,8 @@ v2.1.110: `ENABLE_TOOL_SEARCH=1` on Vertex AI to enable server-side tool search 
 ---
 
 ## 12. Plugins System
+
+> **Version History:** Plugin system launched as preview in v2.0.x; reached stable in v2.1.0. Plugin `bin/` directory on PATH added v2.1.91. Named themes in plugins added v2.1.118. `claude plugin tag` command with version validation added v2.1.118. `claude plugin prune` for orphaned deps added v2.1.121. `claude plugin validate` accepting `$schema`/`version`/`description` added v2.1.120. Multiple `CLAUDE_CODE_PLUGIN_SEED_DIR` paths (colon/semicolon separated) added v2.1.92. Plugin `monitors/` directory for background monitoring added v2.1.105. `blockedMarketplaces` enforcement across install/update/refresh added v2.1.117.
 
 Plugins are bundles of skills, agents, hooks, MCP servers, monitors, settings, themes, executables, and LSP configs — the atomic deployment unit for team and enterprise tooling.
 
@@ -1294,6 +1432,8 @@ You can also declare plugin entries **inline in `settings.json`** without a sepa
 
 ## 13. Subagents — Isolated Context Execution
 
+> **Version History:** Subagents (Task tool) available since v1.0. `isolation: worktree` for subagents GA in v2.1.49. `CLAUDE_CODE_FORK_SUBAGENT=1` (v2.1.117) enables forked subagents on external builds; non-interactive `-p`/SDK support added v2.1.121. Task tool renamed to "Agent" in v2.1.63 (Task alias preserved). Agent frontmatter fields `skills:`, `mcpServers:`, `hooks:` now ignored when running as a teammate (Agent Teams behavior). `isolation: worktree` subagents denied Read/Edit on own files — fixed v2.1.101. `maxTurns` in agent definition was capped at 50 (some previews documented 100; 50 is confirmed). `TaskOutput` tool deprecated — use `Read` on output file path.
+
 A subagent is a temporary agent spawned via the **Task** tool. It has its own context window, its own system prompt, optionally its own tool allowlist and model, and **only the summary** is returned to the parent session.
 
 ### 13.1 Agent Definition Format
@@ -1347,6 +1487,8 @@ The `/agents` UI offers a **"Generate with Claude"** button to scaffold new suba
 ---
 
 ## 14. Agent Teams (Experimental)
+
+> **Version History:** Agent Teams research preview launched v2.1.32 (February 5, 2026). `TeamCreate` / `TaskCreate` / `TaskUpdate` / `TaskList` / `SendMessage` / `TeamDelete` tools added at launch. `TeammateIdle` hook event added post-launch. Known limitations: no session resumption with in-process teammates; only one team per session; no nested teams; VS Code extension support partial. Enable with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`.
 
 Agent Teams coordinate **multiple Claude Code sessions** on a shared project, with true peer-to-peer messaging between teammates — unlike subagents which only report back to the lead.
 
@@ -1412,6 +1554,8 @@ No session resumption with in-process teammates; task status can lag; shutdown w
 ---
 
 ## 15. Git Worktrees
+
+> **Version History:** `--worktree` / `-w` CLI flag and `--tmux` added v2.1.50. `isolation: worktree` for subagents added v2.1.49. `EnterWorktree` / `ExitWorktree` tools available since v2.0; `path` parameter added v2.1.105. PR squash-merge cleanup added v2.1.105. Stale "already exists" error fixed v2.1.101. `workspace.git_worktree` in status-line JSON added v2.1.97. Stale worktree reuse fixed v2.1.118. `/update` and `/tui` broken after entering worktree mid-session fixed v2.1.116.
 
 Git worktrees let you run multiple Claude sessions on the same codebase simultaneously, each on its own branch, with no risk of interfering with each other.
 
@@ -2450,6 +2594,8 @@ Each worktree is on its own branch in `.claude/worktrees/`. Claude Code sessions
 
 ## 34. Agent SDK
 
+> **Version History:** Agent SDK (TypeScript) launched alongside Claude Code GA (v1.0, May 2025). Python SDK added later in v1.0.x. `ClaudeSDKClient` stateful client added v2.0.x. `fork_session` / `forkSession` parameter added v2.0.x. `rewind_files()`, `get_mcp_status()`, `reconnect_mcp_server()` added to `ClaudeSDKClient` in v2.1.x. SDK OAuth (`mcp_authenticate` + `redirectUri`) added v2.1.121. `include_partial_messages` for `StreamEvent` added v2.0.x. `RateLimitEvent` with `retry_after_ms` added v2.1.x. Subprocess cleanup on early `for await` break fixed v2.1.101. `managed_settings` dict for programmatic policy injection added v2.1.x. **Critical pitfall:** `setting_sources` defaults to `[]` — CLAUDE.md and skills are NOT loaded unless explicitly set.
+
 The Agent SDK provides programmatic access to the Claude Code engine for building custom agents, CI/CD integrations, and multi-agent workflows.
 
 **Packages:** `pip install claude-agent-sdk` (Python) and `npm install @anthropic-ai/claude-agent-sdk` (TypeScript). The TypeScript package bundles the native Claude Code binary as an optional dependency — no separate install required.
@@ -2698,6 +2844,223 @@ This section is honest about what is and isn't officially documented.
 **Shelf life:** Claude Code ships 2–3 versions per week. Fine-grained details (env var names, bug-fix versions, individual setting keys) have a useful shelf life of days to weeks. Architectural facts (three-phase loop, sandbox primitives, permission evaluation order, plugin/skill/hook contracts, SDK structure) are stable across minor versions. A major version bump (v2→v3) historically introduces breaking SDK/plugin changes.
 
 **For production deployments:** always verify the current changelog at `code.claude.com/docs/en/changelog` before upgrading. Pin `claude-code-action` to a specific SHA rather than `@v1` for CI stability. Pre-bake plugins into container images via `CLAUDE_CODE_PLUGIN_SEED_DIR` to avoid marketplace fetch failures in air-gapped environments.
+
+---
+
+---
+
+## 36. Troubleshooting Reference
+
+This section organizes the most common failure modes by symptom category,
+with the known cause and resolution for each.
+
+### 36.1 Installation & Startup Failures
+
+```
+  SYMPTOM                         CAUSE                     FIX
+  ─────────────────────────────────────────────────────────────────────
+  "command not found: claude"     Binary not in PATH        Add ~/.local/bin to $PATH
+                                  after native install      or restart shell
+
+  "npm ERR! ... permission        npm global prefix owned   Use native install instead
+   denied" on npm install -g      by root                   or fix npm prefix permissions
+
+  SSL/TLS certificate errors      Corporate proxy with      Set CLAUDE_CODE_CERT_STORE=
+  connecting to Anthropic API     custom CA                 system OR add CA to bundle;
+                                                            or set ANTHROPIC_BASE_URL to
+                                                            an internal proxy endpoint
+
+  Session fails to start on       Node.js requirement       v2.1.113+ uses native binary;
+  npm install path                still present             upgrade to native installer
+
+  "Failed to load managed         Enterprise managed-       Set forceRemoteSettingsRefresh:
+   settings" at startup           settings URL unreachable  false to allow offline start;
+                                                            or fix network path to policy
+                                                            endpoint
+```
+
+### 36.2 Authentication Issues
+
+```
+  SYMPTOM                         CAUSE                     FIX
+  ─────────────────────────────────────────────────────────────────────
+  Browser OAuth loop / timeout    Browser blocked or        Use --console flag + API key
+                                  no display (SSH/CI)       instead of OAuth
+
+  "401 Unauthorized" on API key   Key prefix wrong or       Verify key starts with
+                                  key expired               "sk-ant-"; regenerate at
+                                                            console.anthropic.com
+
+  "401 loop" with               DISABLE_EXPERIMENTAL_BETAS  v2.1.123 fix: update to
+   DISABLE_EXPERIMENTAL_BETAS   + OAuth token interaction   v2.1.123 or later
+
+  Bedrock auth failure in CI      SigV4 headers conflicting  Set CLAUDE_CODE_SKIP_BEDROCK_
+                                  with custom Authorization  AUTH=1 for gateway mode;
+                                                            use awsCredentialExport helper
+
+  Vertex auth failure             GCP credentials not set    Set GOOGLE_APPLICATION_
+                                  in environment             CREDENTIALS or run
+                                                            gcloud auth application-
+                                                            default login
+```
+
+### 36.3 Context & Compaction Issues
+
+```
+  SYMPTOM                         CAUSE                     FIX
+  ─────────────────────────────────────────────────────────────────────
+  Auto-compact thrash loop        Context refills to limit   v2.1.89 added guard; update.
+  (compacts 3× with no progress) immediately after compact  Or use /clear and start fresh.
+
+  Plan mode lost after /compact   Bug fixed in v2.1.47      Update to v2.1.47+
+
+  Opus 4.7 showing "context full" Opus 4.7 1M context       v2.1.117 fix: update to
+  at low utilization              computed against 200K      v2.1.117+
+                                  instead of 1M
+
+  Prompt cache TTL stuck at 5 min Subscriber with            v2.1.108 fix: update to
+  despite subscriber account      DISABLE_TELEMETRY=1        v2.1.108+; or set
+                                  regression                 ENABLE_PROMPT_CACHING_1H=1
+
+  /clear hint shows wrong count   Bug fixed in v2.1.119      Update to v2.1.119+
+  (cumulative not current)
+
+  Session JSONL corrupt after     Advisor tool_result bug    v2.1.126 fix; or manually
+  using advisor tool              (issue #49994)             edit JSONL to remove
+                                                            malformed advisor blocks
+```
+
+### 36.4 Tool & Permission Issues
+
+```
+  SYMPTOM                         CAUSE                     FIX
+  ─────────────────────────────────────────────────────────────────────
+  Deny rule not matching          Command wrapped with env/  v2.1.113 added wrapper
+  "env MYVAR=1 rm -rf ..."        sudo/watch/ionice/setsid   matching; update to v2.1.113+
+
+  Bash(find:*) allows             find -exec and -delete     v2.1.113 fixed; update;
+  find -exec rm ...               were auto-approved         add explicit deny rule
+
+  Permission dialog says approved  setMode: bypassPermissions v2.1.110 fix: update to
+  but disableBypassPermissions     not respecting setting     v2.1.110+
+  should block it
+
+  Read deny rule not blocking     Read(...) deny rules        Add separate Bash(cat:*)
+  cat via Bash                    don't apply to Bash         deny rule; use sandbox for
+                                                            kernel-level enforcement
+
+  Subagent denied Read on its     Bug fixed in v2.1.101      Update to v2.1.101+
+  own worktree files (isolation:
+  worktree subagents)
+```
+
+### 36.5 Hooks Not Firing
+
+```
+  SYMPTOM                         CAUSE                     FIX
+  ─────────────────────────────────────────────────────────────────────
+  Hook defined in settings.json   Hooks snapshot at session  Use /hooks reload or
+  not running                     start time                 restart the session
+
+  Command hook not receiving      Matcher regex doesn't      Test regex against tool name
+  events for some tools           match tool name exactly    with --debug hooks flag
+
+  HTTP hook failing silently      URL not in allowedHttp     Add URL to allowedHttp
+                                  HookUrls enterprise list   HookUrls in managed settings
+
+  Hook times out and blocks       Default 60s timeout        Make hook faster; or use
+  Claude indefinitely             exceeded                    async fire-and-forget pattern
+                                                            via background process
+
+  mcp_tool hook not available     Feature added v2.1.118     Update to v2.1.118+
+
+  exit 2 from Stop hook not       PostToolUse, not Stop,     Check hook is on the correct
+  forcing continuation            has soft blocking          event; Stop exit 2 = continue
+```
+
+### 36.6 MCP Server Issues
+
+```
+  SYMPTOM                         CAUSE                     FIX
+  ─────────────────────────────────────────────────────────────────────
+  MCP server fails to start       stdio server on Windows    Wrap with cmd /c:
+  on Windows                      needs cmd wrapper          "command": "cmd",
+                                                            "args": ["/c","npx","..."]
+
+  "${VAR}" not expanded in        Client doesn't support it  VS Code and Kiro expand;
+  .mcp.json on some clients       (Claude Desktop uses       Claude Desktop does not;
+                                  literal values)            use --env flag on CLI
+
+  MCP tool output truncated       Default result size limit  Set _meta["anthropic/
+  at unexpected length            (varies by server)         maxResultSizeChars"]: 500000
+                                                            in server's return value
+
+  MCP server not inheriting       Bug fixed in v2.1.101      Update to v2.1.101+
+  into subagents (dynamically
+  injected servers)
+
+  SSE transport deprecation       SSE is deprecated in       Migrate server to HTTP
+  warning in console              MCP spec 1.1               transport; update config:
+                                                            "transport": "http", "url":...
+
+  OAuth token refresh race        Multiple processes         v2.1.97 fixed cross-process
+  condition                       refreshing simultaneously   lock; update to v2.1.97+
+```
+
+### 36.7 Performance & Cost Issues
+
+```
+  SYMPTOM                         CAUSE                     FIX
+  ─────────────────────────────────────────────────────────────────────
+  Every request incurs full       Stable prefix not cached;  Use --exclude-dynamic-system-
+  input token cost in CI          dynamic content in system  prompt-sections to move
+                                  prompt breaks caching      cwd/env/memory to user message
+
+  Session is significantly        MCP tools consuming        Use Tool Search; defer MCP
+  slower than expected            too many context tokens    loading; cap tool descriptions
+                                  (>10% context window)      at 2KB per tool
+
+  /resume picker very slow        Session files >40MB on     v2.1.116 made it 67% faster;
+                                  disk                       update; or archive old sessions
+
+  High cost from Opus advisor     Each advisor call = full   Track advisor call count;
+  calls                           Opus inference pass        set max_uses in tool def;
+                                                            or switch to Sonnet executor
+
+  Auto-compact fires too often    Default threshold (~92%)   Lower with CLAUDE_AUTOCOMPACT_
+                                  too low for workload       PCT_OVERRIDE env var;
+                                                            or /compact manually at 70%
+```
+
+### 36.8 Agent SDK Pitfalls
+
+```
+  SYMPTOM                         CAUSE                     FIX
+  ─────────────────────────────────────────────────────────────────────
+  CLAUDE.md and skills not        setting_sources defaults   Add setting_sources=
+  loaded in SDK sessions          to [] (empty list)         ["user","project"] to options
+
+  Subprocess not cleaned up       Early break from           Use `await using` (TS 5.2+)
+  on early exit                   async iterator             or try/finally with break
+
+  400 error on multi-turn         advisor_tool_result blocks Must preserve ALL
+  advisor sessions                removed from history       advisor_tool_result blocks
+                                                            verbatim in every turn
+
+  Subagent never spawned          "Agent" not in             Add "Agent" to allowedTools
+                                  allowedTools               for the coordinator session
+
+  Session context not preserved   resume= param not set      Capture session_id from
+  across query() calls            between calls              ResultMessage; pass as
+                                                            resume=session_id next call
+```
+
+---
+
+> **Version callout:** Most troubleshooting issues described here are fixed in
+> **v2.1.126**. Before opening a bug report, run `/doctor` (press `f` to auto-fix),
+> check `claude --version`, and update with `claude install latest` if on an older
+> version. Pin to a specific version in CI with `claude install 2.1.126`.
 
 ---
 

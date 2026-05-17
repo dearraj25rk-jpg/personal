@@ -22,6 +22,28 @@ This guide takes you from zero to productive in one sitting.
 
 ## 1. Install Claude Code
 
+### Installation Decision Tree
+
+Use this tree to choose the right installation method for your environment:
+
+```
+Are you on macOS, Linux, or WSL2?
+├── YES
+│   ├── Do you use Homebrew?
+│   │   ├── YES ──► brew install --cask claude-code
+│   │   └── NO  ──► curl -fsSL https://claude.ai/install.sh | bash
+│   └── Do you prefer a package manager?
+│       ├── Debian/Ubuntu ──► apt install claude-code
+│       ├── Fedora/RHEL   ──► dnf install claude-code
+│       └── Arch (AUR)    ──► yay -S claude-code
+└── NO (Windows)
+    ├── Do you have WSL2? ──► Use WSL2 (strongly recommended)
+    ├── PowerShell        ──► irm https://claude.ai/install.ps1 | iex
+    ├── WinGet            ──► winget install Anthropic.ClaudeCode
+    ├── CMD               ──► curl -fsSL https://claude.ai/install.cmd ...
+    └── Node.js (any OS)  ──► npm install -g @anthropic-ai/claude-code
+```
+
 ### macOS / Linux / WSL2 (recommended)
 
 ```bash
@@ -135,23 +157,74 @@ You'll see the REPL prompt. Try these to get a feel for the tool:
 > Add input validation to the POST /users endpoint
 ```
 
-### How the agentic loop works
+### How the Agentic Loop Works
+
+The agentic loop is the core execution model of Claude Code. Understanding it helps you write better prompts and diagnose unexpected behaviour.
 
 ```
-Your prompt
-    │
-    ▼
-Claude generates a response + optional tool_use blocks
-    │
-    ├─ stop_reason == "tool_use"  →  Execute tools (Read, Edit, Bash, ...)
-    │                                Append tool_result
-    │                                Send back to API
-    │                                └────────────────► loop
-    │
-    └─ stop_reason == "end_turn"  →  Session complete
+  ┌─────────────────────────────────────────────────────┐
+  │                   AGENTIC LOOP                       │
+  └─────────────────────────────────────────────────────┘
+
+  User types prompt
+        │
+        ▼
+  ┌─────────────────────────────────────────────────────┐
+  │  [UserPromptSubmit hooks fire]                       │
+  │   • Can inject context into the prompt               │
+  │   • Can block with exit code 2                       │
+  └──────────────────────┬──────────────────────────────┘
+                         │
+                         ▼
+  ┌─────────────────────────────────────────────────────┐
+  │  Claude API call (model generates response)          │
+  │   • Input tokens: context + tools + prompt           │
+  │   • Output tokens: response + tool_use blocks        │
+  └──────────────────────┬──────────────────────────────┘
+                         │
+              ┌──────────┴────────────┐
+              │                       │
+        stop_reason                stop_reason
+        == "tool_use"              == "end_turn"
+              │                       │
+              ▼                       ▼
+  ┌───────────────────┐    ┌──────────────────────────┐
+  │ [PreToolUse hooks]│    │  [Stop hooks fire]        │
+  │  • Can block tool │    │   • Can force continuation│
+  │    with exit 2    │    │     with exit 2           │
+  └────────┬──────────┘    └──────────────────────────┘
+           │
+           ▼
+  ┌────────────────────────────────┐
+  │  Tool executes                 │
+  │  (Read, Edit, Bash, Task, ...) │
+  └────────┬───────────────────────┘
+           │
+           ▼
+  ┌────────────────────────────────┐
+  │  [PostToolUse hooks fire]      │
+  │   • Can reject result          │
+  │   • Can inject context         │
+  └────────┬───────────────────────┘
+           │
+           ▼
+  tool_result appended to context
+           │
+           └──────────────────► back to "Claude API call"
+                                 (loop continues until end_turn)
 ```
 
-**Core rule:** Claude routes on `stop_reason`, never on parsed text. Always let Claude decide when to stop.
+**Key architectural facts:**
+- Claude routes on `stop_reason`, never on parsed text — this makes it reliable
+- Every tool result is appended to the conversation before the next API call
+- Hooks fire at well-defined checkpoints and can intercept the loop
+- The loop terminates when Claude returns `end_turn` and all Stop hooks pass (exit 0)
+- `--max-turns` sets a hard limit on iterations regardless of Claude's intent
+
+**What one "turn" costs (approximate, Sonnet 4.6):**
+- Small task (read 2 files, 1 edit): ~$0.01–0.03
+- Medium task (explore codebase, write tests): ~$0.05–0.20
+- Large task (full feature with tests + docs): ~$0.50–2.00
 
 ---
 
@@ -241,6 +314,39 @@ claude /init          # AI-generated CLAUDE.md from your codebase
 touch CLAUDE.md       # manual
 ```
 
+### CLAUDE.md Effectiveness Diagram
+
+Not all CLAUDE.md content is equally valuable. This diagram shows what delivers the highest signal per token:
+
+```
+  HIGH VALUE (write this)                  LOW VALUE (skip this)
+  ────────────────────────                 ────────────────────────
+  ┌──────────────────────────────┐         ┌──────────────────────────────┐
+  │ Critical "never do" rules    │         │ Generic best practices       │
+  │ e.g. "never use SELECT *"   │  >>>>   │ e.g. "write clean code"      │
+  └──────────────────────────────┘         └──────────────────────────────┘
+  ┌──────────────────────────────┐         ┌──────────────────────────────┐
+  │ Exact test/build commands    │         │ Instructions Claude already  │
+  │ e.g. "make test" not npm test│  >>>>   │ knows from the language      │
+  └──────────────────────────────┘         └──────────────────────────────┘
+  ┌──────────────────────────────┐         ┌──────────────────────────────┐
+  │ Non-obvious architecture     │         │ Obvious directory structure  │
+  │ decisions and tradeoffs      │  >>>>   │ e.g. "src/ has source code"  │
+  └──────────────────────────────┘         └──────────────────────────────┘
+  ┌──────────────────────────────┐         ┌──────────────────────────────┐
+  │ Project-specific gotchas     │         │ Standard commit message      │
+  │ e.g. "db migrations manual" │  >>>>   │ formats Claude already knows │
+  └──────────────────────────────┘         └──────────────────────────────┘
+  ┌──────────────────────────────┐         ┌──────────────────────────────┐
+  │ Environment setup quirks     │         │ Descriptions of what files   │
+  │ and prerequisite services    │  >>>>   │ contain (Claude will read    │
+  └──────────────────────────────┘         │ them anyway)                 │
+                                           └──────────────────────────────┘
+
+  Target: 100–200 lines. Every line costs tokens on every session.
+  200 lines × 100 sessions = 20,000+ tokens just for CLAUDE.md.
+```
+
 ### Recommended template (keep under 200 lines)
 
 ```markdown
@@ -293,43 +399,77 @@ Claude Code has 16+ built-in tools. Understanding them helps you write better pr
 
 ### File System Tools
 
-| Tool | What it does |
-|------|-------------|
-| `Read` | Read files, images (PNG/JPG/WebP/GIF), PDFs, Jupyter notebooks |
-| `Write` | Write or overwrite entire files |
-| `Edit` | Exact-string replacement in existing files |
-| `MultiEdit` | Multiple string replacements in one file, one operation |
-| `Glob` | Fast file pattern matching (e.g., `src/**/*.ts`) |
-| `Grep` | Content search via ripgrep; regex support |
-| `LS` | List directory contents |
+| Tool | What it does | Example use case |
+|------|-------------|-----------------|
+| `Read` | Read files, images (PNG/JPG/WebP/GIF), PDFs, Jupyter notebooks | "Read the auth module and explain it" |
+| `Write` | Write or overwrite entire files | "Create a new config file at config/prod.yaml" |
+| `Edit` | Exact-string replacement in existing files | "Fix the typo on line 47 of utils.py" |
+| `MultiEdit` | Multiple string replacements in one file, one operation | "Rename the variable everywhere in this file" |
+| `Glob` | Fast file pattern matching (e.g., `src/**/*.ts`) | "Find all TypeScript files in src/" |
+| `Grep` | Content search via ripgrep; regex support | "Find all places that call the deprecated API" |
+| `LS` | List directory contents | "Show what's in the migrations folder" |
+
+**Anti-pattern:** asking Claude to use shell commands for file operations:
+```
+# Bad — slow, permission-checked, fragile:
+> Run: cat src/auth/login.py
+
+# Good — fast, native, direct:
+> Read src/auth/login.py
+```
 
 ### Execution Tools
 
-| Tool | What it does |
-|------|-------------|
-| `Bash` | Run shell commands, scripts, test runners |
-| `Monitor` | Stream output from a background process (v2.1.98+) |
+| Tool | What it does | Example use case |
+|------|-------------|-----------------|
+| `Bash` | Run shell commands, scripts, test runners | "Run the test suite and show failures" |
+| `Monitor` | Stream output from a background process (v2.1.98+) | "Start the dev server and watch for errors" |
+
+**Anti-pattern:** chaining multiple Bash calls when one will do:
+```
+# Bad — each call is a separate turn:
+> Run git add .
+> Run git commit -m "feat: add auth"
+> Run git push
+
+# Good — single turn:
+> Stage all changes, commit with message "feat: add auth", and push to origin
+```
 
 ### Web Tools
 
-| Tool | What it does |
-|------|-------------|
-| `WebFetch` | Fetch URL content with AI extraction — markdown output |
-| `WebSearch` | Web search with AI-ranked results |
+| Tool | What it does | Example use case |
+|------|-------------|-----------------|
+| `WebFetch` | Fetch URL content with AI extraction — markdown output | "Get the FastAPI docs for dependency injection" |
+| `WebSearch` | Web search with AI-ranked results | "Find the latest postgres connection pooling best practices" |
+
+**Note:** WebFetch and WebSearch can be disabled in `.claude/settings.json` for security-sensitive environments:
+```json
+{ "permissions": { "deny": ["WebFetch", "WebSearch"] } }
+```
 
 ### Task Management
 
-| Tool | What it does |
-|------|-------------|
-| `TodoWrite` | Structured task tracking — visible in `/todos` |
-| `TodoRead` | Read current task list |
+| Tool | What it does | Example use case |
+|------|-------------|-----------------|
+| `TodoWrite` | Structured task tracking — visible in `/todos` | Auto-used for multi-step tasks |
+| `TodoRead` | Read current task list | "What tasks are remaining?" |
+
+Claude automatically uses TodoWrite for complex multi-step tasks. You can view the live task list with `/todos`.
 
 ### Agent Spawning
 
-| Tool | What it does |
-|------|-------------|
-| `Task` | Spawn a subagent for parallel or isolated work |
-| `Agent` | Launch a specialised Claude agent (Agent SDK) |
+| Tool | What it does | Example use case |
+|------|-------------|-----------------|
+| `Task` | Spawn a subagent for parallel or isolated work | "Analyse all 3 microservices in parallel" |
+| `Agent` | Launch a specialised Claude agent (Agent SDK) | "Use the code-reviewer agent on this PR" |
+
+**When to use Task (subagents):**
+- Independent workstreams that can run in parallel
+- Isolated tasks that shouldn't pollute the parent context
+- Large tasks where you want separate context budgets
+
+**Anti-pattern:** using Task for simple sequential operations (the overhead isn't worth it for small tasks).
 
 **Best practice:** prefer native tools over shell equivalents. Use `Read` not `cat`, `Edit` not `sed`, `Glob` not `find`. The native tools are faster, more reliable, and permission-safe.
 
@@ -428,7 +568,148 @@ Then after reviewing the plan: `> Go ahead and implement those changes.`
 
 ---
 
-## 11. Session Management
+## 11. 10 Most Common First-Week Mistakes
+
+These mistakes are observed consistently among new Claude Code users. Each costs time and money — learn them now to avoid them.
+
+### Mistake 1: Context-free prompts
+
+**Wrong:**
+```
+> Fix the bug
+```
+
+**Right:**
+```
+> The createUser() function in src/users/service.py throws a KeyError when 
+  the email field is missing. Fix it to return a 400 validation error instead.
+```
+
+**Why it matters:** Claude cannot read your mind. Vague prompts force Claude to guess, which wastes turns and tokens exploring the wrong areas.
+
+### Mistake 2: Skipping /plan for large tasks
+
+**Wrong:**
+```
+> Refactor the entire authentication system to use JWT tokens
+```
+(jumping straight to execution)
+
+**Right:**
+```
+> /plan
+> Refactor the entire authentication system to use JWT tokens
+```
+
+**Why it matters:** For large tasks, Claude will attempt execution immediately. A `/plan` step lets you validate the approach before any files change. A wrong refactor plan discovered after 30 turns is expensive.
+
+### Mistake 3: Not using /compact — running out of context
+
+**Symptom:** Claude starts forgetting earlier decisions or producing worse output mid-session.
+
+**Fix:** Run `/compact` when the context window is ~50% full (check with `/context`). Don't wait until it's at 85% — compaction quality degrades near the limit.
+
+```
+/compact Focus on the auth refactor we just completed
+```
+
+The `Focus on...` instruction guides what the summary preserves.
+
+### Mistake 4: Leaving CLAUDE.md empty or writing it once and forgetting it
+
+**Wrong:** Empty CLAUDE.md, or one written at project start that's never updated.
+
+**Right:** Update CLAUDE.md when you discover:
+- A project-specific convention Claude gets wrong repeatedly
+- A command that differs from the standard (e.g., `make test` instead of `pytest`)
+- A non-obvious architecture decision Claude needs to know
+- A file or directory Claude should never touch
+
+**Why it matters:** CLAUDE.md is loaded every session. It's the highest-leverage documentation you can write.
+
+### Mistake 5: Using Bash when native tools are faster
+
+**Wrong:**
+```
+> Run: cat src/config.py | grep DATABASE
+```
+
+**Right:**
+```
+> Search src/config.py for DATABASE
+```
+or
+```
+> Read src/config.py and find the database configuration
+```
+
+**Why it matters:** The `Bash` tool has permission overhead. `Read` and `Grep` are direct and faster.
+
+### Mistake 6: Not scoping prompts — letting Claude read the entire codebase
+
+**Wrong:**
+```
+> Add error handling to all API endpoints
+```
+
+**Right:**
+```
+> Add error handling to the 3 endpoints in src/api/users.py that currently 
+  have no try/catch blocks. Follow the pattern in src/api/orders.py line 45-60.
+```
+
+**Why it matters:** Unscoped prompts cause Claude to read dozens of files it doesn't need, spending tokens on context that doesn't help.
+
+### Mistake 7: Ignoring exit codes and assuming Claude succeeded
+
+**Wrong:** Trusting Claude's "Done!" message without checking.
+
+**Right:**
+```
+> Run the tests now and show me the output
+```
+or set up a Stop hook that runs tests automatically.
+
+**Why it matters:** Claude can misread output or optimistically declare success. Always verify with an explicit test run.
+
+### Mistake 8: Using the wrong model for the task
+
+| Task type | Right model | Wrong choice |
+|-----------|-------------|--------------|
+| Bulk file renaming | Haiku 4.5 ($0.80/M) | Opus 4.7 ($15/M) = 18× overspend |
+| Complex architectural review | Opus 4.7 | Haiku 4.5 = poor output |
+| Standard feature work | Sonnet 4.6 | Opus 4.7 = 5× overspend |
+| CI quick scans | Haiku 4.5 | Sonnet 4.6 = 4× overspend |
+
+Switch model with `/model` or `--model` flag.
+
+### Mistake 9: Not rewinding after a wrong turn
+
+**Symptom:** Claude made 5 changes you don't want, but you kept going hoping it would fix itself.
+
+**Fix:** Press `Esc×2` immediately when Claude goes in the wrong direction. The rewind menu lets you roll back to any checkpoint.
+
+**Why it matters:** Every wrong turn compounds. Stop early, rewind, and give Claude a better-scoped prompt.
+
+### Mistake 10: Running Claude Code in production directories without permission limits
+
+**Wrong:** Starting `claude` in a production directory with no permission configuration.
+
+**Right:**
+```json
+// .claude/settings.json
+{
+  "permissions": {
+    "deny": ["Bash(rm:*)", "Bash(git push*)", "Bash(kubectl delete*)"]
+  }
+}
+```
+
+**Why it matters:** In auto-accept mode, Claude can delete files, push to main, or drop database tables. Explicit deny rules prevent accidents.
+
+---
+
+## 12. Session Management
 
 ### Resume a session
 
@@ -459,7 +740,7 @@ Auto-compaction triggers automatically when the window reaches ~85% full (config
 
 ---
 
-## 12. Cost Management Tips
+## 13. Cost Management Tips
 
 | Strategy | Impact |
 |----------|--------|
@@ -474,7 +755,7 @@ See the [Context, Cost & Token Efficiency guide](./claude-code-efficiency-refere
 
 ---
 
-## 13. Next Steps
+## 14. Next Steps
 
 | If you want to… | Go to |
 |----------------|-------|

@@ -1363,3 +1363,1003 @@ End with an overall risk rating: SAFE TO MERGE / REVIEW REQUIRED / DO NOT MERGE
 | `/advisor` | Team | Escalate to Opus for complex decisions |
 | `/changelog` | Info | Show recent release notes |
 | `/help` | Info | List all commands with descriptions |
+
+---
+
+## 15. Built-in Commands Organized by Category
+
+Understanding which command category to reach for makes the REPL much faster to navigate. This section groups all 30+ built-in commands into six functional categories with one-line descriptions and key details.
+
+### Session Commands — Controlling Conversation Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  SESSION COMMANDS                                                        │
+│                                                                         │
+│  /clear              Wipe conversation history, keep configuration      │
+│  /compact [text]     Compress history to summary; optional focus hint   │
+│  /rewind             Roll back filesystem + conversation to checkpoint  │
+│  /resume             Restore a named or recent prior session            │
+│  /rename [name]      Give current session a searchable name             │
+│  /context            Live token budget breakdown by section             │
+│  /usage              Cumulative token counts + USD cost estimate        │
+│  /plan               Enter read-only planning mode (no writes)          │
+│                                                                         │
+│  The decision:                                                           │
+│                                                                         │
+│  Fresh start without quitting?  → /clear                               │
+│  Context window filling up?     → /compact                             │
+│  Mistake to undo?               → /rewind                              │
+│  Continue yesterday's work?     → /resume                              │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Configuration Commands — Changing Claude's Behavior
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  CONFIGURATION COMMANDS                                                  │
+│                                                                         │
+│  /model              Switch model (session only unless saved via /config)│
+│  /config             Persistent settings UI (model, style, permissions) │
+│  /permissions        View/manage tool allow/deny list for session       │
+│  /hooks              View and edit lifecycle event hooks                │
+│  /keybindings        Open keybindings.json in $EDITOR                  │
+│                                                                         │
+│  Persistence:                                                            │
+│    /model     → session only                                            │
+│    /config    → saves to settings.json permanently                     │
+│    /permissions → session only unless also in settings.json            │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Memory & Knowledge Commands
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  MEMORY & KNOWLEDGE COMMANDS                                             │
+│                                                                         │
+│  /memory             All loaded CLAUDE.md files with token sizes        │
+│                      Toggle auto-memory, open files in editor           │
+│  /todos              Structured task list (shared with Claude)          │
+│  /init               Auto-generate CLAUDE.md from project analysis      │
+│                                                                         │
+│  Use /memory when:                                                       │
+│    - A rule seems to not be applying → check if the file is loaded     │
+│    - Context is bloated → see which memory file is largest             │
+│    - After /compact → verify project CLAUDE.md was re-read             │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent & Tool Commands
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  AGENT & TOOL COMMANDS                                                   │
+│                                                                         │
+│  /agents             Browse, create, and edit subagent definitions      │
+│  /skills             List all skills; invoke a skill manually           │
+│  /mcp                View MCP server status; restart failing servers    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Git & Workspace Commands
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  GIT & WORKSPACE COMMANDS                                                │
+│                                                                         │
+│  /branch [name]      Create git worktree on new branch + new session   │
+│  /branch --list      List all active worktrees                          │
+│  /branch --clean     Remove merged/stale worktrees                      │
+│                                                                         │
+│  Worktree workflow:                                                      │
+│    Terminal 1: /branch feature/auth    → session for auth work         │
+│    Terminal 2: /branch hotfix/bug-123  → parallel hotfix session       │
+│    Each session is isolated — no context bleeding between branches     │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Diagnostics & Information Commands
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  DIAGNOSTICS & INFO COMMANDS                                             │
+│                                                                         │
+│  /doctor             Health check: API, auth, MCP, hooks, permissions   │
+│  /debug              Live session internals: files, hooks, tool log     │
+│  /terminal-setup     Clipboard backend, scroll, iTerm2 integration      │
+│  /theme              Browse and apply color themes                      │
+│  /team-onboarding    Generate teammate ramp-up guide from codebase      │
+│  /advisor            Escalate to Opus model for architectural reasoning │
+│  /changelog          View recent Claude Code release notes              │
+│  /help [command]     List all commands; detailed help for one command   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 16. Custom Command Frontmatter — Complete Schema
+
+Every field that a custom slash command `.md` file can use in its YAML frontmatter block:
+
+```yaml
+---
+# ── Identity & Discovery ───────────────────────────────────────────────
+description: "One-line description shown in /help and the autocomplete picker"
+# Required for discoverability. If omitted, command is unlabelled in picker.
+# Write this as an imperative action: "Review staged changes for security issues"
+
+# ── Tool Permissions ───────────────────────────────────────────────────
+allowed-tools: Read, Bash, Glob
+# Restricts which tools Claude may use during this command.
+# Format options:
+#   String:              "Read, Bash, Glob"
+#   YAML list:           - Read\n  - Bash\n  - Glob
+#   With glob patterns:  "Bash(git *)"  "Edit(**/*.test.ts)"
+# If omitted: session's current permission set applies unchanged.
+# If specified: ONLY these tools are available for this command invocation.
+
+# ── Model Selection ─────────────────────────────────────────────────────
+model: claude-opus-4-7
+# Override the active session model for this command only.
+# Takes effect for the single invocation; session model unchanged after.
+# Full model IDs accepted: claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5
+# Use for: commands that always need high-capability reasoning,
+#          security audits, architecture reviews, long-form generation.
+
+# ── (No additional frontmatter fields are currently supported) ──────────
+---
+```
+
+### Frontmatter Field Reference Table
+
+| Field | Type | Required | Default | Notes |
+|-------|------|----------|---------|-------|
+| `description` | string | Recommended | (none) | Shown in `/help` and autocomplete; omitting hides from picker |
+| `allowed-tools` | string or string[] | No | Session permissions | Restricts tools to the listed set only |
+| `model` | string | No | Session model | Full model ID; resets after command completes |
+
+### allowed-tools Pattern Syntax
+
+```markdown
+# Allow any Bash command:
+allowed-tools: Bash
+
+# Allow only specific Bash patterns:
+allowed-tools: "Bash(git *)"
+
+# Allow multiple tools:
+allowed-tools: Read, Bash, Glob
+
+# Allow editing only test files:
+allowed-tools:
+  - Read
+  - Glob
+  - "Edit(**/*.test.ts)"
+  - "Edit(**/*.spec.ts)"
+
+# Read-only command (no writes, no shell):
+allowed-tools: Read, Glob, Grep
+
+# Full access (same as omitting):
+allowed-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Task
+```
+
+### Anatomy of a Well-Formed Command File
+
+```markdown
+---                                       ← YAML frontmatter block start
+description: Brief imperative sentence.   ← Discovery label
+allowed-tools: Read, Bash                 ← Restrict available tools
+model: claude-opus-4-7                    ← Optional model pin
+---                                       ← Frontmatter end
+
+[Command body — this is the prompt sent to Claude]
+
+You may use variables anywhere in the body:
+
+Static injection from a file:
+@.claude/standards/checklist.md
+
+Shell output injection (runs at invocation time):
+Current branch: !`git rev-parse --abbrev-ref HEAD`
+
+User's full argument text:
+$ARGUMENTS
+
+Positional argument 1:
+$1
+```
+
+---
+
+## 17. `$ARGUMENTS` Usage Patterns
+
+`$ARGUMENTS` is the most versatile variable in custom commands. Here are all the ways to use it effectively.
+
+### Pattern 1: Optional Context Appender
+
+The most common pattern — the command works without arguments but accepts extra context:
+
+```markdown
+---
+description: Review staged changes. Optionally focus on a specific file or concern.
+allowed-tools: Read, Bash
+---
+
+Review all staged changes for correctness, security, and style.
+
+!`git diff --staged`
+
+$ARGUMENTS
+```
+
+Usage:
+```
+/review                            → reviews everything
+/review focus on error handling    → reviews with that focus
+/review src/auth/jwt.ts            → Claude focuses on that file
+```
+
+### Pattern 2: Required Target with Fallback
+
+Use `$ARGUMENTS` for a required target but handle the empty case:
+
+```markdown
+---
+description: Explain a specific function or concept. Usage: /explain <function-name-or-concept>
+allowed-tools: Read, Bash, Glob
+---
+
+Explain the following in plain English suitable for a mid-level developer.
+If "$ARGUMENTS" is empty, ask the user what they want explained.
+If "$ARGUMENTS" is a function name, find it in the codebase first:
+
+!`grep -rn "$ARGUMENTS" src/ --include="*.ts" --include="*.py" --include="*.go" | head -20`
+
+Topic or function: $ARGUMENTS
+```
+
+### Pattern 3: Subcommand Router
+
+Use `$1` to route to different behaviors within a single command:
+
+```markdown
+---
+description: Git workflow helper. Usage: /git [status|log|branch|pr]
+allowed-tools: Bash
+---
+
+Perform the requested git operation: $1
+
+If "$1" is "status":
+  Run git status and explain what each file's status means.
+
+If "$1" is "log":
+  Run git log --oneline -20 and explain the recent history.
+
+If "$1" is "branch":
+  List all branches and explain their likely purpose based on names.
+
+If "$1" is "pr":
+  Show commits since the merge base with main and draft a PR description.
+
+If "$1" is empty or unrecognized:
+  Ask which operation the user wants and show the available options.
+
+Additional options: $2
+```
+
+Usage:
+```
+/git status
+/git log
+/git pr
+/git branch --verbose     ← $1=branch, $2=--verbose
+```
+
+### Pattern 4: Multi-File Comparison
+
+Use positional arguments to compare specific items:
+
+```markdown
+---
+description: Compare two files or implementations side by side.
+allowed-tools: Read
+---
+
+Compare these two items and explain the key differences in approach,
+performance, and maintainability.
+
+Item 1: $1
+Item 2: $2
+
+Focus area (if specified): $3
+```
+
+Usage:
+```
+/compare src/v1/auth.ts src/v2/auth.ts
+/compare src/v1/auth.ts src/v2/auth.ts security
+```
+
+### Pattern 5: Ticket-Driven Context
+
+Pass a ticket ID to link work to a tracker:
+
+```markdown
+---
+description: Start work on a JIRA ticket. Usage: /ticket PROJ-123
+allowed-tools: Read, Bash
+---
+
+I'm starting work on ticket: $1
+
+Current branch: !`git rev-parse --abbrev-ref HEAD`
+
+1. Create a feature branch named `feature/$1` from main (if not already on it)
+2. Read the CLAUDE.md file to understand the project conventions
+3. Ask what aspect of the ticket to tackle first
+
+Ticket ID: $1
+Additional context: $2
+```
+
+### Pattern 6: Template with Conditional Logic
+
+Use `$ARGUMENTS` inside the prompt body to let Claude conditionally adapt:
+
+```markdown
+---
+description: Generate a commit message for staged changes. Pass --verbose for detailed body.
+allowed-tools: Bash
+---
+
+Generate a git commit message for the staged changes.
+
+Staged diff:
+!`git diff --staged`
+
+User flags: $ARGUMENTS
+
+If the user passed "--verbose" or "-v" in "$ARGUMENTS":
+  Generate a full commit with subject line AND detailed body paragraphs.
+  Explain each group of changes.
+Else:
+  Generate a concise single-line commit following conventional commits format.
+  Format: type(scope): description
+
+Always use conventional commits format. Types: feat, fix, refactor, test, docs, chore, perf.
+```
+
+---
+
+## 18. `@import` and `!shell` in Commands — Deep Dive
+
+These two injection mechanisms make custom commands dramatically more powerful by connecting them to real-time file content and live system state.
+
+### `@import` — Static File Injection
+
+```
+@path/to/file
+```
+
+**When it runs:** At invocation time (when you type `/command`), before the prompt is sent to Claude.
+
+**What it does:** Reads the file from disk and inserts its full contents at that position in the prompt.
+
+**Path resolution:**
+```
+@standards/guide.md          → relative to project root
+@./local/file.md             → explicit relative (same)
+@../sibling-project/api.md   → parent directory
+@/absolute/path/to/file.md   → absolute path
+@~/.claude/shared/guide.md   → home-relative
+```
+
+**Use cases:**
+
+```markdown
+# Inject a living checklist that evolves over time
+@.claude/standards/security-checklist.md
+
+# Inject per-language style guides conditionally via a wrapper
+@.claude/standards/typescript-guide.md
+
+# Inject API documentation
+@docs/api-reference.md
+
+# Inject team conventions without duplicating them in every command
+@CLAUDE.md
+```
+
+**Key property:** Unlike CLAUDE.md which is always in context, `@import` in a command only loads the file for that specific invocation. This is efficient for large reference files you don't need in every turn.
+
+**Error behavior:** If the imported file does not exist, Claude Code aborts the command and shows:
+```
+Error: Cannot read file at path '.claude/standards/guide.md' (file not found)
+Command /review not sent.
+```
+
+### `!shell` — Dynamic Shell Output Injection
+
+```
+!`shell command here`
+```
+
+**When it runs:** At invocation time, concurrently with other `!` expressions in the same command.
+
+**What it injects:** The stdout of the shell command. Stderr is discarded. Exit codes other than 0 produce a warning but do not abort the command.
+
+**Environment:** Runs in the project root directory with the user's full shell environment (not a sandbox).
+
+**Common patterns:**
+
+```markdown
+# Repository state
+Branch:         !`git rev-parse --abbrev-ref HEAD`
+Commit SHA:     !`git rev-parse HEAD`
+Status:         !`git status --short`
+Last commit:    !`git log --oneline -1`
+
+# Staged changes
+Diff:           !`git diff --staged`
+Changed files:  !`git diff --staged --name-only`
+
+# Project context
+Node version:   !`node --version 2>/dev/null || echo 'not installed'`
+Package JSON:   !`cat package.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('name',''),'v'+d.get('version','?'))" 2>/dev/null`
+Test command:   !`cat package.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('scripts',{}).get('test','npm test'))" 2>/dev/null`
+
+# System info
+Current user:   !`whoami`
+Timestamp:      !`date -u +"%Y-%m-%dT%H:%M:%SZ"`
+Working dir:    !`pwd`
+
+# Code search
+Function grep:  !`grep -rn "functionName" src/ --include="*.ts" | head -30`
+```
+
+**Combining `@import` and `!shell` in one command:**
+
+```markdown
+---
+description: Full pre-PR audit: tests, lint, security, and review criteria.
+allowed-tools: Read, Bash, Glob
+model: claude-opus-4-7
+---
+
+# Pre-PR Audit
+
+## Repository State
+Branch: !`git rev-parse --abbrev-ref HEAD`
+Base: !`git merge-base HEAD origin/main | head -c 8`
+Commits: !`git log --oneline $(git merge-base HEAD origin/main)..HEAD`
+
+## Changes to Review
+!`git diff $(git merge-base HEAD origin/main)`
+
+## Review Standards
+@.claude/standards/pr-checklist.md
+
+## Security Baseline
+@.claude/standards/security-requirements.md
+
+## Test Results
+!`npm test --reporter=dot 2>&1 | tail -20`
+
+## Lint Results
+!`npm run lint 2>&1 | tail -20`
+
+## Focus Area
+$ARGUMENTS
+
+---
+
+Run a thorough review combining all the above context.
+Flag any issue that would block a merge. End with SAFE/REVIEW REQUIRED/BLOCK.
+```
+
+### Security Considerations for `!shell`
+
+Never embed user-controlled input inside a shell expression:
+
+```markdown
+# DANGEROUS — user controls shell command via $ARGUMENTS
+!`grep -rn "$ARGUMENTS" src/`   ← if $ARGUMENTS = "; rm -rf /"
+
+# SAFE — user input goes to Claude as text, Claude runs the grep
+Find the function: $ARGUMENTS
+
+Search results for common patterns:
+!`grep -rn "function " src/ --include="*.ts" | head -30`
+```
+
+The rule: `!` expressions should contain only static strings and trusted environment variables, never `$ARGUMENTS`, `$1`, `$2`, etc.
+
+---
+
+## 19. Ten Practical Custom Commands for Common Dev Workflows
+
+These are production-ready command files you can drop into `.claude/commands/` immediately.
+
+### 1. `/standup` — Daily Standup Generator
+
+**File:** `.claude/commands/standup.md`
+
+```markdown
+---
+description: Generate a standup summary from yesterday's git activity and current todos.
+allowed-tools: Bash
+---
+
+Generate a daily standup summary for the current developer.
+
+## Yesterday's work
+!`git log --oneline --since="yesterday 00:00" --until="today 00:00" --author="$(git config user.name)" 2>/dev/null || echo "No commits yesterday"`
+
+## Today's commits (so far)
+!`git log --oneline --since="today 00:00" --author="$(git config user.name)" 2>/dev/null || echo "No commits yet today"`
+
+## Current branch and status
+Branch: !`git rev-parse --abbrev-ref HEAD`
+Modified: !`git diff --name-only HEAD 2>/dev/null | head -10`
+
+## Format
+Write a standup in this format:
+**Yesterday:** [bullet points of work done]
+**Today:** [bullet points of planned work]
+**Blockers:** [any blockers, or "None"]
+
+Keep each bullet to one line. Use present tense for today, past tense for yesterday.
+Additional context: $ARGUMENTS
+```
+
+---
+
+### 2. `/fix` — Fast Bug Fix with Test
+
+**File:** `.claude/commands/fix.md`
+
+```markdown
+---
+description: Fix a bug described in $ARGUMENTS — analyze, fix, write test, verify.
+allowed-tools: Read, Edit, Write, Bash, Glob
+---
+
+Fix the following bug: $ARGUMENTS
+
+## Process
+1. Search the codebase for relevant code
+2. Identify the root cause
+3. Implement the minimal fix
+4. Write a failing test that demonstrates the bug first, then verify the fix makes it pass
+5. Run the test suite to confirm nothing regressed
+
+## Context
+Branch: !`git rev-parse --abbrev-ref HEAD`
+Recent changes: !`git diff --name-only HEAD~3`
+
+Do not rewrite unrelated code. Minimal, targeted fix only.
+```
+
+---
+
+### 3. `/refactor` — Safe Refactor with Invariant Preservation
+
+**File:** `.claude/commands/refactor.md`
+
+```markdown
+---
+description: Refactor the specified file or function while preserving all behavior.
+allowed-tools: Read, Edit, Bash, Glob
+---
+
+Refactor: $1
+Scope/goal: $2
+
+## Safety protocol
+1. Read the target file completely
+2. Run existing tests to establish a baseline: !`cat package.json | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('scripts',{}).get('test','# no test script'))" 2>/dev/null`
+3. Identify all callers of the refactored code: !`grep -rn "$1" src/ --include="*.ts" --include="*.js" --include="*.py" --include="*.go" | head -30`
+4. Make the refactor
+5. Run tests again and confirm the same tests pass
+
+## Constraints
+- Do not change external interfaces (function signatures, exported types, API shape)
+- Do not move files without updating all imports
+- Commit in small, logical chunks if the change is large
+- If the refactor requires changing callers, list all changes needed before making any
+
+Current project test command:
+!`cat package.json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('scripts',{}).get('test',''))" 2>/dev/null || echo "check Makefile"`
+```
+
+---
+
+### 4. `/migrate` — Database Migration Generator
+
+**File:** `.claude/commands/migrate.md`
+
+```markdown
+---
+description: Generate a database migration for the described schema change.
+allowed-tools: Read, Write, Bash, Glob
+---
+
+Generate a database migration for: $ARGUMENTS
+
+## Current schema
+!`cat prisma/schema.prisma 2>/dev/null || cat db/schema.sql 2>/dev/null || cat alembic/env.py 2>/dev/null | head -5 || echo "Schema file not found — search manually"`
+
+## Recent migrations
+!`ls -t prisma/migrations/ 2>/dev/null | head -10 || ls -t db/migrations/ 2>/dev/null | head -10 || echo "Migration directory not found"`
+
+## Migration standards
+@.claude/standards/migration-guide.md
+
+## Instructions
+1. Generate the migration code using the project's ORM/migration tool
+2. Generate both UP and DOWN (rollback) migrations
+3. Add safety checks (IF NOT EXISTS, check for existing data)
+4. Show the migration plan before writing any files
+5. After generating, show the command to run it
+```
+
+---
+
+### 5. `/benchmark` — Performance Baseline and Comparison
+
+**File:** `.claude/commands/benchmark.md`
+
+```markdown
+---
+description: Run a benchmark for the target function and compare against baseline.
+allowed-tools: Read, Bash, Write
+---
+
+Benchmark target: $1
+Comparison (optional): $2
+
+## Current implementation
+!`grep -n "$1" src/ -r --include="*.ts" --include="*.py" --include="*.go" | head -20`
+
+## Environment
+!`node --version 2>/dev/null; python3 --version 2>/dev/null; go version 2>/dev/null`
+
+## Instructions
+1. Read the current implementation of `$1`
+2. Write a benchmark using the project's benchmark tooling
+3. Run the benchmark and record the baseline
+4. If `$2` is provided, implement it as an alternative and benchmark both
+5. Present results as a comparison table
+
+Benchmark results format:
+| Implementation | ops/sec | p50 latency | p99 latency | Memory |
+|---------------|---------|-------------|-------------|--------|
+```
+
+---
+
+### 6. `/changelog-entry` — Conventional Commit to Changelog
+
+**File:** `.claude/commands/changelog-entry.md`
+
+```markdown
+---
+description: Generate a CHANGELOG.md entry from commits since the last tag.
+allowed-tools: Read, Bash, Edit
+---
+
+Generate a changelog entry for the next release.
+
+## Commits since last tag
+!`git log --oneline $(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")..HEAD`
+
+## Current version
+!`cat package.json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('version','unknown'))" 2>/dev/null || cat VERSION 2>/dev/null || echo "unknown"`
+
+## Target version: $1
+
+## Format
+Follow Keep a Changelog format (https://keepachangelog.com):
+
+## [VERSION] - DATE
+
+### Added
+- new features
+
+### Changed
+- changes in existing functionality
+
+### Fixed
+- bug fixes
+
+### Deprecated / Removed / Security
+- (only if applicable)
+
+Group commits by type. Omit chore/build commits. Write from a user perspective.
+Append the entry to CHANGELOG.md above the previous version.
+```
+
+---
+
+### 7. `/explain-error` — Root Cause Analysis
+
+**File:** `.claude/commands/explain-error.md`
+
+```markdown
+---
+description: Explain an error, find its root cause, and propose a fix.
+allowed-tools: Read, Bash, Glob
+---
+
+Error to diagnose: $ARGUMENTS
+
+## Recent code changes (possible cause)
+!`git diff HEAD~3 --stat`
+
+## Relevant logs or stack traces
+Paste or describe the error above. I'll search the codebase for the source.
+
+## Diagnostic approach
+1. Parse the error message and identify the error type and origin
+2. Search the codebase for the line/function mentioned in the stack trace
+3. Trace the call chain to find where the unexpected state entered
+4. Identify the root cause (not just the symptom)
+5. Propose a fix with explanation of why it addresses the root cause
+6. Suggest a test to catch this regression in the future
+
+Search for error source:
+!`grep -rn "$(echo '$ARGUMENTS' | head -c 40)" src/ --include="*.ts" --include="*.py" --include="*.go" 2>/dev/null | head -20`
+```
+
+---
+
+### 8. `/env-check` — Environment Validation
+
+**File:** `.claude/commands/env-check.md`
+
+```markdown
+---
+description: Validate that all required environment variables and dependencies are present.
+allowed-tools: Bash, Read
+---
+
+Validate the development environment for: $ARGUMENTS
+
+## Runtime versions
+!`node --version 2>/dev/null && echo "Node OK" || echo "Node MISSING"`
+!`python3 --version 2>/dev/null && echo "Python OK" || echo "Python MISSING"`
+!`go version 2>/dev/null && echo "Go OK" || echo "Go MISSING"`
+!`docker --version 2>/dev/null && echo "Docker OK" || echo "Docker MISSING"`
+
+## Required env vars
+!`cat .env.example 2>/dev/null || cat .env.sample 2>/dev/null || echo "No .env.example found"`
+
+## Actual env vars present (keys only, no values)
+!`printenv | cut -d= -f1 | sort`
+
+## Dependencies installed
+!`test -d node_modules && echo "node_modules: present" || echo "node_modules: MISSING — run pnpm install"`
+
+## Connectivity
+!`curl -s --max-time 3 https://api.anthropic.com/v1/models -o /dev/null -w "Anthropic API: %{http_code}" 2>/dev/null || echo "Anthropic API: unreachable"`
+
+Report: which requirements are met, which are missing, and the exact commands to fix each missing item.
+```
+
+---
+
+### 9. `/review-agent` — Invoke the Code Reviewer Agent
+
+**File:** `.claude/commands/review-agent.md`
+
+```markdown
+---
+description: Spawn the code-reviewer subagent to review the current diff.
+allowed-tools: Task, Bash
+---
+
+Spawn the code-reviewer agent to review the current changes.
+
+## Diff to review
+!`git diff $(git merge-base HEAD origin/main 2>/dev/null || echo HEAD~5)`
+
+## Changed files
+!`git diff --name-only $(git merge-base HEAD origin/main 2>/dev/null || echo HEAD~5)`
+
+## Instructions to the agent
+Use the Task tool to invoke the `code-reviewer` agent with this diff.
+Pass the full diff as context.
+
+The reviewer should:
+1. Identify bugs, security issues, and code quality problems
+2. Check against project conventions (see CLAUDE.md)
+3. Rate each issue: Critical / Major / Minor / Suggestion
+4. Return a structured report
+
+Focus area: $ARGUMENTS
+```
+
+---
+
+### 10. `/ship` — End-to-End Ship Checklist
+
+**File:** `.claude/commands/ship.md`
+
+```markdown
+---
+description: Full pre-ship checklist: tests, lint, security, changelog, PR creation.
+allowed-tools: Read, Bash, Edit, Write
+model: claude-opus-4-7
+---
+
+Run the complete pre-ship workflow for: $ARGUMENTS
+
+## Repository state
+Branch: !`git rev-parse --abbrev-ref HEAD`
+SHA: !`git rev-parse HEAD`
+Status: !`git status --short`
+
+## Checklist to execute in order:
+
+1. **Tests** — Run the full test suite; fail immediately if any test fails
+2. **Lint** — Run the linter; fix auto-fixable issues; surface remaining
+3. **Type check** — Run the type checker (tsc / mypy / go vet)
+4. **Security scan** — Run `npm audit` / `pip-audit` / `gosec` if available
+5. **Changelog** — Append an entry for unreleased changes
+6. **Commit** — Create a commit with all unfixed issues noted
+7. **PR** — Create a GitHub PR using `gh pr create`
+
+For each step: show the command, show the output, state pass/fail.
+Do not proceed to the next step if the previous step fails hard.
+
+Ticket reference: $ARGUMENTS
+```
+
+---
+
+## 20. Personal vs. Project Command Organization
+
+Choosing where to put a custom command determines who can use it and how it's maintained.
+
+### The Decision Framework
+
+```
+Is this command useful across ALL my projects?
+├── Yes → Personal command: ~/.claude/commands/
+│         Examples: /standup, /explain-error, /benchmark
+│         Travels with you; no git needed; private to you
+│
+└── No  → Does the whole TEAM need it?
+          ├── Yes → Project command: .claude/commands/
+          │         Examples: /pr, /deploy, /review, /ship
+          │         Committed to git; everyone gets it on pull
+          │
+          └── No  → Personal+project: ~/.claude/commands/
+                    with @import of project-specific config
+                    Examples: your personal /review that imports
+                    the project's @.claude/standards/checklist.md
+```
+
+### Directory Structure Best Practices
+
+**Personal commands (`~/.claude/commands/`):**
+
+```
+~/.claude/commands/
+├── standup.md          → /standup     (daily, cross-project)
+├── explain-error.md    → /explain-error
+├── benchmark.md        → /benchmark
+├── explain.md          → /explain     (general-purpose)
+│
+├── git/                → /git subcommands (cross-project git helpers)
+│   ├── log.md          → /git/log  or  /git log
+│   ├── stash.md        → /git/stash
+│   └── cleanup.md      → /git/cleanup
+│
+└── lang/               → language-specific commands
+    ├── ts-types.md     → /lang/ts-types
+    └── py-types.md     → /lang/py-types
+```
+
+**Project commands (`.claude/commands/`):**
+
+```
+.claude/commands/
+├── review.md           → /review    (project-specific criteria)
+├── pr.md               → /pr        (project-specific PR template)
+├── deploy.md           → /deploy    (project deployment workflow)
+├── test.md             → /test      (project test runner)
+├── migrate.md          → /migrate   (project DB migrations)
+└── ship.md             → /ship      (full pre-ship workflow)
+```
+
+### Override Mechanics
+
+When a personal and project command share a name, the project command wins silently. This is intentional — projects can customize universal commands:
+
+```
+Personal ~/.claude/commands/review.md
+    → Generic review checklist
+
+Project .claude/commands/review.md
+    → Overrides the personal one
+    → Imports project-specific @.claude/standards/checklist.md
+    → Checks project-specific patterns (WidgetRepository pattern, etc.)
+    → Same /review command, project-tailored behavior
+```
+
+### Team Onboarding with Project Commands
+
+A well-maintained `.claude/commands/` directory is part of the project's developer experience:
+
+```
+1. New developer clones the repo
+2. Runs: git pull
+3. Opens Claude Code: claude
+4. Types: /help
+5. Sees all team commands with descriptions:
+     /review    Review staged changes for correctness, security, and style.
+     /pr        Create a GitHub PR with structured description.
+     /deploy    Deploy to staging or production.
+     /test      Run tests with coverage for changed files.
+     /ship      Full pre-ship checklist.
+6. Zero additional setup required
+```
+
+Add this to your `CLAUDE.md`:
+
+```markdown
+## Custom Commands Available
+
+Use `/help` to see all available slash commands. Key commands:
+
+- `/review` — Code review before committing
+- `/pr` — Create a structured pull request
+- `/deploy staging` — Deploy to staging environment
+- `/test` — Run tests for changed files
+- `/ship PROJ-123` — Full pre-ship workflow with ticket reference
+```
+
+---
+
+## Quick Reference — Custom Commands
+
+```
+Personal Commands
+  Location:  ~/.claude/commands/<name>.md
+  Invoked:   /<name>  in any session
+  Scope:     All projects, current user
+
+Project Commands
+  Location:  .claude/commands/<name>.md
+  Invoked:   /<name>  (overrides personal if same name)
+  Scope:     All users in this project (committed to git)
+
+Subdirectory commands
+  .claude/commands/git/pr.md  →  /git/pr  or  /git pr
+
+Frontmatter Fields
+  description:     One-line label in /help and autocomplete
+  allowed-tools:   Restrict tools (Read, Bash, Edit, Glob, etc.)
+  model:           Pin to specific model for this command
+
+Variable Injection
+  $ARGUMENTS      Everything typed after the command name
+  $1, $2, $3      Space-separated positional arguments
+  @path/to/file   File contents injected at invocation time
+  !`cmd`          Shell stdout injected at invocation time
+
+Rules for !`shell`
+  - Runs at invocation, not lazily
+  - Stdout only (stderr discarded)
+  - Exit code != 0 warns but does not abort
+  - NEVER embed $ARGUMENTS inside !`...`  (injection risk)
+
+Override order
+  Project (.claude/commands/) > Personal (~/.claude/commands/)
+  Plugin (plugin-name:cmd)    — separate namespace, no override
+```

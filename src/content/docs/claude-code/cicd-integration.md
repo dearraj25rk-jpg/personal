@@ -7,14 +7,47 @@ description: >
 sidebar:
   order: 8
   label: CI/CD Integration
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # CI/CD Integration — GitHub Actions & Automation
 
-> **Version:** v2.1.126 (May 6, 2026) · `anthropics/claude-code-action@v1`
+> **Version:** v2.1.126 (May 17, 2026) · `anthropics/claude-code-action@v1`
 
 Claude Code integrates natively with CI/CD pipelines through its non-interactive mode, the official GitHub Action, and a comprehensive set of automation flags. This guide covers everything from basic automated code review to advanced multi-agent CI pipelines.
+
+```
+┌─────────────────── CI/CD PIPELINE FLOW ─────────────────────────┐
+│                                                                   │
+│  Git Event (push/PR/comment/schedule)                            │
+│       │                                                           │
+│       ▼                                                           │
+│  CI Runner (GitHub Actions / GitLab / Azure DevOps)              │
+│       │                                                           │
+│       ├─ Checkout repository                                      │
+│       ├─ Configure Claude Code                                    │
+│       │   (ANTHROPIC_API_KEY or Bedrock/Vertex credentials)      │
+│       │                                                           │
+│       ▼                                                           │
+│  claude --print "task" --permission-mode bypassPermissions       │
+│         --max-turns 30 --max-budget-usd 5.00 --bare             │
+│       │                                                           │
+│       ▼  Agentic Loop                                            │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  Claude reads codebase → executes tools → writes result  │    │
+│  │  (Read, Edit, Bash, Task, TodoWrite, ...)               │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│       │                                                           │
+│       ├─ JSON output captured (--output-format json)             │
+│       ├─ Post PR comment / create issue / push commit            │
+│       └─ OTel traces exported to observability stack             │
+│                                                                   │
+│  CLOUD OPTIONS:                                                   │
+│  • Direct Anthropic API (ANTHROPIC_API_KEY)                      │
+│  • AWS Bedrock (CLAUDE_CODE_USE_BEDROCK=1 + IAM role)           │
+│  • GCP Vertex AI (CLAUDE_CODE_USE_VERTEX=1 + WIF)              │
+└───────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -95,7 +128,79 @@ The official GitHub Action lets Claude Code respond to PR comments, run automate
 1. Add `ANTHROPIC_API_KEY` to your repository's Actions secrets
 2. Add the workflow file
 
-### 2.2 PR Auto-Review on Every Push
+### 2.2 Complete Workflow — All Available Inputs
+
+This reference shows every available input for `claude-code-action@v1`:
+
+```yaml
+# .github/workflows/claude-all-options.yml
+name: Claude Code — Full Input Reference
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # required for file edits + commits
+      pull-requests: write     # required for PR comments
+      issues: write            # required for issue comments
+      checks: write            # optional: for check run status
+      id-token: write          # required for OIDC (Bedrock/Vertex WIF)
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history (important for git diff)
+
+      - name: Claude Code Action
+        uses: anthropics/claude-code-action@v1
+        with:
+          # ── Authentication (pick ONE approach) ──────────────────────────
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # use_bedrock: "true"                      # use AWS Bedrock
+          # use_vertex: "true"                       # use GCP Vertex
+          # aws_region: "us-east-1"
+          # gcp_project_id: ${{ vars.GCP_PROJECT_ID }}
+
+          # ── Model ────────────────────────────────────────────────────────
+          model: "claude-sonnet-4-6"
+          # model: "claude-haiku-4-5"                # fast + cheap
+          # model: "claude-opus-4-7"                 # max capability
+
+          # ── Effort ───────────────────────────────────────────────────────
+          effort: "normal"                           # low | normal | high | xhigh
+
+          # ── The prompt ───────────────────────────────────────────────────
+          prompt: |
+            Review this pull request for quality and security.
+
+          # ── Comment trigger phrase ───────────────────────────────────────
+          # trigger_phrase: "@claude"
+
+          # ── Permission mode ──────────────────────────────────────────────
+          permission_mode: "bypassPermissions"
+          # permission_mode: "autoAccept"            # less strict
+          # permission_mode: "acceptEdits"           # edits only, prompts for Bash
+
+          # ── Limits ───────────────────────────────────────────────────────
+          max_turns: "20"
+          max_budget_usd: "2.00"
+
+          # ── Output ───────────────────────────────────────────────────────
+          output_format: "text"                      # text | json
+
+          # ── Additional environment variables ─────────────────────────────
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DISABLE_UPDATES: "1"                       # block auto-update in CI
+```
+
+### 2.3 PR Auto-Review on Every Push
 
 ```yaml
 # .github/workflows/claude-review.yml
@@ -315,6 +420,8 @@ jobs:
 
 ## 3. GitLab CI Integration
 
+### Basic Merge Request Review
+
 ```yaml
 # .gitlab-ci.yml
 claude-review:
@@ -338,6 +445,121 @@ claude-review:
     - merge_requests
   variables:
     ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+```
+
+### Full GitLab CI Multi-Stage Pipeline
+
+```yaml
+# .gitlab-ci.yml — Multi-stage Claude pipeline with security gate, review, and comment posting
+stages:
+  - validate
+  - analyse
+  - report
+
+variables:
+  DISABLE_UPDATES: "1"
+  # ANTHROPIC_API_KEY must be set in GitLab CI/CD → Variables (masked)
+
+# ── Stage 1: Fast security scan ────────────────────────────────────────────────
+claude-security-scan:
+  stage: validate
+  image: node:20-slim
+  before_script:
+    - npm install -g @anthropic-ai/claude-code@latest --silent
+  script:
+    - |
+      CHANGED=$(git diff origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD --name-only 2>/dev/null || git diff HEAD~1 --name-only)
+      
+      RESULT=$(claude --print "
+        Security scan of changed files: $CHANGED
+        
+        Check for: hardcoded secrets, SQL injection, XSS, SSRF, command injection.
+        Output CLEAN if no issues found.
+        Otherwise list: SEVERITY|FILE:LINE|ISSUE
+        Use CRITICAL for exploitable vulnerabilities.
+      " \
+      --model claude-haiku-4-5 \
+      --permission-mode bypassPermissions \
+      --max-turns 10 \
+      --max-budget-usd 0.50 \
+      --bare 2>/dev/null)
+      
+      echo "$RESULT"
+      
+      # Block merge if critical issues found
+      if echo "$RESULT" | grep -q "^CRITICAL"; then
+        echo "SECURITY GATE: Critical vulnerabilities detected. Merge blocked."
+        exit 1
+      fi
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  environment:
+    name: security-scan
+
+# ── Stage 2: Code quality review ───────────────────────────────────────────────
+claude-code-review:
+  stage: analyse
+  image: node:20-slim
+  needs:
+    - job: claude-security-scan
+      optional: false
+  before_script:
+    - npm install -g @anthropic-ai/claude-code@latest --silent
+    - apt-get update -q && apt-get install -yq git curl jq
+  script:
+    - |
+      claude --print "
+        Review this GitLab merge request for code quality.
+        MR: $CI_MERGE_REQUEST_TITLE ($CI_MERGE_REQUEST_SOURCE_BRANCH_NAME → $CI_MERGE_REQUEST_TARGET_BRANCH_NAME)
+        Project: $CI_PROJECT_NAME
+        
+        Check the changed files. Provide a structured review:
+        1. Summary of what changed
+        2. Code quality issues (file:line references)
+        3. Test coverage gaps
+        4. Performance concerns
+        5. Positive highlights
+        
+        Format as GitLab Flavored Markdown.
+      " \
+      --model claude-sonnet-4-6 \
+      --permission-mode bypassPermissions \
+      --max-turns 25 \
+      --max-budget-usd 2.00 \
+      --bare > code-review.md 2>/dev/null
+      
+      cat code-review.md
+  artifacts:
+    paths:
+      - code-review.md
+    expire_in: 2 weeks
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# ── Stage 3: Post review as MR comment ─────────────────────────────────────────
+post-mr-comment:
+  stage: report
+  image: alpine:latest
+  needs:
+    - job: claude-code-review
+      artifacts: true
+  before_script:
+    - apk add --no-cache curl jq
+  script:
+    - |
+      REVIEW=$(cat code-review.md | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || cat code-review.md)
+      
+      curl --silent --fail \
+        --request POST \
+        --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        --header "Content-Type: application/json" \
+        --data "{\"body\": \"## Claude Code Review\n\n$(cat code-review.md)\"}" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+      
+      echo "Review posted to MR #$CI_MERGE_REQUEST_IID"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: on_success
 ```
 
 ---
@@ -418,17 +640,109 @@ ai-docs:
 
 ## 5. Bedrock & Vertex in CI/CD
 
-### AWS Bedrock
+### AWS Bedrock — with OIDC (Recommended)
+
+Using GitHub Actions OIDC avoids storing long-lived AWS credentials as secrets. GitHub Actions authenticates directly with AWS using short-lived tokens:
 
 ```yaml
-# GitHub Actions with Bedrock
+# .github/workflows/claude-bedrock-oidc.yml
+name: Claude via Bedrock (OIDC)
+
+permissions:
+  id-token: write        # required for OIDC token exchange
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # OIDC authentication — no long-lived credentials stored in secrets
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/GitHubActionsClaudeRole
+          role-session-name: claude-code-ci
+          aws-region: us-east-1
+
+      - name: Run Claude via Bedrock
+        uses: anthropics/claude-code-action@v1
+        with:
+          use_bedrock: "true"
+          aws_region: us-east-1
+          model: claude-sonnet-4-6
+          prompt: "Review this PR for security and code quality"
+          permission_mode: bypassPermissions
+          max_turns: "20"
+          max_budget_usd: "2.00"
+        env:
+          CLAUDE_CODE_USE_BEDROCK: "1"
+          CLAUDE_CODE_BEDROCK_SERVICE_TIER: "default"  # default | flex | priority
+```
+
+**AWS IAM policy for the GitHub Actions role:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockClaudeAccess",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6-*",
+        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-*",
+        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-4-7-*"
+      ]
+    }
+  ]
+}
+```
+
+**Trust policy for the OIDC role (allows GitHub Actions from your repo):**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:your-org/your-repo:*"
+        }
+      }
+    }
+  ]
+}
+```
+
+### AWS Bedrock — with Static Access Keys (not recommended)
+
+```yaml
+# Use OIDC above instead. Static keys are included for reference only.
 env:
   CLAUDE_CODE_USE_BEDROCK: "1"
   AWS_REGION: us-east-1
-  CLAUDE_CODE_BEDROCK_SERVICE_TIER: "default"  # default | flex | priority (v2.1.122+)
+  CLAUDE_CODE_BEDROCK_SERVICE_TIER: "default"
 
 steps:
-  - name: Configure AWS credentials
+  - name: Configure AWS credentials (static keys)
     uses: aws-actions/configure-aws-credentials@v4
     with:
       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -444,30 +758,100 @@ steps:
 ```
 
 **Service tiers (v2.1.122+):**
-- `default` — standard capacity
-- `flex` — lower cost, variable latency
-- `priority` — highest throughput, premium pricing
+- `default` — standard capacity, predictable latency
+- `flex` — lower cost, variable latency (best for non-time-critical CI)
+- `priority` — highest throughput, premium pricing (best for blocking checks)
 
-### Google Cloud Vertex AI
+### Google Cloud Vertex AI — with Workload Identity Federation
+
+Workload Identity Federation (WIF) eliminates the need for service account key files in CI:
 
 ```yaml
-env:
-  CLAUDE_CODE_USE_VERTEX: "1"
-  CLOUD_ML_REGION: us-central1
-  ANTHROPIC_VERTEX_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+# .github/workflows/claude-vertex-wif.yml
+name: Claude via Vertex AI (WIF)
 
-steps:
-  - name: Authenticate to GCP
-    uses: google-github-actions/auth@v2
-    with:
-      workload_identity_provider: ${{ secrets.WIF_PROVIDER }}  # WIF (v2.1.121+)
-      service_account: ${{ secrets.GCP_SA_EMAIL }}
+permissions:
+  id-token: write        # required for WIF token exchange
+  contents: read
+  pull-requests: write
 
-  - name: Run Claude Code
-    uses: anthropics/claude-code-action@v1
-    with:
-      use_vertex: "true"
-      prompt: "Review this PR"
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # WIF authentication — no service account JSON key stored in secrets
+      - name: Authenticate to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          # Format: projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+          # Format: sa-name@project-id.iam.gserviceaccount.com
+
+      - name: Run Claude via Vertex AI
+        uses: anthropics/claude-code-action@v1
+        with:
+          use_vertex: "true"
+          prompt: "Review this PR for security and code quality"
+          permission_mode: bypassPermissions
+          max_turns: "20"
+          max_budget_usd: "2.00"
+        env:
+          CLAUDE_CODE_USE_VERTEX: "1"
+          CLOUD_ML_REGION: us-central1
+          ANTHROPIC_VERTEX_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+```
+
+**GCP setup commands for WIF:**
+
+```bash
+PROJECT_ID="your-project-id"
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+REPO="your-org/your-repo"
+SA_NAME="claude-code-ci"
+SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+# Create the service account
+gcloud iam service-accounts create $SA_NAME \
+  --project=$PROJECT_ID \
+  --display-name="Claude Code CI Service Account"
+
+# Grant Vertex AI access
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:$SA_EMAIL" \
+  --role="roles/aiplatform.user"
+
+# Create Workload Identity Pool
+gcloud iam workload-identity-pools create "github-actions" \
+  --project=$PROJECT_ID \
+  --location="global" \
+  --display-name="GitHub Actions Pool"
+
+# Create Workload Identity Provider
+gcloud iam workload-identity-pools providers create-oidc "github" \
+  --project=$PROJECT_ID \
+  --location="global" \
+  --workload-identity-pool="github-actions" \
+  --display-name="GitHub Provider" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --issuer-uri="https://token.actions.githubusercontent.com"
+
+# Allow GitHub Actions from your repo to impersonate the SA
+gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+  --project=$PROJECT_ID \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-actions/attribute.repository/${REPO}"
+
+# Get the WIF provider resource name (set as WIF_PROVIDER secret)
+gcloud iam workload-identity-pools providers describe "github" \
+  --project=$PROJECT_ID \
+  --location="global" \
+  --workload-identity-pool="github-actions" \
+  --format="value(name)"
 ```
 
 ---
@@ -703,10 +1087,144 @@ jobs:
 
 ---
 
+## 11. Azure DevOps Integration
+
+```yaml
+# azure-pipelines.yml
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  ANTHROPIC_API_KEY: $(anthropicApiKey)  # Set in Library → Variable Groups
+  DISABLE_UPDATES: "1"
+
+stages:
+  - stage: ClaudeReview
+    displayName: Claude Code Quality Gate
+    jobs:
+      - job: SecurityScan
+        displayName: Security Scan (Haiku, fast)
+        steps:
+          - checkout: self
+            fetchDepth: 0
+          - script: |
+              npm install -g @anthropic-ai/claude-code
+              claude --print "Scan changed files for OWASP Top 10 security issues. Output JSON: {issues: [{severity, file, line, desc}]}" \
+                     --model claude-haiku-4-5 \
+                     --effort normal \
+                     --permission-mode bypassPermissions \
+                     --max-turns 10 \
+                     --max-budget-usd 0.50 \
+                     --bare \
+                     --output-format json > $(Build.ArtifactStagingDirectory)/security-scan.json
+            displayName: Run Claude Security Scan
+            env:
+              ANTHROPIC_API_KEY: $(anthropicApiKey)
+          - publish: $(Build.ArtifactStagingDirectory)/security-scan.json
+            artifact: security-report
+
+      - job: CodeReview
+        displayName: Code Review (Sonnet, balanced)
+        dependsOn: SecurityScan
+        steps:
+          - checkout: self
+            fetchDepth: 0
+          - script: |
+              npm install -g @anthropic-ai/claude-code
+              claude --print "Review this PR for code quality, performance, and test coverage. Post findings as markdown." \
+                     --model claude-sonnet-4-6 \
+                     --effort normal \
+                     --permission-mode bypassPermissions \
+                     --max-turns 20 \
+                     --max-budget-usd 2.00 \
+                     --bare
+            displayName: Run Claude Code Review
+            env:
+              ANTHROPIC_API_KEY: $(anthropicApiKey)
+```
+
+### Azure with AWS Bedrock
+
+```yaml
+variables:
+  CLAUDE_CODE_USE_BEDROCK: "1"
+  AWS_REGION: us-east-1
+  CLAUDE_CODE_BEDROCK_SERVICE_TIER: flex  # Cost-optimised for CI
+
+steps:
+  - task: AWSShellScript@1
+    inputs:
+      awsCredentials: MyAWSServiceConnection
+      regionName: us-east-1
+      scriptType: inline
+      inlineScript: |
+        npm install -g @anthropic-ai/claude-code
+        claude --print "Review this PR" \
+               --permission-mode bypassPermissions \
+               --max-turns 20 \
+               --bare
+```
+
+---
+
+## 12. CI/CD Security Hardening Checklist
+
+```
+BEFORE DEPLOYING CLAUDE IN CI/CD:
+
+Authentication
+  ☐ API key stored in secrets manager (not hardcoded, not in logs)
+  ☐ IAM role for Bedrock (no static keys if possible)
+  ☐ WIF for Vertex AI (no service account keys in CI)
+  ☐ Minimum permissions on GITHUB_TOKEN (contents: read, pull-requests: write)
+
+Spend Control
+  ☐ --max-budget-usd set on every automated run
+  ☐ --max-turns set on every automated run
+  ☐ DISABLE_UPDATES=1 to prevent unexpected version changes
+  ☐ Budget alert configured in billing (Anthropic Console / AWS / GCP)
+
+Network Isolation
+  ☐ Docker container with iptables / network policy restricting egress
+  ☐ WebFetch and WebSearch in deny list (unless explicitly needed)
+  ☐ Bash curl/wget/ssh in deny list
+
+Access Control
+  ☐ MCP servers configured with minimum-scope tokens
+  ☐ Tool allowlist defined in .claude/settings.json
+  ☐ No production database or deployment access from CI Claude
+  ☐ Separate CI-specific API key (not developer's personal key)
+
+Observability
+  ☐ OTel exporter configured → observability stack
+  ☐ Session logs retained for audit (JSONL at ~/.claude/logs/)
+  ☐ Spend monitoring dashboard configured
+  ☐ Alert on spend anomalies (e.g., >$10/run is unusual)
+
+Content Safety
+  ☐ PR comments from users don't directly control Claude's actions
+     (use trigger_phrase pattern, not raw comment body)
+  ☐ Prompt injection mitigations in place (validate input before passing to Claude)
+  ☐ Claude output reviewed before being posted publicly if sensitive
+```
+
+---
+
 ## Related Guides
 
 - [CLI Technical Reference](./claude-code-reference) — Section 21: GitHub Actions (full API)
 - [Hooks System](./hooks-deep-dive) — hooks for CI/CD automation
 - [Permissions & Security](./permissions-security) — `bypassPermissions` and allowlists
 - [Agent Teams Guide](./agent-teams-guide) — multi-agent CI pipelines
+- [Models & Pricing](./models-pricing) — CI/CD cost optimisation with Haiku and Bedrock
 - [Efficiency Reference](./claude-code-efficiency-reference) — cost optimisation for CI

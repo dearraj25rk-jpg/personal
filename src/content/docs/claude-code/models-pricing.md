@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 16
   label: Models & Pricing
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Models, Pricing & Effort — Complete Reference
 
-> **Version**: Claude Code v2.1.126 | **Last Updated**: May 9, 2026
+> **Version**: Claude Code v2.1.126 | **Last Updated**: May 17, 2026
 
 ---
 
@@ -1143,4 +1143,123 @@ For pure cost minimization (e.g., CI/CD pipelines):
 │   Vertex AI:     CLAUDE_CODE_USE_VERTEX=1 + GCP credentials          │
 │   Bedrock tiers: CLAUDE_CODE_BEDROCK_SERVICE_TIER=default|flex|prio  │
 └──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 13. Model Selection Flowchart
+
+Use this decision flowchart when you are not sure which model and effort level to use:
+
+```
+START: What is the task?
+    │
+    ├─ Formatting, renaming, boilerplate, docs?
+    │   └─► Haiku, low effort  ($0.80/M input, fastest)
+    │
+    ├─ Standard daily dev (new function, unit tests, simple bug)?
+    │   └─► Sonnet, normal effort  ($3.00/M input, default)
+    │
+    ├─ Complex feature, multi-file refactor, non-obvious bug?
+    │   └─► Sonnet, high effort  ($3.00/M + thinking overhead)
+    │
+    ├─ Architecture design, ambiguous requirements, security review?
+    │   └─► Opus, high effort  ($15.00/M input)
+    │
+    ├─ Hardest problems: distributed systems, Heisenbugs, trade-off analysis?
+    │   └─► Opus 4.7, xhigh effort  ($15.00/M + heavy thinking)
+    │
+    ├─ Mixed session (some routine, some complex)?
+    │   └─► /advisor command  (Sonnet + Opus on demand, ~32% of all-Opus cost)
+    │
+    └─ Bulk CI/CD, PR descriptions, changelog generation?
+        └─► Haiku, low effort  + CLAUDE_CODE_SUBAGENT_MODEL=claude-haiku-4-5
+```
+
+### The 80/20 Rule for Model Selection
+
+In practice, the majority of Claude Code usage follows a simple pattern:
+
+```
+80% of prompts → Sonnet, normal effort
+15% of prompts → Opus, high/xhigh effort  (architecture, hard bugs)
+ 5% of prompts → Haiku, low effort  (mechanical, bulk, CI)
+
+For a standard 8-hour development day:
+  If 80% Sonnet + 15% Opus + 5% Haiku:
+    ≈ $8–15/day total
+    (much less than all-Opus: $40–120/day)
+    (much more capable than all-Haiku: $1–3/day)
+```
+
+The 80/20 rule gives you near-Opus quality on the tasks that matter, at a fraction of the cost.
+
+---
+
+## 14. Real-World Cost Examples
+
+### Example 1: Feature Sprint (5 days)
+
+```
+Task: Implement user notification system end-to-end
+  (schema, API, service layer, tests, docs, PR description)
+
+Day 1 — Architecture (Opus, xhigh):
+  Design review, schema proposal, API contract
+  Tokens: 500K input, 50K output (incl. thinking)
+  Cost: $500K × $15/M + $50K × $75/M = $7.50 + $3.75 = $11.25
+
+Days 2-4 — Implementation (Sonnet, normal, with caching):
+  3 × 8 hours of feature development
+  Tokens: 3M input (mostly cached), 300K output
+  Cost: ~3M × $0.30/M (cached) + 300K × $15/M = $0.90 + $4.50 = $5.40/day
+  3 days: $16.20
+
+Day 5 — Review + PR (Sonnet for review, Haiku for PR description):
+  Security review (Sonnet, high): $2.50
+  PR description generation (Haiku, low): $0.10
+  Day 5: $2.60
+
+Total 5-day sprint: $11.25 + $16.20 + $2.60 = ~$30/sprint
+Compare: Same work without Claude Code estimate: 15–20 developer hours
+```
+
+### Example 2: CI/CD Integration Review Pipeline
+
+```
+GitHub Action triggered on every PR:
+  1. Haiku reads the diff (avg 2K tokens)     → $0.0016
+  2. Haiku generates PR summary               → $0.0008
+  3. Sonnet checks for obvious bugs           → $0.0060
+  4. Haiku writes test stubs if gaps found    → $0.0016
+  Total per PR: ~$0.01
+
+At 20 PRs/day, 250 working days/year:
+  5,000 PRs × $0.01 = $50/year for automated review
+```
+
+### Example 3: Codebase Understanding Session
+
+```
+New team member ramping up on a 100K-line codebase:
+
+With Opus 4.7 (1M context):
+  Load entire codebase at once: ~300K tokens
+  10 architecture questions across 3 hours
+  Total: ~$15 (one-time investment for full context comprehension)
+
+With Sonnet (200K context, selective loading):
+  Load 5 key modules per question
+  10 questions × 20K tokens per question = 200K tokens total
+  Total: ~$0.60
+
+Choose Opus 4.7 when:
+  - You need cross-file relationship understanding
+  - You are debugging a non-obvious cross-cutting issue
+  - One-time whole-codebase architecture session
+
+Choose Sonnet when:
+  - You are working on a specific module or feature area
+  - Questions are self-contained within a subsystem
+  - Cost is constrained
 ```

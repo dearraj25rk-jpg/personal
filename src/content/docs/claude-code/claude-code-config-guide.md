@@ -6,8 +6,8 @@ sidebar:
 
 # CLAUDE.md vs Skills vs Rules — Complete Architecture & Best Practices Guide
 
-> **Last updated: May 2026 — reflects Claude Code v2.1.121+**
-> **Document scope:** Complete configuration reference for CLAUDE.md, Rules, Skills, Plugins, Hooks, MCP, and enterprise settings through v2.1.126 (May 6, 2026).
+> **Last updated: May 2026 — reflects Claude Code v2.1.126+**
+> **Document scope:** Complete configuration reference for CLAUDE.md, Rules, Skills, Commands, Output Styles, Subagents, Plugins, Hooks, MCP, and enterprise settings through v2.1.126 (May 2026).
 
 ## 1. The Core Problem These Three Files Solve
 
@@ -447,10 +447,10 @@ If deployment fails, see [rollback script](scripts/rollback.sh)
 ```
 
   Key decisions:
-  • Use context: fork when the skill modifies many files in isolation
-  • Use agent: true when the skill needs its own conversation context
-  • Use disable-model-invocation: true to prevent auto-invocation
-  • Use allowed-tools to sandbox the skill's capabilities
+  - Use context: fork when the skill modifies many files in isolation
+  - Use agent: true when the skill needs its own conversation context
+  - Use disable-model-invocation: true to prevent auto-invocation
+  - Use allowed-tools to sandbox the skill's capabilities
 
 ### 4.4 Frontmatter Fields Explained
 
@@ -764,7 +764,77 @@ Here is the complete lifecycle of how all three mechanisms work together during 
 | **Git-shared** | Yes (CLAUDE.md) / No (CLAUDE.local.md) | Yes | Yes (project skills) / No (personal skills) | Via `managed-settings.d/` (enterprise) |
 | **Best for** | Project identity, universal conventions, key commands | Domain-specific rules, coding patterns scoped to file types | Complex workflows, deployment, code generation, analysis tasks | Reusable tooling packages, enterprise-wide standards |
 | **Edit command** | `/memory` or direct edit | Direct edit | Direct edit | `claude plugin install/enable/disable` |
-| **Max recommended size** | ~120 lines | ~50 lines per file | ~500 lines in SKILL.md (unbounded with supporting files) |
+| **Max recommended size** | ~120 lines | ~50 lines per file | ~500 lines in SKILL.md (unbounded with supporting files) | — |
+
+---
+
+## 6b. Comprehensive Decision Tree: CLAUDE.md vs Rules vs Skills vs Commands vs Output Styles
+
+Use this extended decision tree for the full range of configuration mechanisms including Commands, Output Styles, and Subagents.
+
+```
+  START: "I have content or capability to add to Claude Code"
+  │
+  ├─► Is it ENFORCEMENT of behavior (must happen every time, deterministically)?
+  │   │
+  │   YES ─► Use HOOKS (.claude/settings.json → "hooks" key)
+  │           Examples: lint after every Edit, block `rm -rf`, audit log Bash calls
+  │           Hooks are code — they always run. Instructions are probabilistic.
+  │
+  └─► Is it INSTRUCTIONS or KNOWLEDGE for Claude?
+      │
+      ├─► Should Claude have it on EVERY interaction, always in context?
+      │   │
+      │   ├─► Is it under 5–10 lines and project-wide?
+      │   │   YES ─► Project CLAUDE.md
+      │   │
+      │   ├─► Is it personal (not for team)?
+      │   │   YES ─► CLAUDE.local.md (this project) or ~/.claude/CLAUDE.md (all projects)
+      │   │
+      │   ├─► Is it domain-specific (only relevant for some file types)?
+      │   │   YES ─► Path-scoped Rule (.claude/rules/<name>.md with paths: frontmatter)
+      │   │           Tokens consumed only when matching files are touched
+      │   │
+      │   └─► Is it team-wide but more than 10 lines?
+      │       YES ─► Global Rule (.claude/rules/<name>.md, no paths:)
+      │               Loaded every session — treat like CLAUDE.md for token budget
+      │
+      ├─► Is it a MULTI-STEP WORKFLOW that Claude executes?
+      │   │
+      │   ├─► Does it need scripts, templates, or reference files?
+      │   │   YES ─► Skill (.claude/skills/<name>/SKILL.md) with supporting files
+      │   │
+      │   ├─► Does it run without supporting files?
+      │   │   YES ─► Skill (.claude/skills/<name>/SKILL.md) — inline body only
+      │   │
+      │   └─► Should it run only when user explicitly invokes it?
+      │       YES ─► Skill with disable-model-invocation: true
+      │               Or use .claude/commands/<name>.md for pure user-typed commands
+      │
+      ├─► Is it a REUSABLE COMMAND the team types explicitly?
+      │   │
+      │   YES: Does it have arguments, shell output injection, or file reads?
+      │   YES ─► .claude/commands/<name>.md (team) or ~/.claude/commands/<name>.md (personal)
+      │   NO  ─► Simple alias → consider a Skill with disable-model-invocation: true
+      │
+      ├─► Is it an AUTONOMOUS AGENT with its own identity and memory?
+      │   │
+      │   YES ─► Subagent (.claude/agents/<name>.md or ~/.claude/agents/<name>.md)
+      │           - Needs own model, tools, memory scope, effort level?  → yes, use agent
+      │           - Just a specialized skill?                             → use skill instead
+      │
+      ├─► Is it a RESPONSE FORMAT that changes how Claude presents output?
+      │   │
+      │   YES ─► Output Style (.claude/output-styles/<name>.md or ~/.claude/output-styles/)
+      │           Note: modifies system prompt — significant architectural change
+      │           Use keep-coding-instructions: true for coding-focused styles
+      │
+      └─► Is it a REUSABLE PACKAGE of multiple components for a team?
+          │
+          YES ─► Plugin (.claude-plugin/plugin.json + component folders)
+                  Bundles: skills + agents + commands + hooks + MCP + themes + monitors
+                  Useful for: enterprise distribution, marketplace publishing
+```
 
 ---
 
@@ -894,9 +964,599 @@ START: "I have instructions/knowledge for Claude"
 
 ---
 
-## 10. Additional Topics You Should Know
+## 10. Token Budget Breakdown by File Type
 
-### 10.1 The # Shortcut for Quick Memory Additions
+Understanding precisely how many tokens each file type consumes helps you make better architectural decisions.
+
+```
+  TOKEN BUDGET BREAKDOWN (200K total context window)
+  ═══════════════════════════════════════════════════════════════════
+
+  FIXED OVERHEAD (unavoidable every session):
+  ┌───────────────────────────────────────────────────────────────┐
+  │ Component                        Typical Token Cost           │
+  ├───────────────────────────────────────────────────────────────┤
+  │ System prompt                    5,000 – 15,000 tokens        │
+  │ Built-in tool schemas            3,000 – 8,000 tokens         │
+  │ MCP tool schemas (per server)    500 – 2,000 tokens each      │
+  │   (GitHub MCP: ~91 tools)        ~46,000 tokens (!)           │
+  │ Response buffer                  33,000 – 45,000 tokens       │
+  ├───────────────────────────────────────────────────────────────┤
+  │ SUBTOTAL FIXED INFRASTRUCTURE    ~41K – 68K tokens            │
+  └───────────────────────────────────────────────────────────────┘
+
+  USER-CONFIGURABLE ALWAYS-ON (permanent per session):
+  ┌───────────────────────────────────────────────────────────────┐
+  │ Enterprise CLAUDE.md             Variable (full content)      │
+  │   Recommended: ≤ 50 lines        ~ 400 – 1,000 tokens        │
+  │                                                               │
+  │ User CLAUDE.md                   Variable (full content)      │
+  │   Recommended: ≤ 50 lines        ~ 400 – 1,000 tokens        │
+  │                                                               │
+  │ Project CLAUDE.md                Variable (full content)      │
+  │   Recommended: ≤ 120 lines       ~ 800 – 2,500 tokens        │
+  │                                                               │
+  │ CLAUDE.local.md                  Variable (full content)      │
+  │   Recommended: ≤ 30 lines        ~ 200 – 600 tokens          │
+  │                                                               │
+  │ Global rules (no paths:)         Variable, per file           │
+  │   Recommended: ≤ 50 lines each   ~ 400 – 1,000 tokens/file   │
+  │                                                               │
+  │ Auto-memory MEMORY.md            Hard cap: 200 lines / 25KB  │
+  │   Typical useful content         ~ 500 – 3,000 tokens        │
+  │                                                               │
+  │ Skill/agent frontmatter          ~100–150 tokens each         │
+  │   10 skills                      ~ 1,000 – 1,500 tokens      │
+  ├───────────────────────────────────────────────────────────────┤
+  │ SUBTOTAL USER ALWAYS-ON          ~ 4K – 12K tokens (typical) │
+  │   (assuming ~5 global rules,                                  │
+  │    3 CLAUDE.md levels, 10 skills)                            │
+  └───────────────────────────────────────────────────────────────┘
+
+  CONDITIONAL (only when triggered):
+  ┌───────────────────────────────────────────────────────────────┐
+  │ Path-scoped rule (per file)      ~ 400 – 2,000 tokens        │
+  │   Loaded when matching files touched; stays for session       │
+  │                                                               │
+  │ Subtree CLAUDE.md (per dir)      ~ 800 – 5,000 tokens        │
+  │   Loaded when Claude enters subdirectory                      │
+  │                                                               │
+  │ Skill body (per invocation)      ~ 500 – 5,000 tokens        │
+  │   Loaded when Claude invokes or /skill-name typed             │
+  │                                                               │
+  │ Slash command body               ~ 200 – 2,000 tokens        │
+  │   Loaded only when /command typed                             │
+  │                                                               │
+  │ Subagent MEMORY.md               Hard cap: 200 lines / 25KB  │
+  │   Loaded at subagent invocation  ~ 500 – 3,000 tokens        │
+  └───────────────────────────────────────────────────────────────┘
+
+  USABLE CONVERSATION SPACE (what remains for actual work):
+  ┌───────────────────────────────────────────────────────────────┐
+  │ 200K - fixed infrastructure - user always-on - response buffer│
+  │ = 200,000 - ~55K - ~8K - ~40K                                │
+  │ ≈ 97K – 140K tokens for conversation + code + tool results   │
+  └───────────────────────────────────────────────────────────────┘
+
+  OPTIMIZATION PRIORITIES:
+  1. GitHub MCP (~46K tokens) → Use ToolSearch or disable when not needed
+  2. Project CLAUDE.md bloat → Move domain rules to path-scoped rules
+  3. Many global rules → Add paths: frontmatter to applicable ones
+  4. Large auto-memory → Let Claude curate it; stays under 25KB limit
+```
+
+### Token Budget Per File Type — Quick Reference
+
+| File Type | Per-Session Cost | When | Optimization |
+|-----------|-----------------|------|--------------|
+| Enterprise CLAUDE.md | Full content, always | Session start | Keep <50 lines; use HTML comments for notes |
+| User CLAUDE.md | Full content, always | Session start | Keep <50 lines; one-time personal prefs only |
+| Project CLAUDE.md | Full content, always | Session start | Keep <120 lines; split to rules aggressively |
+| CLAUDE.local.md | Full content, always | Session start | Keep <30 lines; personal local overrides only |
+| Global rule | Full content, always | Session start | Keep <50 lines; one concern per file |
+| Path-scoped rule | Full content, conditional | When file matches | Multiple paths per file; avoids many globals |
+| Skill frontmatter | ~100-150 tokens | Session start | Compress description; remove unused skills |
+| Skill body | Full content, conditional | On invocation | Use progressive disclosure; supporting files |
+| Slash command body | Full content, on-use | On /command | No session-start cost; suitable for long workflows |
+| Subtree CLAUDE.md | Full content, conditional | On dir access | Great for domain-specific rules; lazy loading |
+| Auto-memory | ≤200 lines / ≤25KB | Session start | Hard cap; automatic curation at limit |
+| Subagent MEMORY.md | ≤200 lines / ≤25KB | On invocation | Per-agent, scoped to invocation context |
+| MCP tools | ~500-2K per server | Session start | Disable unused servers; ToolSearch for large sets |
+
+---
+
+## 11. Monorepo Configuration Patterns
+
+Monorepos present unique challenges for Claude Code configuration because multiple packages, services, or applications share a single git repository. Each package may have different tech stacks, conventions, and domain rules.
+
+### Pattern 1: Root-Plus-Package CLAUDE.md Hierarchy
+
+The most common approach. A root CLAUDE.md covers the shared workspace, while each package has its own subtree CLAUDE.md.
+
+```
+my-monorepo/
+├── CLAUDE.md                        # Shared workspace: build system (pnpm/Turborepo),
+│                                     # top-level scripts, git workflow, PR conventions
+│
+├── .claude/
+│   ├── rules/
+│   │   ├── global.md               # No paths: — applies to all packages
+│   │   │   → Commit format, PR requirements, security baseline
+│   │   │
+│   │   └── infra.md                # paths: ["infra/**", "terraform/**", "k8s/**"]
+│   │       → Terraform style, K8s manifest conventions
+│   │
+│   └── skills/
+│       ├── cross-package-refactor/ # Multi-package change workflow
+│       │   └── SKILL.md
+│       └── release-all/            # Coordinated monorepo release
+│           └── SKILL.md
+│
+├── packages/
+│   ├── web-app/
+│   │   └── CLAUDE.md               # Subtree: React, Vite, routing conventions
+│   │                                 Loaded ON DEMAND when Claude touches web-app/
+│   │
+│   ├── api/
+│   │   ├── CLAUDE.md               # Subtree: Express, TypeScript, OpenAPI spec
+│   │   └── .claude/
+│   │       └── rules/
+│   │           └── api-patterns.md # paths: ["packages/api/src/**"]
+│   │
+│   └── shared-lib/
+│       └── CLAUDE.md               # Subtree: library conventions, export rules
+│
+└── .claude/settings.json
+    # claudeMdExcludes allows per-dev filtering:
+    # { "claudeMdExcludes": ["**/legacy-service/CLAUDE.md"] }
+```
+
+**How lazy loading saves tokens in monorepos**:
+
+A developer working only on `web-app` will never load `api/CLAUDE.md` or `shared-lib/CLAUDE.md` — they only load when Claude accesses files in those directories. In a 10-package monorepo, this could save 40K+ tokens per session for a focused developer.
+
+### Pattern 2: The `claudeMdExcludes` Strategy
+
+When different team members work on different packages, each developer can exclude irrelevant CLAUDE.md files:
+
+```json
+// Developer A — works on web-app only
+// .claude/settings.local.json
+{
+  "claudeMdExcludes": [
+    "**/api/CLAUDE.md",
+    "**/data-pipeline/CLAUDE.md",
+    "**/legacy-service/CLAUDE.md"
+  ]
+}
+```
+
+```json
+// Developer B — full-stack, works across web-app and api
+// .claude/settings.local.json
+{
+  "claudeMdExcludes": [
+    "**/data-pipeline/CLAUDE.md",
+    "**/legacy-service/CLAUDE.md"
+  ]
+}
+```
+
+This is a per-developer, personal configuration — never committed to git.
+
+### Pattern 3: Shared Rule Libraries via Symlinks
+
+When multiple packages share the same coding rules (e.g., a TypeScript style guide), use symlinks in `.claude/rules/` instead of duplicating content:
+
+```bash
+# Create shared rules library at monorepo root
+mkdir -p shared-rules
+cat > shared-rules/typescript.md << 'EOF'
+---
+paths:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+# TypeScript Conventions (shared across all packages)
+- Strict mode: tsconfig.json must have "strict": true
+- No `any` types — use `unknown` with type guards
+- Prefer type aliases over interfaces for union types
+EOF
+
+# Symlink into each package that needs it
+ln -s ../../shared-rules/typescript.md packages/web-app/.claude/rules/typescript.md
+ln -s ../../shared-rules/typescript.md packages/api/.claude/rules/typescript.md
+```
+
+Claude Code detects and handles circular symlinks gracefully.
+
+### Pattern 4: Per-Package Agents
+
+Each package can have its own specialized agents that know package-specific context:
+
+```
+packages/
+├── web-app/
+│   └── .claude/
+│       └── agents/
+│           └── ui-reviewer.md   # Specialized for React/accessibility
+│
+├── api/
+│   └── .claude/
+│       └── agents/
+│           └── api-reviewer.md  # Specialized for REST contracts/security
+│
+└── shared-lib/
+    └── .claude/
+        └── agents/
+            └── api-compat.md    # Checks for breaking changes in exports
+```
+
+### Pattern 5: The `--add-dir` Strategy for Workspaces
+
+When working across packages that don't share a common parent directory:
+
+```bash
+# Load context from multiple workspace directories
+claude --add-dir /workspace/packages/web-app \
+       --add-dir /workspace/packages/api \
+       --add-dir /workspace/shared-lib
+```
+
+Note: `--add-dir` directories are scanned for CLAUDE.md but NOT for agents. Project agents must be in the actual project root or within the cwd tree.
+
+---
+
+## 12. Enterprise Configuration Patterns
+
+Enterprise deployments have additional requirements: policy enforcement, plugin distribution, audit logging, and governance across hundreds of developers.
+
+### Pattern 1: The Three-Tier Enterprise Stack
+
+```
+TIER 1 — ENTERPRISE POLICY (IT-administered, cannot be overridden)
+  Delivered via: Jamf (macOS), Intune (Windows), Ansible (Linux)
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ /Library/Application Support/ClaudeCode/                        │
+  │                                                                 │
+  │ CLAUDE.md                                                       │
+  │   → Security policies, approved tools, compliance requirements  │
+  │   → Escalation contacts, review requirements, audit rules       │
+  │                                                                 │
+  │ managed-settings.json                                           │
+  │   allowManagedHooksOnly: true     (block developer hooks)       │
+  │   allowManagedMcpServersOnly: true (only approved MCP servers)  │
+  │   forceRemoteSettingsRefresh: true (fail-closed on policy fetch) │
+  │   enabledPlugins: ["acme-security", "acme-audit"]               │
+  │                                                                 │
+  │ managed-settings.d/                                             │
+  │   10-security.json   ← permissions.deny, sandbox rules         │
+  │   20-mcp.json        ← approved MCP server list                │
+  │   30-telemetry.json  ← OTel config, audit endpoints            │
+  └─────────────────────────────────────────────────────────────────┘
+
+TIER 2 — TEAM PLUGINS (distributed via enterprise plugin registry)
+  Installed via: managed settings enabledPlugins key
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ acme-security plugin                                            │
+  │   agents/security-reviewer.md    ← Security audit agent        │
+  │   skills/sast-scan/SKILL.md      ← Static analysis workflow    │
+  │   skills/sbom/SKILL.md           ← SBOM generation             │
+  │   hooks/hooks.json                                              │
+  │     PreToolUse: block writes to /secrets/, /keys/               │
+  │     PostToolUse: audit log all Bash executions                  │
+  │   monitors/monitors.json                                        │
+  │     security-events: tail /var/log/security.log                 │
+  │                                                                 │
+  │ acme-audit plugin                                               │
+  │   hooks/hooks.json                                              │
+  │     SessionStart: register session with audit system            │
+  │     Stop: finalize audit trail entry                            │
+  └─────────────────────────────────────────────────────────────────┘
+
+TIER 3 — TEAM/PROJECT (committed to git, team-specific)
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ .claude/CLAUDE.md               Tech stack, commands, arch      │
+  │ .claude/rules/                  Domain rules, path-scoped       │
+  │ .claude/skills/                 Team workflows, generators      │
+  │ .claude/agents/                 Shared review agents            │
+  │ .claude/settings.json           Team permissions, plugins       │
+  └─────────────────────────────────────────────────────────────────┘
+
+TIER 4 — DEVELOPER (personal, not committed)
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ ~/.claude/CLAUDE.md             Personal style preferences      │
+  │ CLAUDE.local.md                 Local sandbox overrides         │
+  │ .claude/settings.local.json     Personal permission adjustments │
+  └─────────────────────────────────────────────────────────────────┘
+```
+
+### Pattern 2: Drop-in Policy Fragments
+
+The `managed-settings.d/` directory lets different teams in IT own different policy domains:
+
+```
+managed-settings.d/
+├── 10-baseline.json           # SecOps: minimum security requirements
+├── 20-network.json            # NetOps: MCP server allowlist
+├── 30-compliance.json         # Legal: data handling restrictions
+├── 40-devtools.json           # DevOps: approved tool configurations
+└── 50-department-specific.json # Per-BU overrides
+```
+
+Merge behavior:
+- Files merged alphabetically (numeric prefixes control order)
+- Scalar values: later files override earlier ones
+- Arrays: concatenated and de-duplicated
+- Objects: deep-merged
+
+Example `30-compliance.json`:
+```json
+{
+  "permissions": {
+    "deny": [
+      "WebFetch(https://external-*)",
+      "Bash(curl *external*)"
+    ]
+  },
+  "claudeMdExcludes": []
+}
+```
+
+### Pattern 3: Force-Enabled Plugins for Compliance
+
+```json
+// managed-settings.json
+{
+  "enabledPlugins": [
+    "acme-security-scanner",
+    "acme-audit-logger"
+  ],
+  "allowManagedHooksOnly": false,
+  "plugins": {
+    "acme-security-scanner": {
+      "userConfig": {
+        "api_endpoint": "https://security.acme.internal"
+      }
+    }
+  }
+}
+```
+
+Force-enabled plugins are exempt from `allowManagedHooksOnly` restrictions — their hooks run even when developer hooks are blocked.
+
+### Pattern 4: Observability and Cost Governance
+
+```json
+// managed-settings.d/40-telemetry.json
+{
+  "telemetry": {
+    "enabled": true,
+    "endpoint": "https://otel.acme.internal:4317",
+    "headers": {
+      "x-team-id": "${TEAM_ID}"
+    }
+  }
+}
+```
+
+```bash
+# In CI pipeline or shell profile:
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.acme.internal:4317
+export OTEL_LOG_TOOL_DETAILS=1  # Include tool parameters in spans
+```
+
+---
+
+## 13. Migration Guide — From Older Patterns
+
+As Claude Code has evolved through v2.0.x → v2.1.x, several patterns have changed. This guide helps you migrate from older configurations.
+
+### Migration 1: Monolithic CLAUDE.md → Rules + Skills
+
+**Before (pre-v2.0.64 era)** — everything in one file:
+```markdown
+# CLAUDE.md (400 lines)
+## Architecture (20 lines)
+## Build Commands (10 lines)
+## TypeScript Rules (30 lines)
+## React Component Rules (30 lines)
+## API Rules (30 lines)
+## Database Rules (30 lines)
+## Testing Requirements (30 lines)
+## Deployment Procedure (50 lines)
+## Style Guide (80 lines)
+## Domain Glossary (70 lines)
+```
+
+**After (v2.0.64+)** — modular layout:
+```
+CLAUDE.md (~80 lines):
+  Architecture, build commands, key paths, git workflow
+
+.claude/rules/
+  typescript.md      paths: ["**/*.ts", "**/*.tsx"]
+  react.md           paths: ["src/components/**"]
+  api.md             paths: ["src/api/**"]
+  database.md        paths: ["src/db/**", "**/*.sql"]
+  testing.md         paths: ["**/*.test.*", "**/*.spec.*"]
+  style.md           (global — no paths:)
+
+.claude/skills/
+  deploy/SKILL.md    (deployment procedure)
+  domain/SKILL.md    (domain glossary + context)
+```
+
+**Token savings**: A session working only on TypeScript API code loads ~2K tokens instead of the original 400-line CLAUDE.md's ~4K tokens.
+
+### Migration 2: Single paths: String → YAML List
+
+**Before (pre-v2.1.84)** — single path only:
+```yaml
+---
+paths: src/api/**/*.ts
+---
+```
+
+**After (v2.1.84+)** — multiple patterns supported:
+```yaml
+---
+paths:
+  - "src/api/**/*.ts"
+  - "src/controllers/**/*.cs"
+  - "tests/api/**"
+---
+```
+
+### Migration 3: Separate Commands and Skills → Unified (v2.1.3+)
+
+**Before (pre-v2.1.3)** — two separate systems:
+```
+.claude/commands/deploy.md    ← user-invoked slash command
+.claude/skills/deploy/        ← auto-invoked skill
+```
+
+**After (v2.1.3+)** — unified via SKILL.md:
+```
+.claude/skills/deploy/SKILL.md    ← creates /deploy command AND auto-invocable skill
+```
+
+The old `.claude/commands/*.md` files still work as pure user-invoked commands without auto-invocation semantics.
+
+### Migration 4: Plugin prune (v2.1.121+)
+
+Auto-installed plugin dependencies that are no longer needed accumulate over time:
+
+```bash
+# Before: manual cleanup
+claude plugin uninstall helper-lib
+claude plugin uninstall secrets-vault
+
+# After (v2.1.121+): automated cleanup
+claude plugin prune    # removes orphaned auto-installed dependencies
+```
+
+### Migration 5: From DISABLE_PROMPT_CACHING_1H_BEDROCK to ENABLE_PROMPT_CACHING_1H
+
+**Before (deprecated)**:
+```bash
+export ENABLE_PROMPT_CACHING_1H_BEDROCK=1
+```
+
+**After (v2.1.108+)**:
+```bash
+export ENABLE_PROMPT_CACHING_1H=1   # Works on API key, Bedrock, Vertex, Foundry
+```
+
+---
+
+## 14. Side-by-Side Configuration Examples
+
+### Example 1: Adding a New Coding Convention
+
+Scenario: The team decides all async functions must be typed with explicit return types.
+
+**Option A: In CLAUDE.md** (global, always loaded):
+```markdown
+# CLAUDE.md
+## Conventions
+- All async functions require explicit Promise<T> return type annotation
+```
+Cost: ~10 tokens, every session.
+
+**Option B: In a global rule** (better organization, same token cost):
+```markdown
+# .claude/rules/typescript.md (no frontmatter = global)
+- All async functions require explicit Promise<T> return type annotation
+```
+Cost: ~10 tokens, every session. Better organized but identical token cost.
+
+**Option C: In a path-scoped rule** (recommended):
+```markdown
+# .claude/rules/typescript.md
+---
+paths:
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+- All async functions require explicit Promise<T> return type annotation
+```
+Cost: 0 tokens unless TypeScript files are touched. **Best choice** — pays for itself immediately on non-TS sessions.
+
+---
+
+### Example 2: Adding a Deployment Workflow
+
+Scenario: Team needs a standard way to deploy to staging with safety checks.
+
+**Option A: In CLAUDE.md** (wrong):
+```markdown
+## Deployment
+1. Run tests: npm run test
+2. Check lint: npm run lint
+3. Build: npm run build
+4. Deploy: npm run deploy:staging
+5. Verify: curl https://staging.example.com/health
+```
+Cost: ~50 tokens every session, even when not deploying. Wastes context.
+
+**Option B: As a path-scoped rule** (wrong — rules can't run scripts):
+Rules are passive instructions, not executable workflows. Can't run `curl` or sequence commands.
+
+**Option C: As a skill** (correct):
+```markdown
+# .claude/skills/deploy-staging/SKILL.md
+---
+name: deploy-staging
+description: >
+  Deploy to staging environment with pre-flight checks and smoke tests.
+  Use when user says "deploy", "push to staging", "ship", or "release to staging".
+allowed-tools: Bash(npm run *), Bash(curl *), Read
+disable-model-invocation: false
+---
+
+# Staging Deployment
+
+## Pre-flight (run these first, in order)
+1. `npm run test` — must pass with 0 failures
+2. `npm run lint` — must pass with 0 errors
+3. `git status` — must show clean working tree
+
+## Deploy
+Run: `npm run deploy:staging`
+Watch for: "Deployment successful" in output
+
+## Verify
+`curl -f https://staging.example.com/health`
+Expected: HTTP 200 with `{"status":"ok"}`
+
+## On failure: see rollback procedure in scripts/rollback.sh
+```
+Cost: ~150 tokens at session start (frontmatter), ~800 tokens when invoked. Zero cost when not deploying.
+
+---
+
+### Example 3: Personal Preferences vs. Team Standards
+
+Scenario: Developer prefers verbose test output; team uses default verbosity.
+
+**Wrong: In project CLAUDE.md** (forces team preference on everyone):
+```markdown
+- Run tests with --verbosity detailed
+```
+
+**Correct: In CLAUDE.local.md** (personal, gitignored):
+```markdown
+# My local preferences
+- When running tests, use --verbosity detailed
+```
+
+---
+
+## 15. Additional Topics You Should Know
+
+### 15.1 The # Shortcut for Quick Memory Additions
 
 During a session, start your input with `#` to quickly add a memory:
 
@@ -906,7 +1566,7 @@ During a session, start your input with `#` to quickly add a memory:
 
 Claude Code will prompt you to choose which memory file to store it in (CLAUDE.md, CLAUDE.local.md, user memory, auto-memory, etc.).
 
-### 10.2 Plugin System (Complementary Mechanism)
+### 15.2 Plugin System (Complementary Mechanism)
 
 The Plugin System provides a package manager for bundling and distributing skills, agents, output styles, MCP servers, hooks, monitors, themes, and LSP servers as a single versioned artifact.
 
@@ -962,7 +1622,7 @@ claude plugin list --json --available        # Include marketplace listings
 
 **Enterprise managed plugins**: Administrators can force-enable plugins via `enabledPlugins` in `managed-settings.json`. Plugins force-enabled this way are exempt from `allowManagedHooksOnly` restrictions, allowing trusted hooks to run even when user/project hooks are blocked.
 
-### 10.3 Hooks (Complementary Mechanism)
+### 15.3 Hooks (Complementary Mechanism)
 
 Hooks are handlers that run automatically at specific lifecycle events. They are NOT the same as rules or skills — they are code execution triggers, not knowledge/instruction files. Use hooks for mechanical enforcement (lint check, secret scanning, policy validation) and rules/skills for nuanced judgment.
 
@@ -998,7 +1658,7 @@ Hooks are handlers that run automatically at specific lifecycle events. They are
 6. Agent/subagent frontmatter (scoped to agent lifetime)
 7. Plugin `hooks/hooks.json` (bundled with plugin)
 
-### 10.4 Auto-Memory System
+### 15.4 Auto-Memory System
 
 Claude Code has a **built-in persistent learning system** that saves project knowledge across sessions. When you ask Claude to "remember" something or Claude learns important context, it writes to `MEMORY.md` in the auto-memory directory.
 
@@ -1030,7 +1690,7 @@ CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude
 
 **What Claude saves**: Things you explicitly ask it to remember, recurring conventions it notices, architectural decisions, key file paths. You see "Writing memory" in the interface when it's active.
 
-### 10.5 Enterprise Managed Settings
+### 15.5 Enterprise Managed Settings
 
 For enterprise deployments, Claude Code supports **multiple managed settings delivery mechanisms** — all taking the highest precedence, overriding user and project settings. Only **one managed source tier** is used at a time; they do not merge across tiers.
 
@@ -1056,155 +1716,6 @@ Drop-in directory (alongside managed-settings.json):
 **macOS MDM delivery:**
 ```bash
 # Deploy via Jamf, Kandji (Iru), Mosyle — domain: com.anthropic.claudecode
-defaults write com.anthropic.claudecode permissions.allow -array "Read" "Grep" "Glob"
-defaults write com.anthropic.claudecode sandbox.enabled -bool true
-```
-
-**Windows Registry:**
-```
-Admin:       HKLM\SOFTWARE\Policies\ClaudeCode  (Settings value, REG_SZ JSON)
-User-level:  HKCU\SOFTWARE\Policies\ClaudeCode  (only if no HKLM source)
-Deploy via:  Group Policy or Intune
-```
-
-**WSL note**: Set `wslInheritsWindowsSettings: true` in the Windows HKLM registry key to make WSL Claude Code sessions read Windows managed settings too.
-
-**Drop-in directory merge rules (v2.1.83)**:
-- `managed-settings.json` merged first as base
-- `*.json` files in `managed-settings.d/` sorted alphabetically and merged on top
-- Scalar values: later files override earlier ones
-- Arrays: concatenated and de-duplicated
-- Objects: deep-merged
-- Use numeric prefixes to control order: `10-telemetry.json`, `20-security.json`
-
-**Key managed-only settings**:
-- `allowManagedHooksOnly` — blocks all user/project/non-managed-plugin hooks
-- `allowManagedMcpServersOnly` — only allowlisted MCP servers apply
-- `allowManagedPermissionRulesOnly` — only managed allow/ask/deny rules apply
-- `strictKnownMarketplaces` — controls which plugin marketplaces users may add
-- `forceRemoteSettingsRefresh` — block startup until remote managed settings are fetched (fail-closed)
-- `companyAnnouncements` — messages shown at startup, cycled at random
-- `channelsEnabled` — allow message channel delivery (Team/Enterprise)
-
-### 10.6 MCP Servers (Complementary Mechanism)
-
-MCP (Model Context Protocol) servers add new tools Claude can use. Skills can reference MCP tools. Each MCP server adds ~500–2000 tokens of tool schema to your context, so disable unused servers with `/mcp` to conserve tokens.
-
-**MCP server scopes**: User scope in `~/.claude.json`; project scope in `.claude/.mcp.json`; managed scope in `managed-mcp.json` (same directory as `managed-settings.json`).
-
-### 10.7 Subagents and Skills
-
-Skills with `context: fork` run in a forked subagent with its own context window. This keeps your main conversation thread clean — the subagent does the work, summarizes results, and returns them. This is particularly valuable for research-heavy skills that would otherwise bloat your main context.
-
-**Subagent frontmatter** (full field reference):
-```yaml
----
-name: agent-name           # Required
-description: ...           # Required — drives auto-delegation; include "use proactively" if desired
-model: inherit             # inherit | sonnet | opus | haiku | full model ID (e.g. claude-opus-4-7)
-effort: medium             # low | medium | high | xhigh — thinking budget
-maxTurns: 50               # Max agentic loop iterations before stopping
-tools: Read, Grep          # Allowlist — only these tools available
-disallowedTools: Write     # Denylist — block specific tools
-isolation: worktree        # "worktree" only — runs in isolated git worktree copy of repo
-background: true           # Run agent as background task (experimental)
-skills: [skill-name]       # Inject skills into agent context at startup (no discovery needed)
-memory:
-  scope: user              # user | project | local
-permissionMode: default    # default | plan | acceptEdits | auto | bypassPermissions
-hooks: ...                 # Lifecycle hooks, scoped to agent lifetime
-mcpServers: [...]          # Inline or reference already-connected MCP servers
----
-```
-
-**Critical subagent constraint**: Subagents **cannot spawn other subagents**. The `Agent` tool is unavailable inside a subagent context. This is a hard architectural limit.
-
-**Session-wide subagent**: Use `claude --agent <name>` to run the entire session as a named subagent. For plugin agents: `claude --agent <plugin-name>:<agent-name>`. List all configured agents with `claude agents`.
-
-### 10.8 The /memory Command
-
-Run `/memory` at any time to see what memory files are currently loaded, verify path-scoped rules are activating correctly, toggle auto-memory on/off, and open any memory file for editing in your system editor.
-
----
-
-## 11. Sources
-
-All information sourced from official documentation as of May 2026:
-- Memory management: https://code.claude.com/docs/en/memory
-- Skills: https://code.claude.com/docs/en/skills
-- Subagents: https://code.claude.com/docs/en/sub-agents
-- Output styles: https://code.claude.com/docs/en/output-styles
-- Settings: https://code.claude.com/docs/en/settings
-- Plugins: https://code.claude.com/docs/en/plugins
-- Plugins reference: https://code.claude.com/docs/en/plugins-reference
-- Hooks reference: https://code.claude.com/docs/en/hooks
-- Best practices: https://code.claude.com/docs/en/best-practices
-- How Claude Code works: https://code.claude.com/docs/en/how-claude-code-worksude/settings.json` (project, git-tracked)
-3. `~/.claude/settings.json` (user, personal)
-4. `.claude/settings.local.json` (local overrides, gitignored)
-5. Skill frontmatter (scoped to skill lifetime)
-6. Agent/subagent frontmatter (scoped to agent lifetime)
-7. Plugin `hooks/hooks.json` (bundled with plugin)
-
-### 10.4 Auto-Memory System
-
-Claude Code has a **built-in persistent learning system** that saves project knowledge across sessions. When you ask Claude to "remember" something or Claude learns important context, it writes to `MEMORY.md` in the auto-memory directory.
-
-**Key facts:**
-- Storage: `~/.claude/projects/<project>/memory/MEMORY.md` (derived from git root)
-- All worktrees in the same git repo share **one** memory directory
-- Machine-local — not synced across machines; not shared with teammates
-- First **200 lines OR 25 KB** (whichever comes first) loaded at session start — hard cap, unlike CLAUDE.md files which load in full with no size limit
-- Can create satellite topic files (e.g., `database.md`, `deployment.md`) alongside `MEMORY.md`
-- This is **separate** from subagent MEMORY.md (which lives in `agent-memory/<name>/MEMORY.md`)
-
-**Configure:**
-```json
-// ~/.claude/settings.json — user setting only, not project
-{
-  "autoMemoryDirectory": "~/my-memory-dir"
-}
-```
-
-**Disable:**
-```bash
-CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude
-```
-
-**In-session control:** Run `/memory` to toggle, browse files, or open them in your editor. Type `#` at the start of input to immediately save a note:
-```
-# Use vertical slice architecture, not Clean Architecture, in this project
-```
-
-**What Claude saves**: Things you explicitly ask it to remember, recurring conventions it notices, architectural decisions, key file paths. You see "Writing memory" in the interface when it's active.
-
-### 10.5 Enterprise Managed Settings
-
-For enterprise deployments, Claude Code supports **multiple managed settings delivery mechanisms** — all taking the highest precedence, overriding user and project settings. Only **one managed source tier** is used at a time; they do not merge across tiers.
-
-**Precedence within managed tier** (highest to lowest):
-1. Server-managed (from Claude.ai admin console)
-2. MDM/OS-level (macOS plist, Windows HKLM Registry)
-3. File-based (`managed-settings.json` + `managed-settings.d/*.json`)
-4. HKCU Registry (Windows user-level — lowest managed tier)
-
-**File-based (all platforms):**
-```
-macOS:   /Library/Application Support/ClaudeCode/managed-settings.json
-Linux:   /etc/claude-code/managed-settings.json
-Windows: C:\Program Files\ClaudeCode\managed-settings.json
-
-Drop-in directory (alongside managed-settings.json):
-  managed-settings.d/
-  ├── 10-security.json       # Merged alphabetically on top of base
-  ├── 20-plugins.json        # Later files win on scalar values
-  └── 30-mcp-servers.json    # Arrays concatenate and deduplicate
-```
-
-**macOS MDM delivery:**
-```bash
-# Deploy via Jamf, Kandji (Iru), Mosyle, or manual `defaults write`
-# Managed plist domain: com.anthropic.claudecode
 defaults write com.anthropic.claudecode permissions.allow -array "Read" "Grep" "Glob"
 defaults write com.anthropic.claudecode sandbox.enabled -bool true
 ```
@@ -1236,160 +1747,13 @@ Deploy via:  Group Policy or Intune
 - `companyAnnouncements` — messages shown at startup, cycled at random
 - `channelsEnabled` — allow message channel delivery (Team/Enterprise)
 
-### 10.6 MCP Servers (Complementary Mechanism)
-
-MCP (Model Context Protocol) servers add new tools Claude can use. Skills can reference MCP tools. Each MCP server adds ~500–2000 tokens of tool schema to your context, so disable unused servers with `/mcp` to conserve tokens.
-
-**MCP server scopes**: User scope in `~/.claude.json`; project scope in `.claude/.mcp.json`; managed scope in `managed-mcp.json`.
-
-### 10.7 Subagents and Skills
-
-Skills with `context: fork` run in a forked subagent with its own context window. This keeps your main conversation thread clean — the subagent does the work, summarizes results, and returns them. This is particularly valuable for research-heavy skills that would otherwise bloat your main context.
-
-**Subagent frontmatter** (full list for reference):
-```yaml
----
-name: agent-name           # Required
-description: ...           # Required — drives auto-delegation
-model: inherit             # inherit | sonnet | opus | haiku | full model ID
-effort: medium             # low | medium | high | xhigh
-maxTurns: 50               # Max loop iterations
-tools: Read, Grep          # Allowlist
-disallowedTools: Write     # Denylist
-isolation: worktree        # Run in isolated git worktree copy
-background: true           # Background task (experimental)
-skills: [skill-name]       # Inject skills into agent context at startup
-memory:
-  scope: user              # user | project | local
-permissionMode: default    # default | plan | acceptEdits | auto | bypassPermissions
-hooks: ...                 # Lifecycle hooks (scoped to agent lifetime)
-mcpServers: [...]          # Inline or reference MCP servers
----
-```
-
-**Critical subagent constraint**: Subagents **cannot spawn other subagents**. The `Agent` tool is unavailable inside a subagent context.
-
-### 10.8 The /memory Command
-
-Run `/memory` at any time to see what memory files are currently loaded, verify path-scoped rules are activating correctly, toggle auto-memory on/off, and open any memory file for editing in your system editor.
-
----
-
-## 11. Sources
-
-All information sourced from official documentation as of May 2026:
-- Memory management: https://code.claude.com/docs/en/memory
-- Skills: https://code.claude.com/docs/en/skills
-- Subagents: https://code.claude.com/docs/en/sub-agents
-- Output styles: https://code.claude.com/docs/en/output-styles
-- Settings: https://code.claude.com/docs/en/settings
-- Plugins: https://code.claude.com/docs/en/plugins
-- Plugins reference: https://code.claude.com/docs/en/plugins-reference
-- Hooks reference: https://code.claude.com/docs/en/hooks
-- Best practices: https://code.claude.com/docs/en/best-practices
-- How Claude Code works: https://code.claude.com/docs/en/how-claude-code-works
-ude/settings.json` (project, git-tracked)
-3. `~/.claude/settings.json` (user, personal)
-4. `.claude/settings.local.json` (local overrides, gitignored)
-5. Skill frontmatter (scoped to skill lifetime)
-6. Agent/subagent frontmatter (scoped to agent lifetime)
-7. Plugin `hooks/hooks.json` (bundled with plugin)
-
-### 10.4 Auto-Memory System
-
-Claude Code has a **built-in persistent learning system** that saves project knowledge across sessions. When you ask Claude to "remember" something or Claude learns important context, it writes to `MEMORY.md` in the auto-memory directory.
-
-**Key facts:**
-- Storage: `~/.claude/projects/<project>/memory/MEMORY.md` (derived from git root)
-- All worktrees in the same git repo share **one** memory directory
-- Machine-local — not synced across machines; not shared with teammates
-- First **200 lines OR 25 KB** (whichever comes first) loaded at session start — hard cap, unlike CLAUDE.md files which load in full with no size limit
-- Can create satellite topic files (e.g., `database.md`, `deployment.md`) alongside `MEMORY.md`
-- This is **separate** from subagent MEMORY.md (which lives in `agent-memory/<name>/MEMORY.md`)
-
-**Configure:**
-```json
-// ~/.claude/settings.json — user setting only, not valid in project settings
-{
-  "autoMemoryDirectory": "~/my-memory-dir"
-}
-```
-
-**Disable:**
-```bash
-CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude
-```
-
-**In-session control:** Run `/memory` to toggle, browse files, or open them in your editor. Type `#` at the start of input to immediately save a note:
-```
-# Use vertical slice architecture, not Clean Architecture, in this project
-```
-
-**What Claude saves**: Things you explicitly ask it to remember, recurring conventions it notices, architectural decisions, key file paths. You see "Writing memory" in the interface when it's active.
-
-### 10.5 Enterprise Managed Settings
-
-For enterprise deployments, Claude Code supports **multiple managed settings delivery mechanisms** — all taking the highest precedence, overriding user and project settings. Only **one managed source tier** is used at a time; they do not merge across tiers.
-
-**Precedence within managed tier** (highest to lowest):
-1. Server-managed (from Claude.ai admin console)
-2. MDM/OS-level (macOS plist, Windows HKLM Registry)
-3. File-based (`managed-settings.json` + `managed-settings.d/*.json`)
-4. HKCU Registry (Windows user-level — lowest managed tier)
-
-**File-based (all platforms):**
-```
-macOS:   /Library/Application Support/ClaudeCode/managed-settings.json
-Linux:   /etc/claude-code/managed-settings.json
-Windows: C:\Program Files\ClaudeCode\managed-settings.json
-
-Drop-in directory (alongside managed-settings.json):
-  managed-settings.d/
-  ├── 10-security.json       # Merged alphabetically on top of base
-  ├── 20-plugins.json        # Later files win on scalar values
-  └── 30-mcp-servers.json    # Arrays concatenate and deduplicate
-```
-
-**macOS MDM delivery:**
-```bash
-# Deploy via Jamf, Kandji (Iru), Mosyle — domain: com.anthropic.claudecode
-defaults write com.anthropic.claudecode permissions.allow -array "Read" "Grep" "Glob"
-defaults write com.anthropic.claudecode sandbox.enabled -bool true
-```
-
-**Windows Registry:**
-```
-Admin:       HKLM\SOFTWARE\Policies\ClaudeCode  (Settings value, REG_SZ JSON)
-User-level:  HKCU\SOFTWARE\Policies\ClaudeCode  (only if no HKLM source)
-Deploy via:  Group Policy or Intune
-```
-
-**WSL note**: Set `wslInheritsWindowsSettings: true` in the Windows HKLM registry key to make WSL Claude Code sessions read Windows managed settings too.
-
-**Drop-in directory merge rules (v2.1.83)**:
-- `managed-settings.json` merged first as base
-- `*.json` files in `managed-settings.d/` sorted alphabetically and merged on top
-- Scalar values: later files override earlier ones
-- Arrays: concatenated and de-duplicated
-- Objects: deep-merged
-- Use numeric prefixes to control order: `10-telemetry.json`, `20-security.json`
-
-**Key managed-only settings**:
-- `allowManagedHooksOnly` — blocks all user/project/non-managed-plugin hooks
-- `allowManagedMcpServersOnly` — only allowlisted MCP servers apply
-- `allowManagedPermissionRulesOnly` — only managed allow/ask/deny rules apply
-- `strictKnownMarketplaces` — controls which plugin marketplaces users may add
-- `forceRemoteSettingsRefresh` — block startup until remote managed settings are fetched (fail-closed)
-- `companyAnnouncements` — messages shown at startup, cycled at random
-- `channelsEnabled` — allow message channel delivery (Team/Enterprise)
-
-### 10.6 MCP Servers (Complementary Mechanism)
+### 15.6 MCP Servers (Complementary Mechanism)
 
 MCP (Model Context Protocol) servers add new tools Claude can use. Skills can reference MCP tools. Each MCP server adds ~500–2000 tokens of tool schema to your context, so disable unused servers with `/mcp` to conserve tokens.
 
 **MCP server scopes**: User scope in `~/.claude.json`; project scope in `.claude/.mcp.json`; managed scope in `managed-mcp.json` (same directory as `managed-settings.json`).
 
-### 10.7 Subagents and Skills
+### 15.7 Subagents and Skills
 
 Skills with `context: fork` run in a forked subagent with its own context window. This keeps your main conversation thread clean — the subagent does the work, summarizes results, and returns them. This is particularly valuable for research-heavy skills that would otherwise bloat your main context.
 
@@ -1418,13 +1782,13 @@ mcpServers: [...]          # Inline or reference already-connected MCP servers
 
 **Session-wide subagent**: Use `claude --agent <name>` to run the entire session as a named subagent. For plugin agents: `claude --agent <plugin-name>:<agent-name>`. List all configured agents with `claude agents`.
 
-### 10.8 The /memory Command
+### 15.8 The /memory Command
 
 Run `/memory` at any time to see what memory files are currently loaded, verify path-scoped rules are activating correctly, toggle auto-memory on/off, and open any memory file for editing in your system editor.
 
 ---
 
-## 11. Sources
+## 16. Sources
 
 All information sourced from official documentation as of May 2026:
 - Memory management: https://code.claude.com/docs/en/memory

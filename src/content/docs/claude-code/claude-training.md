@@ -18,6 +18,87 @@ The program assumes foundational Claude Code familiarity and jumps directly into
 
 ---
 
+## Learning Path Overview
+
+```
+  CLAUDE CODE MASTERY — 8-MODULE PROGRESSION
+  ════════════════════════════════════════════════════════════════════
+
+  FOUNDATION TIER (Modules 1-2)
+  ─────────────────────────────
+  Module 1: CLI Mastery
+  │  Shortcuts → Slash Commands → Tools → CLAUDE.md → Plugins
+  │  Outcome: Fluid control surface, no hesitation on any command
+  │
+  └─► Module 2: Agent Teams
+         Task tool → Agent Teams → Filesystem Mailbox → Cost Optimisation
+         Outcome: Design and operate multi-agent collaborative systems
+
+  AUTOMATION TIER (Modules 3-4)
+  ──────────────────────────────
+  Module 3: Hooks System
+  │  PreToolUse → PostToolUse → Stop → 30+ event types → Security gates
+  │  Outcome: Governed development system with automated validation
+  │
+  └─► Module 4: MCP Servers
+         Architecture → Config → Custom C# servers → Security
+         Outcome: Claude Code reaches ANY external system
+
+  INTELLIGENCE TIER (Modules 5-6)
+  ────────────────────────────────
+  Module 5: Prompt Engineering
+  │  RICS pattern → XML tagging → Extended thinking → Agentic patterns
+  │  Outcome: Precise, reliable, cost-efficient prompt design
+  │
+  └─► Module 6: RAG Architecture
+         Naive → Advanced → GraphRAG → Hybrid search → Security hardening
+         Outcome: Production-grade enterprise RAG systems
+
+  PRODUCTION TIER (Modules 7-8)
+  ──────────────────────────────
+  Module 7: CI/CD Integration
+  │  Battle Plan → Context management → GitHub Actions → Azure DevOps → SDK
+  │  Outcome: Fully automated AI-augmented development pipelines
+  │
+  └─► Module 8: Enterprise Architecture
+         Council pattern → Framework selection → HITL → Stateful agents
+         Outcome: Design and deploy enterprise-grade multi-agent systems
+
+  DEPENDENCIES:
+  Module 1 ──► All modules (CLI fundamentals required throughout)
+  Module 2 ──► Module 8 (agent patterns build on team concepts)
+  Module 3 ──► Module 7 (hooks underpin CI/CD quality gates)
+  Module 4 ──► Module 6 (MCP enables RAG data access)
+  Module 5 ──► Modules 6, 7, 8 (prompt design is cross-cutting)
+```
+
+---
+
+## Skill Assessment Rubric
+
+Use this rubric to evaluate your current level and identify gaps before starting:
+
+| Skill Area | Beginner (0-2) | Practitioner (3-5) | Expert (6-8) | Elite (9-10) |
+|------------|----------------|-------------------|--------------|--------------|
+| **CLI Fluency** | Knows basic `claude` command | Uses common shortcuts + slash commands | All shortcuts from memory; custom keybindings | Instant mode switching; muscle memory on 20+ shortcuts |
+| **CLAUDE.md** | Basic context file | Structured with commands and conventions | Multi-level hierarchy with rules and skills | Ruthlessly concise; token-aware; plugin-distributed |
+| **Tool Selection** | Uses Bash for everything | Knows native tools exist | Always uses Read/Edit/Glob over shell | Optimises tool chains; uses offset/limit for context efficiency |
+| **Agent Design** | No subagents | Occasional Task calls | Custom agent definitions with frontmatter | Memory-backed specialists with model/effort tuning |
+| **Hooks** | No hooks | One PostToolUse hook | Multi-event hooks with exit codes | PreToolUse security gates + Stop verification + OTel |
+| **MCP** | No MCP servers | 1-2 standard servers | Custom server in preferred language | Enterprise-managed; tool description caps; security hardened |
+| **Prompt Engineering** | Natural language prompts | XML structure + examples | RICS pattern + extended thinking | Context engineering; multi-shot caching; spec-driven |
+| **RAG** | No RAG experience | Basic vector search | Hybrid search + re-ranking | GraphRAG + agentic retrieval + 5-layer security |
+| **CI/CD Integration** | Manual workflow | Claude in GitHub Actions | Parallel review + quality gates | AI/CD with agent decision nodes and HITL gates |
+| **Cost Management** | No tracking | Aware of per-session cost | Uses model tiers + effort levels | Budget caps + cache optimisation + cost-per-value analysis |
+
+**Score interpretation:**
+- 0-25: Start at Module 1, proceed sequentially
+- 26-50: Skim Modules 1-2, focus on Modules 3-5
+- 51-75: Focus on Modules 6-8 and certification prep
+- 76-100: Ready for capstone projects and teaching others
+
+---
+
 ## Module 1: Claude Code CLI — the complete operator's reference
 
 ### Learning Objectives
@@ -217,6 +298,53 @@ Use `/reload-plugins` inside a session to pick up changes without restarting. Fo
 
 **Session management** provides continuity: `claude -c` resumes the most recent conversation; `claude -r` opens the interactive session picker; `--fork-session` branches from a resumed session without modifying the original.
 
+### Module 1 — Assessment Questions
+
+Test your mastery before moving on:
+
+1. What keyboard shortcut cycles between Normal, Auto-Accept, and Plan Mode? What does each mode do?
+2. What is the difference between `/compact` and `/clear`? When should you use each?
+3. Name three situations where you should use `Read` instead of `Bash(cat ...)`. Why does it matter?
+4. A CLAUDE.md file has grown to 800 lines. What are the consequences, and how would you restructure it?
+5. A developer on your team wants to put the database password in CLAUDE.md so Claude can connect. What's wrong with this, and what's the correct approach?
+6. You're running Claude in CI and it's taking 45 seconds to start. What flag reduces startup time by 14%?
+7. Explain the configuration precedence hierarchy from highest to lowest priority.
+8. What is a Plugin and how does it differ from a Skill? When would you use each?
+9. How does the `--fork-session` flag differ from `claude -c`?
+10. You want Claude to respond only in a specific JSON schema. What CLI flag enforces this?
+
+### Module 1 — Real-World Project
+
+**Project: Team Claude Code Setup**
+
+Transform your existing .NET project's Claude Code configuration from zero to production-ready in one day:
+
+1. **Audit** (30 min): Run `claude` in your project. Note what it gets wrong, what context it's missing, and what dangerous operations it might attempt.
+
+2. **CLAUDE.md** (45 min): Write a project CLAUDE.md under 150 lines covering:
+   - Build, test, lint commands
+   - Architecture overview (3-4 sentences)
+   - Key conventions (naming, patterns, async rules)
+   - What NOT to do (known anti-patterns in your codebase)
+
+3. **Rules** (30 min): Create 2-3 `.claude/rules/` files scoped with `globs:` to specific areas:
+   - `rules/api/security.md` — authorization, input validation, rate limiting
+   - `rules/data/migrations.md` — EF Core migration conventions
+   - `rules/tests/coverage.md` — test structure requirements
+
+4. **Settings** (20 min): Configure `.claude/settings.json` with:
+   - Sensible `permissions.deny` for dangerous Bash commands
+   - A PostToolUse hook that runs `dotnet build` after `.cs` file edits
+   - `defaultPermissionMode: "acceptEdits"` for your team's workflow
+
+5. **Validation** (30 min): Test each component. Verify:
+   - Context loads correctly (`/context` shows reasonable token usage)
+   - Hooks fire on file edits
+   - Dangerous commands are blocked
+   - The team can run `claude` and get immediately useful results
+
+**Success criteria:** A new developer on your team can run `claude` in the project and get useful, accurate assistance within 5 minutes, without any manual setup or onboarding.
+
 ---
 
 ## Module 2: Agent teams — orchestrating collaborative AI systems
@@ -357,6 +485,53 @@ Session resumption does not restore teammates — after `/resume`, spawn new one
 | No task decomposition before TeamCreate | Teammates idle waiting for direction | Pre-define tasks; claim-and-execute pattern |
 | Forgetting `isolation: worktree` | Teammates conflict on same files | Add `isolation: worktree` to all teammates |
 | Building on Agent Teams for production | Research Preview = breaking changes | Prototype only; not GA yet |
+
+### Module 2 — Assessment Questions
+
+1. What environment variable enables Agent Teams? What version of Claude Code first introduced it?
+2. Explain the difference between SubAgent (Task tool) and Agent Teams in one sentence each.
+3. A team is running 5 Claude Opus workers in an agent team for test generation. What would you change to reduce cost by 60% with minimal quality impact?
+4. What is the filesystem mailbox pattern? Where are inbox files stored on disk?
+5. Walk through the sequence of tool calls needed to: create a team, assign a task, and receive a completion notification.
+6. What happens to Agent Teams workers when you run `/resume` to restore an orchestrator session?
+7. What is `isolation: worktree` and when is it required?
+8. You have 4 independent code modules to analyse in parallel. Should you use Agent Teams or the Task tool? Explain.
+9. What are the six team tools (list them) and what does each one do?
+10. Name three Research Preview limitations of Agent Teams that make them unsuitable for production use.
+
+### Module 2 — Real-World Project
+
+**Project: Parallel Codebase Health Dashboard**
+
+Build a multi-agent system that produces a comprehensive health report for a large codebase:
+
+1. **Design the agent fleet** (20 min):
+   - `security-analyst`: reads-only, checks OWASP top 10 patterns
+   - `performance-analyst`: reads-only, identifies N+1 queries and allocation hotspots
+   - `test-coverage-analyst`: reads-only, calculates coverage gaps per module
+   - `dependency-auditor`: reads-only, runs `dotnet list package --vulnerable`
+   - `orchestrator`: assigns work, aggregates results into HTML report
+
+2. **Create agent definitions** in `.claude/agents/`:
+   - Write YAML frontmatter with appropriate `tools:` restrictions (read-only)
+   - Set `model: claude-sonnet-4-6` and `effort: high` for each analyst
+   - Set `max-turns: 30` per analyst
+
+3. **Write the orchestration prompt**:
+   - Use Task tool to spawn all 4 analysts in parallel
+   - Each analyst targets a specific area of your codebase
+   - Orchestrator waits for all results, then generates a structured report
+
+4. **Add cost controls**:
+   - `max_budget_usd=0.50` per analyst session
+   - `max_budget_usd=2.00` total for orchestrator
+
+5. **Validate and measure**:
+   - Record: total cost, total wall-clock time, quality of findings
+   - Compare to manually running each analysis sequentially
+   - Calculate time and cost savings
+
+**Success criteria:** Full 4-analyst health report generated in under 3 minutes for a 50,000-line codebase, total cost under $2.00, zero false positives on known-good patterns.
 
 ---
 
@@ -587,6 +762,75 @@ CLAUDE_CODE_HOOK_DEBUG=1 claude
 | Hook reads from disk at every turn | Performance overhead accumulates | Cache expensive checks; use `"once": true` for one-time setup |
 | Forgetting to reload after editing | Old hook behaviour persists | Run `/hooks` or restart session |
 | Hooks running in session start | Not all hooks fire at session start | Check which events you actually need |
+
+### Module 3 — Assessment Questions
+
+1. List all three hook exit codes and what each one means. Which one feeds stderr text back to Claude?
+2. What is the difference between a `command` hook, an `http` hook, and an `agent` hook? When would you use each?
+3. A `PreToolUse` hook for Bash takes 90 seconds to run. What happens to the user experience? How do you fix it?
+4. You want a hook to run once at session start and then never again. What property do you add to the hook config?
+5. Write the regex matcher pattern that would match all GitHub MCP tool calls.
+6. What is the `"if"` condition syntax in hooks? Give an example of a conditional hook.
+7. Why is `exit 2` the correct code for a blocking error instead of `exit 1`?
+8. A Stop hook is supposed to run tests after Claude finishes. The hook fires, tests fail, but Claude stops anyway. What's wrong?
+9. What env var overrides the SessionEnd hook timeout? Why does SessionEnd use a separate timeout?
+10. Walk through how a PreToolUse hook can *modify* the tool input (not just block it). What JSON field does it return?
+
+### Module 3 — Hands-On Exercise: Build a .NET Security Gate
+
+Implement a complete `PreToolUse` security gate for a .NET project:
+
+**Scenario:** Your team works on an Azure Function App with access to a production SQL database. You need to prevent Claude from accidentally running destructive SQL or Azure CLI operations.
+
+**Exercise steps:**
+
+1. **Write the security-check.py hook** that blocks:
+   ```
+   - Bash commands containing: DROP TABLE, TRUNCATE, DELETE FROM (without WHERE)
+   - az group delete, az resource delete
+   - git push --force to main/master
+   - Any curl/wget piped to bash
+   ```
+
+2. **Configure the hook** in `.claude/settings.json` as a `PreToolUse` matcher on `Bash`.
+
+3. **Write a PostToolUse audit hook** that logs every Bash command with timestamp, user, and command to `/var/log/claude-code/audit.jsonl`.
+
+4. **Add a Stop hook** that:
+   - Runs `dotnet test --no-build` after each session
+   - If tests fail, exits with code 2 and the failure output as the message
+   - Includes a 120-second timeout
+
+5. **Test each hook** by:
+   - Running blocked commands and verifying they're rejected
+   - Checking audit log entries appear correctly
+   - Verifying Stop hook prevents completion when tests fail
+
+**Deliverable:** A `.claude/hooks/` directory with 3 scripts and corresponding settings.json configuration, plus a test script that validates all three hooks.
+
+### Module 3 — Real-World Project
+
+**Project: Governed Development System**
+
+Transform Claude Code from an assistant into a governed development system for your .NET project:
+
+1. **Quality gate chain**:
+   - `PreToolUse[Bash]`: block dangerous commands (rm -rf, sudo, production DB writes)
+   - `PostToolUse[Edit|Write]`: run `dotnet format --verify-no-changes` (format check)
+   - `PostToolUse[Edit|Write]`: run `dotnet build --no-restore` (compilation check)
+   - `Stop`: run `dotnet test` and block if any tests fail
+
+2. **Audit infrastructure**:
+   - PostToolUse hook writes all tool calls to central audit log
+   - OTel export to Application Insights (Azure-native observability)
+   - Alert on blocked commands via Azure Monitor webhook
+
+3. **CI enforcement**:
+   - Port your hooks to CI environment (GitHub Actions / Azure DevOps)
+   - Verify hooks work in `bypassPermissions` mode
+   - Add `CLAUDE_CODE_HOOK_DEBUG=1` logging for CI troubleshooting
+
+**Success criteria:** No file edit goes uncompiled; no test regression goes undetected; all tool calls are logged with full audit trail; blocked operations trigger alerts within 30 seconds.
 
 ---
 

@@ -51,21 +51,46 @@ Requires Node.js ≥ 18 and Claude Code CLI installed.
 
 The SDK wraps the Claude Code CLI as a subprocess, communicating over stdin/stdout using a structured JSON streaming protocol. Claude Code runs in `--output-format stream-json` mode.
 
+### Architecture Diagram
+
 ```
-Your application
-      │
-      │  subprocess: claude --output-format stream-json --print "..."
-      ▼
-Claude Code CLI
-      │
-      │  streams JSON messages to stdout
-      ▼
-SDK parses message stream:
-  system     → session configuration
-  assistant  → Claude's response text
-  tool_use   → tool invocation
-  tool_result → tool output
-  result     → final session summary (usage, cost, turns)
+  YOUR APPLICATION
+  ─────────────────────────────────────────────────────────────────
+  │  Python / TypeScript code                                      │
+  │                                                                │
+  │  StatefulClient / OAuthClient / fire-and-forget query()        │
+  └─────────────────────┬──────────────────────────────────────────
+                        │  subprocess spawn
+                        ▼
+  CLAUDE CODE CLI PROCESS
+  ─────────────────────────────────────────────────────────────────
+  │  claude --output-format stream-json --print "<prompt>"         │
+  │                                                                │
+  │  Loads:  CLAUDE.md hierarchy                                   │
+  │          .claude/settings.json + user settings                 │
+  │          MCP servers (.mcp.json)                               │
+  │          Hooks (PreToolUse, PostToolUse, Stop, ...)            │
+  │          Agent definitions (.claude/agents/)                   │
+  └─────────────────────┬──────────────────────────────────────────
+                        │  JSON stream on stdout (one event per line)
+                        ▼
+  SDK EVENT STREAM (parsed by SDK)
+  ─────────────────────────────────────────────────────────────────
+  │  { type: "system"      } → session ID, model, cwd, tools      │
+  │  { type: "assistant"   } → Claude text + tool_use blocks       │
+  │  { type: "tool_result" } → output from tool execution         │
+  │  { type: "result"      } → final summary: cost, turns, usage  │
+  │  { type: "error"       } → something went wrong               │
+  └─────────────────────────────────────────────────────────────────
+
+  TRANSPORT CHARACTERISTICS
+  ─────────────────────────────────────────────────────────────────
+  │  • stdin/stdout pipes — no network sockets                     │
+  │  • Each event is a complete JSON object on one line            │
+  │  • Events arrive in causal order (no reordering)              │
+  │  • "result" is always the final event                         │
+  │  • subprocess inherits parent environment unless overridden    │
+  └─────────────────────────────────────────────────────────────────
 ```
 
 **Key properties:**
@@ -74,6 +99,35 @@ SDK parses message stream:
 - The SDK does NOT open an interactive REPL — it's for automation
 - Session state (files, environment) is shared with the subprocess environment
 - Cost and token tracking are available in the `result` message
+
+### StatefulClient vs Fire-and-Forget
+
+```
+  FIRE-AND-FORGET (single query)            STATEFULCLIENT (multi-turn)
+  ─────────────────────────────             ─────────────────────────────
+  subprocess starts                         subprocess starts
+       │                                         │
+  prompt ──► Claude reasons                 turn 1 ──► Claude reasons
+       │       └─ tool calls                     │       └─ tool calls
+       │       └─ file edits                     │       └─ file edits
+       │                                         │
+  result event (final)                      history accumulates in context
+  subprocess exits                               │
+                                           turn 2 ──► Claude reasons
+  Best for:                                    │       (sees turn 1 result)
+  • CI/CD single tasks                          │       └─ builds on prior work
+  • Parallel independent jobs                   │
+  • Simple one-shot queries                turn 3 ──► continues...
+  • Budget-capped batch work                     │
+                                           client.reset() clears history
+                                           subprocess exits on close()
+
+                                           Best for:
+                                           • Multi-step pipelines
+                                           • Iterative refinement
+                                           • Context-dependent workflows
+                                           • Interactive web apps
+```
 
 ---
 
@@ -153,6 +207,7 @@ async for event in session:
             print(f"Session: {event.session_id}")
             print(f"Cwd: {event.cwd}")
             print(f"Model: {event.model}")
+            print(f"Tools available: {event.tools}")
             
         case "assistant":
             # Claude's response — may be chunked across multiple events
@@ -165,6 +220,8 @@ async for event in session:
         case "tool_result":
             # Result from a tool execution
             print(f"\n[Result for {event.tool_use_id}: {str(event.content)[:100]}]")
+            if event.is_error:
+                print(f"  ERROR: {event.content}")
             
         case "result":
             # Final summary — always the last event
@@ -173,10 +230,12 @@ async for event in session:
             print(f"Cost: ${event.cost_usd:.4f}")
             print(f"Stop reason: {event.stop_reason}")
             # event.usage: { input_tokens, output_tokens, cache_read_tokens, cache_write_tokens }
+            print(f"Cache read: {event.usage.cache_read_tokens:,} tokens (saved)")
             
         case "error":
             # Something went wrong
             print(f"\n[Error: {event.error}]")
+            print(f"Error code: {event.code}")
 ```
 
 ### 3.4 Stateful Client — Multi-Turn Sessions
@@ -223,9 +282,174 @@ async def interactive_pipeline():
 - Context compaction happens automatically when the window fills
 - `client.session_id` — unique ID for this conversation
 - `client.usage` — cumulative token usage across all turns
+- `client.total_cost_usd` — total spend for the session
 - `client.reset()` — clear conversation history while keeping config
 
-### 3.5 Parallel Sessions
+### 3.5 Python SDK — Full Example with Error Handling and Retry Logic
+
+```python
+#!/usr/bin/env python3
+"""
+Production-grade Claude Code SDK usage with retry logic,
+error handling, budget controls, and structured output.
+"""
+import asyncio
+import logging
+import time
+from typing import Optional
+from anthropic.claude_code import (
+    StatefulClient,
+    ClaudeCodeError,
+    SessionTimeoutError,
+    BudgetExceededError,
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class ClaudeCodeRunner:
+    """Resilient wrapper around StatefulClient with retry and budget management."""
+
+    def __init__(
+        self,
+        cwd: str = ".",
+        model: str = "claude-sonnet-4-6",
+        max_budget_usd: float = 5.00,
+        max_turns: int = 30,
+        timeout: int = 300,
+        max_retries: int = 3,
+        retry_delay: float = 2.0,
+    ):
+        self.cwd = cwd
+        self.model = model
+        self.max_budget_usd = max_budget_usd
+        self.max_turns = max_turns
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self._client: Optional[StatefulClient] = None
+
+    async def __aenter__(self):
+        self._client = StatefulClient(
+            cwd=self.cwd,
+            model=self.model,
+            max_budget_usd=self.max_budget_usd,
+            max_turns=self.max_turns,
+            timeout=self.timeout,
+            permission_mode="autoAccept",
+        )
+        await self._client.__aenter__()
+        return self
+
+    async def __aexit__(self, *args):
+        if self._client:
+            await self._client.__aexit__(*args)
+
+    async def run_with_retry(
+        self,
+        prompt: str,
+        stage: str = "unnamed",
+    ) -> Optional[str]:
+        """Run a prompt with retry logic on transient errors."""
+        last_error = None
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                logger.info(f"[{stage}] attempt {attempt}/{self.max_retries}")
+                result = await self._client.query(prompt)
+                logger.info(
+                    f"[{stage}] complete — {result.num_turns} turns, "
+                    f"${result.cost_usd:.4f}, "
+                    f"{result.usage.input_tokens:,} in / "
+                    f"{result.usage.output_tokens:,} out tokens"
+                )
+                return result.output_text
+
+            except BudgetExceededError as e:
+                logger.error(
+                    f"[{stage}] budget exceeded: ${e.spent_usd:.4f} of ${e.limit_usd:.4f}"
+                )
+                return None  # Non-retryable
+
+            except SessionTimeoutError:
+                logger.warning(f"[{stage}] timeout on attempt {attempt}")
+                last_error = "timeout"
+
+            except ClaudeCodeError as e:
+                if e.code in ("rate_limited", "overloaded"):
+                    logger.warning(
+                        f"[{stage}] transient error {e.code} on attempt {attempt}"
+                    )
+                    last_error = str(e)
+                else:
+                    logger.error(f"[{stage}] fatal SDK error: {e.code} — {e.message}")
+                    return None  # Non-retryable
+
+            except Exception as e:
+                logger.error(f"[{stage}] unexpected error: {e}", exc_info=True)
+                return None
+
+            if attempt < self.max_retries:
+                delay = self.retry_delay * (2 ** (attempt - 1))  # exponential backoff
+                logger.info(f"[{stage}] retrying in {delay:.1f}s...")
+                await asyncio.sleep(delay)
+
+        logger.error(f"[{stage}] all {self.max_retries} attempts failed. Last: {last_error}")
+        return None
+
+
+async def run_refactoring_pipeline(repo_path: str):
+    """Multi-stage refactoring with verification and retry."""
+    async with ClaudeCodeRunner(
+        cwd=repo_path,
+        model="claude-opus-4-7",
+        max_budget_usd=10.00,
+        max_turns=50,
+        timeout=600,
+    ) as runner:
+        analysis = await runner.run_with_retry(
+            "Analyse the codebase. List (1) duplicated logic, "
+            "(2) god classes, (3) missing abstractions. "
+            "Be specific with file paths and line ranges.",
+            stage="analysis",
+        )
+        if not analysis:
+            return {"error": "Analysis failed"}
+
+        plan = await runner.run_with_retry(
+            "Create a detailed refactoring plan based on your analysis. "
+            "Order by risk (lowest first). Output a numbered list.",
+            stage="planning",
+        )
+
+        impl = await runner.run_with_retry(
+            "Implement items 1, 2, and 3 from your plan. "
+            "Make the changes, then run the full test suite.",
+            stage="implementation",
+        )
+
+        verify = await runner.run_with_retry(
+            "Review all changes you made. Check: (1) tests pass, "
+            "(2) no regressions, (3) code quality improved. "
+            "Output: VERIFIED or ISSUES: <list>.",
+            stage="verification",
+        )
+
+        return {
+            "analysis": analysis,
+            "plan": plan,
+            "implementation": impl,
+            "verification": verify,
+        }
+
+
+if __name__ == "__main__":
+    result = asyncio.run(run_refactoring_pipeline("/path/to/my-project"))
+    print(result)
+```
+
+### 3.6 Parallel Sessions
 
 Run multiple independent Claude Code sessions simultaneously:
 
@@ -260,7 +484,42 @@ for r in results:
     print(r['summary'])
 ```
 
-### 3.6 Error Handling
+**Parallelism pattern — async/await:**
+
+```python
+import asyncio
+from anthropic.claude_code import StatefulClient
+
+async def run_task(task_id: int, prompt: str, cwd: str) -> dict:
+    """Single task wrapper with metadata."""
+    start = asyncio.get_event_loop().time()
+    async with StatefulClient(cwd=cwd, permission_mode="bypassPermissions") as client:
+        result = await client.query(prompt)
+    elapsed = asyncio.get_event_loop().time() - start
+    return {
+        "task_id": task_id,
+        "output": result.output_text,
+        "cost_usd": result.cost_usd,
+        "elapsed_s": round(elapsed, 1),
+    }
+
+async def run_parallel_tasks(tasks: list[dict]) -> list[dict]:
+    """
+    Run up to N tasks in parallel with concurrency limit.
+    tasks: list of {"prompt": str, "cwd": str}
+    """
+    semaphore = asyncio.Semaphore(5)  # max 5 concurrent sessions
+
+    async def bounded_task(task_id, task):
+        async with semaphore:
+            return await run_task(task_id, task["prompt"], task["cwd"])
+
+    return await asyncio.gather(
+        *[bounded_task(i, t) for i, t in enumerate(tasks)]
+    )
+```
+
+### 3.7 Error Handling
 
 ```python
 from anthropic.claude_code import ClaudeCodeError, SessionTimeoutError, BudgetExceededError
@@ -287,7 +546,7 @@ async def safe_run(prompt: str):
         return None
 ```
 
-### 3.7 Cost and Token Tracking
+### 3.8 Cost and Token Tracking
 
 ```python
 async def cost_tracked_run(prompt: str) -> float:
@@ -308,7 +567,7 @@ async def cost_tracked_run(prompt: str) -> float:
     return total_cost
 ```
 
-### 3.8 OAuth Authentication (v2.1.121+)
+### 3.9 OAuth Authentication (v2.1.121+)
 
 For applications that need user-level OAuth authentication:
 
@@ -320,8 +579,33 @@ async def user_authenticated_session(oauth_token: str):
     async with OAuthClient(
         oauth_token=oauth_token,
         cwd="/path/to/project",
+        permission_mode="acceptEdits",
+        model="claude-sonnet-4-6",
     ) as client:
-        return await client.query("Review my code for security issues.")
+        # Session runs with user's identity and permissions
+        result = await client.query("Review my code for security issues.")
+        return result.output_text
+
+# OAuth flow integration example (FastAPI)
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import HTTPBearer
+
+app = FastAPI()
+security = HTTPBearer()
+
+@app.post("/review")
+async def review_code(
+    prompt: str,
+    credentials = Depends(security)
+):
+    """Run a Claude Code session on behalf of an authenticated user."""
+    try:
+        output = await user_authenticated_session(
+            oauth_token=credentials.credentials,
+        )
+        return {"result": output}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 ```
 
 ---
@@ -355,49 +639,112 @@ async function runClaudeTask() {
 runClaudeTask();
 ```
 
-### 4.2 Claude Code Subprocess SDK
+### 4.2 Claude Code Subprocess SDK (TypeScript Full Example)
 
 ```typescript
 import { ClaudeCode } from "@anthropic-ai/claude-code-sdk";
+import * as fs from "fs/promises";
+import * as path from "path";
 
-async function runCodeTask(prompt: string, cwd: string = ".") {
+interface SessionResult {
+  output: string;
+  numTurns: number;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  stopReason: string;
+}
+
+async function runCodeTask(
+  prompt: string,
+  cwd: string = process.cwd(),
+  options: {
+    maxTurns?: number;
+    maxBudgetUsd?: number;
+    model?: string;
+    permissionMode?: "default" | "acceptEdits" | "autoAccept" | "bypassPermissions" | "plan";
+    allowedTools?: string[];
+  } = {}
+): Promise<SessionResult> {
   const session = new ClaudeCode({
     cwd,
-    permissionMode: "bypassPermissions",
-    maxTurns: 30,
-    model: "claude-opus-4-7",
+    permissionMode: options.permissionMode ?? "bypassPermissions",
+    maxTurns: options.maxTurns ?? 30,
+    maxBudgetUsd: options.maxBudgetUsd ?? 5.0,
+    model: options.model ?? "claude-opus-4-7",
+    allowedTools: options.allowedTools,
   });
+
+  let outputText = "";
+  let result: SessionResult | null = null;
 
   for await (const event of session.stream(prompt)) {
     switch (event.type) {
       case "system":
-        console.log(`Session: ${event.sessionId}`);
+        console.log(`[system] Session ${event.sessionId} on model ${event.model}`);
+        console.log(`[system] Tools: ${event.tools.join(", ")}`);
         break;
-      
+
       case "assistant":
         for (const block of event.message.content) {
           if (block.type === "text") {
             process.stdout.write(block.text);
+            outputText += block.text;
+          } else if (block.type === "tool_use") {
+            console.log(`\n[tool] ${block.name}(${JSON.stringify(block.input).slice(0, 120)})`);
           }
         }
         break;
-      
-      case "tool_use":
-        console.log(`\n[Tool: ${event.toolName}]`);
+
+      case "tool_result":
+        if (event.isError) {
+          console.error(`\n[error] Tool ${event.toolUseId}: ${JSON.stringify(event.content)}`);
+        }
         break;
-      
+
       case "result":
-        console.log(`\nDone in ${event.numTurns} turns`);
-        console.log(`Cost: $${event.costUsd.toFixed(4)}`);
+        result = {
+          output: outputText,
+          numTurns: event.numTurns,
+          costUsd: event.costUsd,
+          inputTokens: event.usage.inputTokens,
+          outputTokens: event.usage.outputTokens,
+          cacheReadTokens: event.usage.cacheReadTokens,
+          stopReason: event.stopReason,
+        };
+        console.log(`\n\n[result] ${event.numTurns} turns, $${event.costUsd.toFixed(4)}`);
+        console.log(
+          `[result] ${event.usage.inputTokens.toLocaleString()} in / ` +
+          `${event.usage.outputTokens.toLocaleString()} out / ` +
+          `${event.usage.cacheReadTokens.toLocaleString()} cache-read tokens`
+        );
+        break;
+
+      case "error":
+        console.error(`\n[error] ${event.code}: ${event.error}`);
         break;
     }
   }
+
+  if (!result) throw new Error("Session ended without a result event");
+  return result;
 }
 
+// Example: run TypeScript strict mode migration
 runCodeTask(
-  "Add TypeScript strict mode and fix all resulting type errors.",
-  process.cwd()
-);
+  "Add TypeScript strict mode and fix all resulting type errors. " +
+  "Run `tsc --noEmit` to verify when done.",
+  process.cwd(),
+  {
+    model: "claude-opus-4-7",
+    permissionMode: "autoAccept",
+    maxTurns: 50,
+    maxBudgetUsd: 3.0,
+  }
+).then((result) => {
+  console.log(`Stop reason: ${result.stopReason}`);
+}).catch(console.error);
 ```
 
 ### 4.3 Stateful Client (TypeScript)
@@ -410,6 +757,8 @@ async function multiTurnSession() {
     cwd: process.cwd(),
     permissionMode: "autoAccept",
     model: "claude-sonnet-4-6",
+    maxBudgetUsd: 5.0,
+    timeout: 300_000, // 5 minutes in ms
   });
 
   try {
@@ -429,6 +778,10 @@ async function multiTurnSession() {
     );
     console.log("Result:", r3.outputText);
 
+    // Print cumulative cost
+    console.log(`\nTotal cost: $${client.totalCostUsd.toFixed(4)}`);
+    console.log(`Session ID: ${client.sessionId}`);
+
   } finally {
     await client.close();
   }
@@ -439,36 +792,179 @@ multiTurnSession();
 
 ### 4.4 Streaming Message Types (TypeScript)
 
-```typescript
-import type { SDKEvent } from "@anthropic-ai/claude-code-sdk";
+Complete TypeScript type definitions for all SDK events:
 
-function handleEvent(event: SDKEvent) {
+```typescript
+// Full TypeScript interface for all SDK events
+type SDKEvent =
+  | {
+      type: "system";
+      sessionId: string;
+      model: string;
+      cwd: string;
+      tools: string[];          // list of available tool names
+    }
+  | {
+      type: "assistant";
+      message: {
+        id: string;
+        role: "assistant";
+        content: Array<
+          | { type: "text"; text: string }
+          | {
+              type: "tool_use";
+              id: string;
+              name: string;
+              input: Record<string, unknown>;
+            }
+        >;
+        usage: { inputTokens: number; outputTokens: number };
+      };
+    }
+  | {
+      type: "tool_result";
+      toolUseId: string;
+      content: Array<{ type: "text"; text: string }>;
+      isError: boolean;
+    }
+  | {
+      type: "result";
+      sessionId: string;
+      numTurns: number;
+      stopReason:
+        | "end_turn"         // Claude finished normally
+        | "max_turns"        // hit the maxTurns limit
+        | "budget_exceeded"  // hit the maxBudgetUsd limit
+        | "timeout"          // session timed out
+        | "error";           // fatal error
+      costUsd: number;
+      usage: {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;   // tokens served from prompt cache (cheaper)
+        cacheWriteTokens: number;  // tokens written to cache (one-time cost)
+      };
+    }
+  | {
+      type: "error";
+      error: string;
+      code:
+        | "not_found"        // claude binary not found
+        | "auth_error"       // authentication failed
+        | "rate_limited"     // API rate limit hit
+        | "overloaded"       // API overloaded
+        | "budget_exceeded"  // budget exhausted before result
+        | "timeout"          // subprocess timed out
+        | "unknown";         // unexpected error
+    };
+
+// Usage example with discriminated unions
+function handleEvent(event: SDKEvent): void {
   switch (event.type) {
     case "system":
-      console.log(`Session ID: ${event.sessionId}, Model: ${event.model}`);
+      console.log(`Session: ${event.sessionId}, Model: ${event.model}`);
+      console.log(`Tools: ${event.tools.join(", ")}`);
       break;
 
     case "assistant":
-      event.message.content.forEach(block => {
-        if (block.type === "text") process.stdout.write(block.text);
-        if (block.type === "tool_use") console.log(`\n[${block.name}]`);
-      });
+      for (const block of event.message.content) {
+        if (block.type === "text") {
+          process.stdout.write(block.text);
+        } else {
+          console.log(`\n[${block.name}(${JSON.stringify(block.input)})]`);
+        }
+      }
       break;
 
     case "tool_result":
-      console.log(`\nTool result: ${JSON.stringify(event.content).slice(0, 100)}`);
+      if (event.isError) {
+        console.error(`\nTool error: ${JSON.stringify(event.content)}`);
+      }
       break;
 
     case "result":
       console.log(`\nComplete. Turns: ${event.numTurns}, Cost: $${event.costUsd.toFixed(4)}`);
-      console.log(`Tokens: ${event.usage.inputTokens} in, ${event.usage.outputTokens} out`);
+      console.log(`Stop reason: ${event.stopReason}`);
+      console.log(
+        `Tokens: ${event.usage.inputTokens.toLocaleString()} in / ` +
+        `${event.usage.outputTokens.toLocaleString()} out / ` +
+        `${event.usage.cacheReadTokens.toLocaleString()} cached`
+      );
       break;
 
     case "error":
-      console.error(`Error: ${event.error}`);
+      console.error(`Error [${event.code}]: ${event.error}`);
       break;
   }
 }
+```
+
+### 4.5 Parallel Session Pattern (TypeScript async/await)
+
+```typescript
+import { StatefulClaudeCode } from "@anthropic-ai/claude-code-sdk";
+
+interface ModuleReview {
+  path: string;
+  summary: string;
+  issues: string;
+  costUsd: number;
+}
+
+async function reviewModule(modulePath: string): Promise<ModuleReview> {
+  const client = new StatefulClaudeCode({
+    cwd: process.cwd(),
+    permissionMode: "acceptEdits",
+    model: "claude-sonnet-4-6",
+    maxBudgetUsd: 0.50,
+  });
+
+  try {
+    const summary = await client.query(`Summarise the architecture of ${modulePath}`);
+    const issues = await client.query(
+      `List security or quality issues in ${modulePath}. ` +
+      "Focus on: SQL injection, missing auth, error handling gaps."
+    );
+    return {
+      path: modulePath,
+      summary: summary.outputText,
+      issues: issues.outputText,
+      costUsd: client.totalCostUsd,
+    };
+  } finally {
+    await client.close();
+  }
+}
+
+async function parallelCodebaseReview(modules: string[]): Promise<ModuleReview[]> {
+  // Limit concurrency to avoid overwhelming the API
+  const CONCURRENCY = 4;
+  const results: ModuleReview[] = [];
+
+  for (let i = 0; i < modules.length; i += CONCURRENCY) {
+    const batch = modules.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(batch.map(reviewModule));
+    results.push(...batchResults);
+    
+    const batchCost = batchResults.reduce((sum, r) => sum + r.costUsd, 0);
+    console.log(`Batch ${Math.floor(i / CONCURRENCY) + 1} complete. Cost: $${batchCost.toFixed(4)}`);
+  }
+
+  return results;
+}
+
+// Run
+parallelCodebaseReview(["src/api/", "src/domain/", "src/infra/", "src/auth/"])
+  .then((results) => {
+    const totalCost = results.reduce((sum, r) => sum + r.costUsd, 0);
+    console.log(`\nTotal cost: $${totalCost.toFixed(4)}`);
+    results.forEach((r) => {
+      console.log(`\n=== ${r.path} ===`);
+      console.log(r.summary);
+      if (r.issues) console.log("Issues:", r.issues);
+    });
+  })
+  .catch(console.error);
 ```
 
 ---
@@ -536,7 +1032,7 @@ async with StatefulClient(custom_tools=custom_tools) as client:
 
 ---
 
-## 6. Configuration
+## 6. SDK in Production — Environment Setup
 
 ### 6.1 All SDK Options
 
@@ -585,6 +1081,57 @@ CLAUDE_EFFORT=high                  # session-wide effort override
 # SDK-specific
 CLAUDE_CODE_SDK_TIMEOUT=300         # subprocess timeout in seconds
 CLAUDE_CODE_SDK_MAX_RETRIES=3       # retry count on transient errors
+
+# Production tuning
+CLAUDE_CODE_DISABLE_1M_CONTEXT=1    # force 200K context window (lower cost)
+CLAUDE_CODE_DISABLE_CRON=1          # suppress scheduled task tools
+DISABLE_UPDATES=1                   # pin CLI version in CI environments
+```
+
+### 6.3 Docker / CI Environment Setup
+
+```dockerfile
+# Dockerfile for Claude Code SDK automation
+FROM python:3.12-slim
+
+# Install Node.js (required for Claude Code CLI)
+RUN apt-get update && apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
+
+# Install Claude Code CLI
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
+# Install Python SDK
+RUN pip install anthropic
+
+# Copy application
+WORKDIR /app
+COPY . .
+
+# Run with API key from environment
+ENV ANTHROPIC_API_KEY=""
+ENV DISABLE_UPDATES=1
+ENV CLAUDE_CODE_SDK_TIMEOUT=300
+
+CMD ["python", "main.py"]
+```
+
+```yaml
+# GitHub Actions environment setup
+- name: Install Claude Code
+  run: |
+    curl -fsSL https://claude.ai/install.sh | bash
+    echo "$HOME/.local/bin" >> $GITHUB_PATH
+    
+- name: Verify installation
+  run: claude --version
+
+- name: Run SDK automation
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    DISABLE_UPDATES: "1"
+  run: python scripts/ci-review.py
 ```
 
 ---
@@ -634,6 +1181,7 @@ if __name__ == "__main__":
 from fastapi import FastAPI, BackgroundTasks
 from anthropic.claude_code import StatefulClient
 import asyncio
+import uuid
 
 app = FastAPI()
 active_sessions: dict[str, StatefulClient] = {}
@@ -799,6 +1347,10 @@ type SDKEvent =
 | Incomplete results | Increase `max_turns` (default 30) |
 | MCP tools not available | Verify `~/.claude/mcp.json` and project `.mcp.json` are configured |
 | Hooks not firing | SDK sessions inherit hooks from `~/.claude/settings.json` |
+| High token cost | Enable prompt caching; check `cache_read_tokens` in usage |
+| Subprocess hangs | Set `CLAUDE_CODE_SDK_TIMEOUT`; add `timeout` param to StatefulClient |
+| OAuthClient 401 error | Token expired; refresh OAuth token before creating client |
+| Parallel sessions rate-limited | Reduce concurrency; add semaphore with limit 3-5 |
 
 ---
 
