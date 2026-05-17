@@ -20,8 +20,10 @@ pnpm-debug.log*
 # macOS-specific files
 .DS_Store
 
-# Claude Code internals
-.claude/
+# Claude Code internals (private data ignored; shared commands tracked)
+.claude/*
+!.claude/commands/
+!.claude/commands/**
 
 # Editor
 .vscode/
