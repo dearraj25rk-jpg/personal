@@ -8,7 +8,7 @@ lastUpdated: 2026-05-17
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
 
-**Latest stable:** v2.1.126 (May 9, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions) · **Platforms:** macOS, Linux, WSL2, Windows native
+**Latest stable:** v2.1.126 (May 17, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions) · **Platforms:** macOS, Linux, WSL2, Windows native
 
 ```
 ┌────────────────────────── CLAUDE CODE ECOSYSTEM ──────────────────────────┐

@@ -8,12 +8,12 @@ description: >
 sidebar:
   order: 6
   label: MCP Servers
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # MCP Servers — Architecture, Configuration & Development
 
-> **Version:** MCP Spec 1.1 · Claude Code v2.1.126 (May 6, 2026)
+> **Version:** MCP Spec 1.1 · Claude Code v2.1.126 (May 17, 2026)
 
 The **Model Context Protocol (MCP)** is an open standard that allows AI systems like Claude Code to connect to external data sources, tools, and services. MCP servers extend Claude Code's capabilities beyond what its built-in tools provide — connecting it to databases, APIs, file systems, cloud services, development tools, and any custom backend.
 

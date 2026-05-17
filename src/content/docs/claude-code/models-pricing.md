@@ -807,7 +807,7 @@ Track your token usage for the current session:
 ```
 > /usage
 
-Session Usage (started 2026-05-09 09:15)
+Session Usage (started 2026-05-17 09:15)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Model: claude-sonnet-4-6 (effort: normal)
 Elapsed: 3h 42m

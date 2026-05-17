@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 12
   label: Slash Commands
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Slash Commands — Complete Reference
 
-> **Version:** v2.1.126 (May 9, 2026) · Covers all built-in commands through v2.1.126 plus the complete custom command authoring API.
+> **Version:** v2.1.126 (May 17, 2026) · Covers all built-in commands through v2.1.126 plus the complete custom command authoring API.
 
 Slash commands are short, typed directives you send in the Claude Code REPL to control session behavior, navigate history, manage configuration, and invoke pre-written workflows. They complement natural-language prompts by providing fast, deterministic access to features that would otherwise require verbose instructions or navigating a settings file.
 

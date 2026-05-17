@@ -635,7 +635,7 @@ CI workflow documentation to the repository.
 | RAG & Architecture | 5 | 3 | 2 | 10 |
 | CI/CD & Workflows | 17 | 0 | 1 | 18 |
 | Enterprise & Security | 17 | 2 | 2 | 21 |
-| Topic Guides (May 6, 2026) | 47 | 5 | 0 | 52 |
+| Topic Guides (May 17, 2026) | 47 | 5 | 0 | 52 |
 | New Content (May 7, 2026) | 26 | 0 | 0 | 26 |
 | May 17, 2026 additions | 40 | 3 | 0 | 43 |
 | **Total** | **271** | **20** | **7** | **298** |

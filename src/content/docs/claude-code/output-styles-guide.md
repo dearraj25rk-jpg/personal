@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 14
   label: Output Styles
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Output Styles — Complete Reference
 
-> **Version:** v2.1.126 (May 9, 2026) · Output styles introduced in v2.0.0.
+> **Version:** v2.1.126 (May 17, 2026) · Output styles introduced in v2.0.0.
 
 Output styles are the **most invasive configuration lever** in Claude Code. They directly replace the software-engineering-specific portion of Claude's system prompt, changing not just what Claude says but how it reasons, structures its responses, and behaves during coding sessions.
 

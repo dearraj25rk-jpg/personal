@@ -8,12 +8,12 @@ description: >
 sidebar:
   order: 7
   label: Agent Teams
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Agent Teams & Subagents — Complete Guide
 
-> **Version:** v2.1.126 (May 6, 2026) · Agent Teams: Research Preview (enable via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`)
+> **Version:** v2.1.126 (May 17, 2026) · Agent Teams: Research Preview (enable via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`)
 
 Claude Code supports two levels of multi-agent operation:
 

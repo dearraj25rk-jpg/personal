@@ -8,7 +8,7 @@ sidebar:
 
 # Claude Code: Context, Cost & Token Efficiency — Complete Reference
 
-> **Last updated:** May 6, 2026
+> **Last updated:** May 17, 2026
 
 ---
 

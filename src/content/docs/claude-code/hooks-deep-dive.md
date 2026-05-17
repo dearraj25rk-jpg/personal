@@ -8,12 +8,12 @@ description: >
 sidebar:
   order: 5
   label: Hooks System
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Hooks System — Complete Reference
 
-> **Version:** v2.1.126 (May 6, 2026) · Hooks were introduced in v1.0.x and have grown to 30+ events through v2.1.126.
+> **Version:** v2.1.126 (May 17, 2026) · Hooks were introduced in v1.0.x and have grown to 30+ events through v2.1.126.
 
 Hooks are shell commands (or sub-agents) that fire automatically at well-defined lifecycle points during a Claude Code session. They let you intercept, audit, block, or augment Claude's behaviour without modifying any Claude Code internals.
 

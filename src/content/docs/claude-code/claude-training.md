@@ -7,7 +7,7 @@ description: >
   Covers Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 11
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Elite Claude Code mastery: a complete AI Engineer training program

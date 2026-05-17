@@ -7,12 +7,12 @@ description: >
 sidebar:
   order: 9
   label: Permissions & Security
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Permissions, Sandbox & Security
 
-> **Version:** v2.1.126 (May 6, 2026)
+> **Version:** v2.1.126 (May 17, 2026)
 
 Claude Code's security model has four layers:
 
@@ -535,7 +535,7 @@ Each line is a JSON record:
 
 ```json
 {
-  "ts": "2026-05-06T14:23:01.123Z",
+  "ts": "2026-05-17T14:23:01.123Z",
   "session_id": "sess_01abc...",
   "turn": 4,
   "tool": "Bash",

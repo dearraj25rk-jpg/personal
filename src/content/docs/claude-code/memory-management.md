@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 15
   label: Memory Management
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Memory Management — Complete Reference
 
-> **Version**: Claude Code v2.1.126 | **Last Updated**: May 9, 2026
+> **Version**: Claude Code v2.1.126 | **Last Updated**: May 17, 2026
 
 ---
 

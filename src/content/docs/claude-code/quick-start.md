@@ -7,12 +7,12 @@ description: >
 sidebar:
   order: 2
   label: Quick Start
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Quick Start — Claude Code for New Users
 
-> **Version:** v2.1.126 (May 6, 2026) · **Audience:** developers new to Claude Code · **Time to complete:** 20–30 minutes
+> **Version:** v2.1.126 (May 17, 2026) · **Audience:** developers new to Claude Code · **Time to complete:** 20–30 minutes
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It understands your entire codebase, reads and writes files, runs shell commands, executes tests, manages Git, and works in a continuous loop until your task is done — all from natural-language instructions.
 

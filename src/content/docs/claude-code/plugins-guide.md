@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 13
   label: Plugins
-lastUpdated: 2026-05-09
+lastUpdated: 2026-05-17
 ---
 
 # Plugins — Complete Reference
 
-> **Version:** v2.1.126 (May 9, 2026) · Plugin system introduced in v2.0.64; monitors added in v2.1.105.
+> **Version:** v2.1.126 (May 17, 2026) · Plugin system introduced in v2.0.64; monitors added in v2.1.105.
 
 Plugins are the **largest unit of Claude Code extension**. A single plugin can bundle commands, agents, skills, output styles, monitors, themes, bin executables, hooks, MCP servers, and LSP servers — all automatically namespaced under the plugin's name. Publish once to npm and any developer can install your entire integration in one command.
 
