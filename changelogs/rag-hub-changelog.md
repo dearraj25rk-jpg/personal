@@ -5,6 +5,85 @@
 
 ---
 
+## [2026-05-18] — Vectorless RAG Major Expansion (feature/rag-hub branch)
+
+### Overview
+
+Significant expansion of the Vectorless RAG section. Three new reference docs created, covering Table RAG, Long-Context as Retrieval, and Full-Text Search. The existing `pageindex-vectorless-rag.md` nearly doubled in size with new advanced sections. RAG index updated with 3 new entries and a decision flowchart.
+
+### New Files
+
+| File | Description |
+|---|---|
+| `src/content/docs/rag/table-rag.md` | Complete guide to table-native RAG: ChainOfTable (Google DeepMind, 2024), TAPAS, pandas-AI/PandasAI 3.0, DuckDB in-process analytics (1.1+), Vanna.ai self-learning NL2SQL (v0.7+), full NL2SQL production pipeline with safety (sqlglot AST inspection), hybrid table+text RAG — WikiTQ, FeTaQA, BIRD, Spider 2.0, TabFact benchmarks |
+| `src/content/docs/rag/long-context-rag.md` | Complete guide to long-context LLMs as a retrieval replacement: Needle in a Haystack test (Kamradt, 2023), Lost in the Middle (Stanford, 2023), all 2025–2026 context windows (GPT-4.1 1M, Gemini 2.5 Pro 2M, Claude 200K), Anthropic prompt caching for KV cache preloading, map-reduce/refine/rerank patterns, cost break-even modeling |
+| `src/content/docs/rag/full-text-search-rag.md` | Complete guide to FTS-based vectorless retrieval: inverted index theory, BM25 formula, PostgreSQL tsvector/tsquery/GIN, Elasticsearch DSL (match/phrase/multi_match/bool/function_score/span_near), Meilisearch v1.8, Typesense v27, Tantivy/Quickwit, BM25S in-process, hybrid FTS+dense RRF with worked example — BEIR benchmark analysis |
+
+### Expanded Files
+
+#### `pageindex-vectorless-rag.md` (1162 → 2184 lines)
+- Added **Async Parallel Summarization** section: `asyncio.Semaphore`, `anthropic.AsyncAnthropic`, 10× speedup (50s → 6s for 100-page doc), `asyncio.gather` for parallel page summarization
+- Added **Anthropic Prompt Caching for PageIndex** section: `cache_control` on index text, 90% cost savings on navigation (from $0.045 → $0.0045 per navigation call), `CachedPageIndexQA` class with session-level caching, detailed cost breakdown
+- Added **Hierarchical PageIndex** section: two-level hierarchy for 500+ page documents (Section → Page), `Section` dataclass, `navigate_section()` + `navigate_pages_in_section()` + `hierarchical_query()` full implementation
+- Added **Multi-Document PageIndex** section: corpus-level routing, `DocumentIndex` + `CorpusIndex` dataclasses, `route_query_to_documents()` + `corpus_query()` implementation for cross-document synthesis
+- Added **FRAMES Benchmark** section: Google DeepMind 2024, multi-step reasoning evaluation (40.2% baseline → 84.6% with PageIndex + decomposition), full results table
+- Added **Multi-Step PageIndex with Question Decomposition**: `decompose_question()` → chain of sub-retrievals → synthesis, handles multi-hop queries
+- Added **Production Monitoring** section: `QueryTrace` dataclass, `MonitoredPageIndexQA` class with full cost tracking, cache hit tracking, latency tracing, `report()` aggregate metrics, SLO targets table
+- Added **PageIndex Evaluation** section: `evaluate_navigation_accuracy()` (precision/recall/F1/Hit@1), `evaluate_answer_quality()` with Claude-as-judge scoring
+- Updated **See Also** to link to 3 new files
+
+### Updated Files
+
+#### `src/content/docs/rag/index.md`
+- Added ASCII "When to Go Vectorless" decision diagram
+- Expanded Vectorless RAG section: 4 rows → 7 rows (added Table RAG, Long-Context LLMs as Retrieval, Full-Text Search for RAG)
+- Added "Vectorless RAG Decision Flowchart" ASCII diagram
+- Expanded RAG Architecture Selection table: 8 rows → 12 rows (added PageIndex, Hierarchical PageIndex, NL2SQL/DuckDB/Table RAG, Long-context LLM, Contextual Retrieval)
+
+#### `src/content/docs/index.mdx` (home page)
+- Updated RAG count: `19` → `22` (reflects 3 new docs)
+- Updated RAG card count: `14 reference docs` → `17 reference docs`
+- Updated RAG card description to include Vectorless RAG track highlights (PageIndex 98.7%, Table RAG, GPT-4.1 1M, Gemini 2.5 Pro 2M, FTS)
+
+### Statistics
+
+| Metric | Before | After |
+|---|---|---|
+| RAG reference docs | 14 | 17 |
+| RAG interactive guides | 5 | 5 |
+| Total RAG pages | 19 | 22 |
+| pageindex-vectorless-rag.md lines | 1,162 | 2,184 |
+| New major sections | — | 8 (in pageindex) + 3 new files |
+
+### New Techniques Covered
+
+| Technique | Paper/Source | Year | Added to |
+|---|---|---|---|
+| ChainOfTable | Google DeepMind | 2024 | table-rag.md (NEW) |
+| TAPAS | Google | 2020 (widely adopted 2024+) | table-rag.md (NEW) |
+| PandasAI v3.0 | PandasAI | 2025 | table-rag.md (NEW) |
+| DuckDB in-process analytics | DuckDB | 2024 (v1.1) | table-rag.md (NEW) |
+| Vanna.ai self-learning NL2SQL | Vanna | 2025 (v0.7) | table-rag.md (NEW) |
+| sqlglot AST inspection for SQL safety | tobymao | 2024 | table-rag.md (NEW) |
+| Needle in a Haystack test | Greg Kamradt | 2023 (widely adopted) | long-context-rag.md (NEW) |
+| Lost in the Middle | Stanford (Liu et al.) | 2023 | long-context-rag.md (NEW) |
+| GPT-4.1 1M context | OpenAI | April 2025 | long-context-rag.md (NEW) |
+| Gemini 2.5 Pro 2M context | Google | 2025 | long-context-rag.md (NEW) |
+| Map-Reduce / Refine / MapRerank | LangChain patterns | 2024 | long-context-rag.md (NEW) |
+| Hierarchical summarization | — | 2024 | long-context-rag.md (NEW) |
+| PostgreSQL FTS (tsvector/GIN) | PostgreSQL | (updated 2024) | full-text-search-rag.md (NEW) |
+| Elasticsearch semantic_text | Elastic | 2024 | full-text-search-rag.md (NEW) |
+| Meilisearch v1.8 | Meilisearch | 2025 | full-text-search-rag.md (NEW) |
+| Typesense v27 hybrid | Typesense | 2025 | full-text-search-rag.md (NEW) |
+| Tantivy / Quickwit | — | 2024 | full-text-search-rag.md (NEW) |
+| PageIndex async summarization | — | 2024 | pageindex-vectorless-rag.md |
+| Hierarchical PageIndex | — | 2024 | pageindex-vectorless-rag.md |
+| Multi-document corpus navigation | — | 2024 | pageindex-vectorless-rag.md |
+| FRAMES benchmark | Google DeepMind | 2024 | pageindex-vectorless-rag.md |
+| Multi-step question decomposition | — | 2024 | pageindex-vectorless-rag.md |
+
+---
+
 ## [2026-05-17] — RAG Hub Major Update (feature/rag-hub branch)
 
 ### Overview

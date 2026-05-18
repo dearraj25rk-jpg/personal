@@ -1,13 +1,13 @@
 ---
 title: RAG Guides
-description: Complete technical reference for Retrieval-Augmented Generation — from chunking and embedding to agentic pipelines, multimodal RAG, evaluation, and production deployment. May 2026.
+description: Complete technical reference for Retrieval-Augmented Generation — from chunking and embedding to agentic pipelines, multimodal RAG, vectorless RAG, evaluation, and production deployment. May 2026.
 sidebar:
   order: 1
 ---
 
 > **Current as of May 2026.**
 
-Retrieval-Augmented Generation (RAG) grounds LLM responses in your own documents, eliminating hallucinations on domain-specific knowledge. This section covers every layer of the RAG stack — from initial chunking decisions through production observability — including multimodal RAG for visual documents.
+Retrieval-Augmented Generation (RAG) grounds LLM responses in your own documents, eliminating hallucinations on domain-specific knowledge. This section covers every layer of the RAG stack — from initial chunking decisions through production observability — including multimodal RAG for visual documents and a dedicated Vectorless RAG track for when embeddings aren't the right tool.
 
 ## Documentation Pages
 
@@ -25,11 +25,30 @@ Retrieval-Augmented Generation (RAG) grounds LLM responses in your own documents
 
 ## Vectorless RAG — Beyond Vector Similarity
 
-When vector search isn't enough — structured documents, exact-match needs, entity relationships, or global corpus synthesis:
+Vector embeddings fail on structured documents, exact-match needs, tabular data, and large corpora that exceed context limits. The Vectorless RAG track covers seven techniques that replace or reduce dependence on embeddings:
+
+```
+  WHEN TO GO VECTORLESS
+  ─────────────────────────────────────────────────────────────────
+  
+  Problem                          Vectorless Solution
+  ─────────────────────────────────────────────────────────────────
+  Tables/PDFs with structure       PageIndex (LLM navigation)
+  Exact codes, IDs, citations      Full-Text Search (BM25, FTS)
+  Database / spreadsheet data      NL2SQL, DuckDB, Table RAG
+  Entire doc fits in context       Long-context LLM (no retrieval)
+  Entity relationships / graphs    GraphRAG, HippoRAG
+  Chunks need more context         Contextual Retrieval (+BM25)
+  Multi-hop across many docs       Agentic RAG + PageIndex
+  ─────────────────────────────────────────────────────────────────
+```
 
 | Page | What you'll learn |
 |---|---|
-| [Vectorless RAG — Complete Guide](./pageindex-vectorless-rag) | Long-context LLMs (Gemini 2.0 Flash 1M, Claude 200K) as retrieval, PageIndex LLM navigation, NL2SQL structured retrieval, decision flowchart (98.7% FinanceBench) |
+| [Vectorless RAG — Complete Guide](./pageindex-vectorless-rag) | PageIndex (98.7% FinanceBench), hierarchical PageIndex (500+ pages), multi-document corpus navigation, async summarization, Anthropic prompt caching for navigation, FRAMES benchmark (84.6%), multi-step question decomposition, production monitoring |
+| [Table RAG](./table-rag) | ChainOfTable (Google DeepMind, 2024), TAPAS, pandas-AI, DuckDB in-process analytics, Vanna.ai self-learning NL2SQL, full NL2SQL safety pipeline, hybrid table+text RAG — WikiTQ/FeTaQA/BIRD/Spider 2.0 benchmarks |
+| [Long-Context LLMs as Retrieval](./long-context-rag) | Needle in a Haystack test, Lost in the Middle (Stanford, 2023), GPT-4.1 1M context (April 2025), Gemini 2.5 Pro 2M, Anthropic KV cache preloading, map-reduce beyond-context, cost break-even modeling |
+| [Full-Text Search for RAG](./full-text-search-rag) | PostgreSQL `tsvector`/GIN indexes, Elasticsearch BM25 DSL, Meilisearch v1.8, Typesense v27 hybrid, Tantivy/Quickwit, BM25S in-process, hybrid FTS+dense RRF — BEIR benchmark analysis |
 | [Contextual Retrieval](./contextual-retrieval) | Anthropic Nov 2024: LLM-generated context prepended to every chunk + BM25 hybrid → 69% fewer retrieval failures; prompt caching reduces cost by 89%; async batch pipeline |
 | [BM25 & Sparse Retrieval](./bm25-sparse-retrieval) | BM25 math (TF-IDF foundations to BM25 formula), BM25S (500× faster), SPLADE++ (NDCG@10 37.2), Typesense, Elasticsearch, hybrid RRF with worked example |
 | [GraphRAG & Knowledge Graphs](./graph-rag) | Microsoft GraphRAG (Leiden communities), NodeRAG (2025, 3× cheaper), LightRAG, HippoRAG (Personalized PageRank), Graph-R1 (2026 RL-based), Neo4j Cypher QA |
@@ -111,7 +130,38 @@ Documents (PDF / DOCX / HTML / images)
 | Multi-hop, complex | Text documents | Agentic RAG (LangGraph + Self-RAG) |
 | Entity relationships | Any | GraphRAG / HippoRAG |
 | Charts, tables, images | PDFs / scanned docs | Multimodal RAG (ColPali/ColQwen2) |
-| Exact terms, codes | Any | BM25 or hybrid RRF |
+| Exact terms, codes | Any | BM25 / Full-Text Search |
 | Small static corpus | Any (≤500 pages) | Cache-Augmented Generation (CAG) |
-| Structured data | Database / spreadsheet | NL2SQL |
+| Structured PDF (financial, legal) | 1–500 pages | **PageIndex** (LLM navigation) |
+| Structured PDF | 500+ pages | **Hierarchical PageIndex** |
+| Tabular data / database | Database / spreadsheet | **NL2SQL** / DuckDB / Table RAG |
+| Entire corpus fits in context | Any (≤1,500 pages w/ Gemini) | **Long-context LLM** (no retrieval) |
 | Global synthesis | Large corpus | GraphRAG or long-context LLM |
+| Chunk context missing | Any chunked corpus | **Contextual Retrieval** + BM25 |
+
+### Vectorless RAG Decision Flowchart
+
+```
+  START: What is your data source?
+         │
+  ┌──────┴──────┬──────────────┬────────────────┐
+  │             │              │                │
+  ▼             ▼              ▼                ▼
+Database/    Structured    Unstructured      Entity
+Spreadsheet  PDF/Doc       Text Corpus      Relationships
+  │             │              │                │
+  ▼             ▼              ▼                ▼
+NL2SQL /    Does it fit    Exact match     GraphRAG /
+DuckDB /    in context?    matters?        HippoRAG
+Table RAG     │              │
+  │        YES │  NO         ├─YES→ BM25 / FTS
+  │           │   │          │
+  │           ▼   ▼          └─NO→ Does chunk
+  │      Long- PageIndex          context matter?
+  │      context                  │
+  │      LLM              YES─────┘    NO
+  │                         │          │
+  │                     Contextual  Vector RAG
+  │                     Retrieval   or Hybrid
+  └─────────────────────────────────────────────▶ LLM Answer
+```

@@ -1414,7 +1414,8 @@ def postgres_fts_rag(
 
 ## See Also
 
-- [Vectorless RAG Hub](../pageindex-vectorless-rag) — all vectorless approaches overview
-- [Contextual Retrieval](../contextual-retrieval) — adding context to chunks, BM25 + contextual hybrid
-- [Retrieval Strategies](../retrieval-strategies) — dense, hybrid, HyDE, reranking
-- [GraphRAG](../graph-rag) — entity graph retrieval
+- [Vectorless RAG — Complete Guide](../pageindex-vectorless-rag) — PageIndex, NL2SQL, hierarchical navigation, FRAMES benchmark
+- [Full-Text Search for RAG](../full-text-search-rag) — PostgreSQL FTS, Elasticsearch DSL, Meilisearch, Typesense, Tantivy, hybrid FTS+dense
+- [Contextual Retrieval](../contextual-retrieval) — adding LLM-generated context to chunks, BM25 + contextual hybrid → 69% fewer failures
+- [Retrieval Strategies](../retrieval-strategies) — dense, hybrid, HyDE, ColBERT v2, reranking
+- [GraphRAG](../graph-rag) — entity graph retrieval, NodeRAG, HippoRAG
