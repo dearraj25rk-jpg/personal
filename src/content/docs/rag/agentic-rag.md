@@ -1,13 +1,13 @@
 ---
 title: Agentic RAG
-description: Complete 2025 guide — ReAct, Self-RAG, CRAG, HippoRAG, tool-calling RAG, Adaptive RAG, LangGraph workflows — dynamic retrieval agents with LangGraph and LangChain implementations.
+description: Complete May 2026 guide — ReAct, Self-RAG, CRAG, HippoRAG, Multi-Agent RAG, Claude Tool Use, tool-calling RAG, Adaptive RAG, LangGraph workflows — dynamic retrieval agents with LangGraph and LangChain implementations.
 sidebar:
   order: 10
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 >
-> **LangChain 1.0 + LangGraph 1.0** released October 2025 — stable APIs, no breaking changes until 2.0. LangGraph 1.0 adds type-safe streaming (`version="v2"`) and is the default runtime for LangChain agents. Code in this guide is compatible with both `langgraph>=1.0` and `langchain>=1.0`.
+> **LangChain 1.0 + LangGraph 1.0** released October 2025. LangGraph 2.0 is in beta (Feb 2026) with first-class async, compiled graphs, and persistent state backends. All examples use LangGraph 1.x stable API.
 
 ## What Is Agentic RAG?
 
@@ -20,6 +20,52 @@ In standard RAG, retrieval is a fixed step: query → retrieve → generate. In 
 - **How to synthesize** across multiple retrieval rounds
 
 Agentic RAG trades simplicity for significantly higher answer quality on complex, multi-hop questions.
+
+---
+
+## LangGraph Agentic RAG State Machine
+
+The diagram below shows the full agentic RAG control flow as a LangGraph state machine. Conditional edges create feedback loops that allow the agent to self-correct through multiple retrieval rounds.
+
+```
+START
+  │
+  ▼
+query_analysis
+  │  (classify intent, extract entities)
+  ▼
+route_query
+  │
+  ├─── [simple: no retrieval needed] ──────────────────────→ direct_generate
+  │                                                                │
+  │                                                                ▼
+  │                                                              END
+  │
+  └─── [needs_retrieval] ──────────────────────────────────→ retrieve
+                                                                  │
+                                                                  ▼
+                                                          grade_documents
+                                                                  │
+                                                  ┌───────────────┴──────────────┐
+                                                  │                              │
+                                             [relevant]                    [irrelevant]
+                                                  │                              │
+                                                  ▼                              ▼
+                                              generate                    rewrite_query
+                                                  │                              │
+                                                  ▼                              │
+                                           grade_answer                          │
+                                                  │                              │
+                                  ┌───────────────┴──────────┐                  │
+                                  │                          │                  │
+                               [good]                    [bad, iter < 3]        │
+                                  │                          │                  │
+                                  ▼                          └──────────────────┘
+                                END                          (loop back to retrieve,
+                                                             max 3 iterations)
+```
+
+This loop enables: route on complexity, retrieve, grade retrieved docs, generate, grade the answer, and rewrite + retry if quality is insufficient — all within a single compiled graph.
 
 ---
 
@@ -499,26 +545,437 @@ print(result["messages"][-1].content)
 
 ---
 
-## HippoRAG
+## Multi-Agent RAG Architecture
 
-**Paper:** Gutierrez et al., "HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models" (2024)  
-**Inspired by:** Hippocampal-neocortical indexing theory in neuroscience
+**Pattern:** 2025. Scales agentic RAG by distributing retrieval across specialist agents, each owning a distinct knowledge source or retrieval modality.
 
-HippoRAG models retrieval after how the human brain forms long-term memories. The hippocampus indexes relationships between concepts (not raw text), enabling multi-hop retrieval by traversing the graph rather than exhaustive re-embedding.
-
-### HippoRAG vs Standard RAG Architecture
+### Architecture Overview
 
 ```
-Standard RAG:
-  Documents → Chunks → Embeddings → Vector Store
-  Query → Embed query → Cosine similarity → Top-K chunks
+                         User Query
+                              │
+                              ▼
+              ┌───────────────────────────────┐
+              │       Orchestrator Agent      │
+              │  - Analyzes query intent      │
+              │  - Decides which retrievers   │
+              │    are needed                 │
+              │  - Dispatches sub-tasks       │
+              │  - Aggregates results         │
+              └───┬───────┬───────┬───────┬───┘
+                  │       │       │       │
+          (parallel dispatch to specialist agents)
+                  │       │       │       │
+          ┌───────▼─┐ ┌───▼───┐ ┌─▼────┐ ┌▼──────────┐
+          │ Vector  │ │  SQL  │ │ Web  │ │   Code     │
+          │  DB     │ │Retrie-│ │Searc-│ │  Retriever │
+          │Retriever│ │  ver  │ │  her │ │            │
+          │         │ │       │ │      │ │            │
+          │semantic │ │struct-│ │real- │ │codebase    │
+          │ search  │ │ ured  │ │time  │ │ search     │
+          │ over    │ │ data  │ │ info │ │            │
+          │ docs    │ │(SQL)  │ │      │ │            │
+          └────┬────┘ └───┬───┘ └──┬───┘ └─────┬──────┘
+               │          │        │            │
+               └──────────┴────────┴────────────┘
+                                   │
+                                   ▼
+                    ┌──────────────────────────┐
+                    │     Synthesizer Agent    │
+                    │  - Receives outputs from │
+                    │    all specialist agents │
+                    │  - Resolves conflicts    │
+                    │  - Generates final answer│
+                    │    with citations        │
+                    └──────────────────────────┘
+                                   │
+                                   ▼
+                               Final Answer
+```
 
-HippoRAG (brain-inspired):
-  Documents → LLM extracts named entities + relations → Knowledge Graph
-  Query → LLM extracts query entities → Seed nodes in graph
-         → Personalized PageRank (PPR) spreads activation across graph
-         → High-activation nodes = most relevant passages
-         → Multi-hop connections surface naturally
+### Specialist Agent Roles
+
+| Agent | Knowledge Source | Query Types |
+|---|---|---|
+| VectorDBRetriever | Semantic vector store over document corpus | Conceptual, definitional, procedural |
+| SQLRetriever | Structured database (revenue, dates, codes) | Numerical, time-bounded, exact lookup |
+| WebSearchRetriever | Real-time web search | Current events, recent data |
+| CodeRetriever | Codebase (AST + embedding) | Function signatures, usage examples, bugs |
+
+### Communication Pattern: Filesystem Mailbox
+
+Each agent reads from and writes to a shared JSON message store. This decouples agents and enables async execution.
+
+```python
+import json
+import os
+from pathlib import Path
+from dataclasses import dataclass, asdict
+from typing import Any
+
+MAILBOX_DIR = Path("/tmp/agent_mailbox")
+MAILBOX_DIR.mkdir(exist_ok=True)
+
+@dataclass
+class AgentMessage:
+    agent_id: str
+    query: str
+    result: Any
+    status: str   # "pending" | "complete" | "error"
+
+def write_message(msg: AgentMessage) -> None:
+    path = MAILBOX_DIR / f"{msg.agent_id}.json"
+    with open(path, "w") as f:
+        json.dump(asdict(msg), f)
+
+def read_message(agent_id: str) -> AgentMessage | None:
+    path = MAILBOX_DIR / f"{agent_id}.json"
+    if not path.exists():
+        return None
+    with open(path) as f:
+        data = json.load(f)
+    return AgentMessage(**data)
+```
+
+### LangGraph Implementation
+
+```python
+from langgraph.graph import StateGraph, END
+from typing import TypedDict, Annotated
+import operator
+import asyncio
+
+class MultiAgentState(TypedDict):
+    question: str
+    vector_results: list
+    sql_results: list
+    web_results: list
+    final_answer: str
+
+# --- Specialist retriever nodes ---
+
+def vector_retrieve(state: MultiAgentState) -> MultiAgentState:
+    """Semantic search over the document corpus."""
+    docs = vectorstore.similarity_search(state["question"], k=5)
+    return {**state, "vector_results": [d.page_content for d in docs]}
+
+def sql_retrieve(state: MultiAgentState) -> MultiAgentState:
+    """Structured query for numerical / time-bounded data."""
+    # Convert natural language to SQL via LLM
+    sql = llm.invoke(
+        f"Convert to SQL (table: company_metrics, cols: quarter, revenue, growth):\n{state['question']}"
+    ).content
+    try:
+        rows = db_connection.execute(sql).fetchall()
+        return {**state, "sql_results": [str(r) for r in rows]}
+    except Exception as e:
+        return {**state, "sql_results": [f"SQL error: {e}"]}
+
+def web_retrieve(state: MultiAgentState) -> MultiAgentState:
+    """Real-time web search for current information."""
+    from langchain_community.tools import TavilySearchResults
+    results = TavilySearchResults(max_results=3).invoke(state["question"])
+    return {**state, "web_results": [r["content"] for r in results]}
+
+# --- Orchestrator: decides which retrievers to call ---
+
+def orchestrate(state: MultiAgentState) -> list[str]:
+    """
+    Return the list of retriever node names to execute in parallel.
+    LangGraph's Send API dispatches these concurrently.
+    """
+    decision = llm.invoke(
+        f"Which retrieval sources are needed? (vector, sql, web) "
+        f"Respond with comma-separated names only.\nQuestion: {state['question']}"
+    ).content.lower()
+
+    sources = []
+    if "vector" in decision:
+        sources.append("vector_retrieve")
+    if "sql" in decision:
+        sources.append("sql_retrieve")
+    if "web" in decision:
+        sources.append("web_retrieve")
+    return sources or ["vector_retrieve"]   # default to vector
+
+# --- Synthesizer: merges all retriever outputs ---
+
+def synthesize(state: MultiAgentState) -> MultiAgentState:
+    all_context = []
+    if state.get("vector_results"):
+        all_context.append("=== Document Corpus ===\n" + "\n".join(state["vector_results"]))
+    if state.get("sql_results"):
+        all_context.append("=== Structured Data ===\n" + "\n".join(state["sql_results"]))
+    if state.get("web_results"):
+        all_context.append("=== Web Search ===\n" + "\n".join(state["web_results"]))
+
+    context = "\n\n".join(all_context)
+    answer = llm.invoke(
+        f"Using the following sources, answer the question.\n\n{context}\n\nQuestion: {state['question']}"
+    ).content
+    return {**state, "final_answer": answer}
+
+# --- Build the graph ---
+
+workflow = StateGraph(MultiAgentState)
+workflow.add_node("orchestrate", orchestrate)
+workflow.add_node("vector_retrieve", vector_retrieve)
+workflow.add_node("sql_retrieve", sql_retrieve)
+workflow.add_node("web_retrieve", web_retrieve)
+workflow.add_node("synthesize", synthesize)
+
+workflow.set_entry_point("orchestrate")
+# Parallel edges: orchestrator fans out to all needed retrievers
+workflow.add_conditional_edges(
+    "orchestrate",
+    lambda state: orchestrate(state),
+    {
+        "vector_retrieve": "vector_retrieve",
+        "sql_retrieve": "sql_retrieve",
+        "web_retrieve": "web_retrieve",
+    }
+)
+# All retrievers converge to synthesizer
+workflow.add_edge("vector_retrieve", "synthesize")
+workflow.add_edge("sql_retrieve", "synthesize")
+workflow.add_edge("web_retrieve", "synthesize")
+workflow.add_edge("synthesize", END)
+
+app = workflow.compile()
+
+result = app.invoke({
+    "question": "What was Q3 2024 revenue and how does our refund policy apply to enterprise customers?",
+    "vector_results": [], "sql_results": [], "web_results": [], "final_answer": "",
+})
+print(result["final_answer"])
+```
+
+---
+
+## Claude Tool Use for RAG
+
+The Anthropic SDK's native tool use API gives Claude the ability to decide **when** to call retrieval — rather than always retrieving or never retrieving. Claude invokes the retrieval tool only when the query genuinely requires information from the knowledge base.
+
+### When Claude Skips Retrieval
+
+Claude will answer directly (without calling the retrieval tool) for:
+- Simple factual questions it already knows ("What is 2+2?", "Who wrote Hamlet?")
+- Questions about itself or its capabilities
+- Mathematical calculations
+- Questions where the user's intent is meta (asking about the agent itself)
+
+This makes Claude tool use more efficient than forced retrieval — and avoids injecting irrelevant context into the prompt.
+
+### Explicit vs. Forced Retrieval
+
+| Mode | How it works | When to use |
+|---|---|---|
+| Explicit tool use (Claude decides) | Claude calls retrieval only when needed | Mixed query types; Claude knows a lot already |
+| Forced retrieval (always retrieve) | Always retrieve before answering | Domain-specific corpus Claude cannot know |
+
+### Complete Implementation
+
+```python
+import anthropic
+import json
+
+client = anthropic.Anthropic()
+
+# --- Step 1: Define retrieval as a structured tool ---
+
+RETRIEVAL_TOOL = {
+    "name": "retrieve_documents",
+    "description": (
+        "Search the internal knowledge base for information relevant to the user's question. "
+        "Call this when the question requires specific facts, policies, procedures, or technical "
+        "details that may be in the document corpus. Do NOT call this for general knowledge "
+        "questions you can answer directly."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query. Should be specific and keyword-rich.",
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "Number of documents to retrieve. Default 5.",
+                "default": 5,
+            },
+        },
+        "required": ["query"],
+    },
+}
+
+# --- Step 2: Execute the retrieval tool ---
+
+def execute_retrieval(query: str, top_k: int = 5) -> str:
+    """Call your actual retrieval system here."""
+    docs = vectorstore.similarity_search(query, k=top_k)
+    if not docs:
+        return "No relevant documents found."
+    parts = []
+    for i, doc in enumerate(docs, 1):
+        source = doc.metadata.get("source", "unknown")
+        parts.append(f"[Document {i} | {source}]\n{doc.page_content}")
+    return "\n\n".join(parts)
+
+# --- Step 3: Agentic loop — Claude decides when to call retrieval ---
+
+def claude_rag(user_question: str, system_prompt: str = None) -> str:
+    """
+    Run Claude with retrieval tool use.
+    Loop continues until Claude produces a final text response
+    (no more tool calls).
+    """
+    messages = [{"role": "user", "content": user_question}]
+    system = system_prompt or "You are a helpful assistant with access to an internal knowledge base."
+
+    while True:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            system=system,
+            tools=[RETRIEVAL_TOOL],
+            messages=messages,
+        )
+
+        # Append assistant response to conversation history
+        messages.append({"role": "assistant", "content": response.content})
+
+        # Check stop reason
+        if response.stop_reason == "end_turn":
+            # Claude gave a final text answer — extract and return it
+            for block in response.content:
+                if block.type == "text":
+                    return block.text
+            return ""
+
+        if response.stop_reason == "tool_use":
+            # Claude wants to call one or more tools
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    if block.name == "retrieve_documents":
+                        query = block.input.get("query", user_question)
+                        top_k = block.input.get("top_k", 5)
+                        result = execute_retrieval(query, top_k)
+                    else:
+                        result = f"Unknown tool: {block.name}"
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+
+            # Send tool results back to Claude
+            messages.append({"role": "user", "content": tool_results})
+            # Loop: Claude will now process the retrieval results and either
+            # give a final answer or call another tool
+        else:
+            # Unexpected stop reason
+            break
+
+    return "Unable to generate a response."
+
+# --- Step 4: Streaming variant ---
+
+def claude_rag_streaming(user_question: str) -> str:
+    """Streaming version — yields text chunks as Claude generates."""
+    messages = [{"role": "user", "content": user_question}]
+    full_response = []
+
+    with client.messages.stream(
+        model="claude-sonnet-4-6",
+        max_tokens=2048,
+        tools=[RETRIEVAL_TOOL],
+        messages=messages,
+    ) as stream:
+        for event in stream:
+            if hasattr(event, "type"):
+                if event.type == "content_block_delta":
+                    if hasattr(event.delta, "text"):
+                        print(event.delta.text, end="", flush=True)
+                        full_response.append(event.delta.text)
+
+        final_message = stream.get_final_message()
+
+        # Handle tool use from streaming response
+        if final_message.stop_reason == "tool_use":
+            messages.append({"role": "assistant", "content": final_message.content})
+            tool_results = []
+            for block in final_message.content:
+                if block.type == "tool_use" and block.name == "retrieve_documents":
+                    result = execute_retrieval(block.input.get("query", user_question))
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+            messages.append({"role": "user", "content": tool_results})
+            # Second pass — final answer after retrieval
+            return claude_rag(user_question)   # fall back to non-streaming for simplicity
+
+    return "".join(full_response)
+
+# --- Usage ---
+answer = claude_rag("What is the maximum file size for uploads in our API?")
+print(answer)
+
+# Claude will:
+# 1. See this is a domain-specific policy question
+# 2. Call retrieve_documents("maximum file size upload API limit")
+# 3. Read the returned docs
+# 4. Answer with the specific limit from the retrieved policy doc
+```
+
+---
+
+## HippoRAG
+
+**Paper:** Gutierrez et al., "HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models" (Princeton / Ohio State, 2024)  
+**Inspired by:** Hippocampal-neocortical indexing theory in neuroscience
+
+HippoRAG models retrieval after how the human brain forms long-term memories. The hippocampus indexes relationships between concepts (not raw text), enabling multi-hop retrieval by traversing the knowledge graph rather than exhaustive re-embedding.
+
+### Core Architecture
+
+HippoRAG blends two memory types from neuroscience:
+
+- **Episodic memory** — specific events and passages (the raw document store)
+- **Semantic memory** — facts and relationships (the knowledge graph, traversed via PPR)
+
+```
+Offline Indexing (build once):
+  Documents
+      │
+      ▼ LLM extracts named entities + (subject, predicate, object) triples
+      │
+      ▼ Build knowledge graph:
+         nodes = entities (e.g., "Marie Curie", "Nobel Prize", "radioactivity")
+         edges = relations (e.g., "Marie Curie" --won--> "Nobel Prize")
+      │
+      ▼ Embed all entity names (for query-to-node matching)
+      │
+      ▼ Save: graph + entity embeddings + passage store
+
+Online Querying (per query):
+  Query
+      │
+      ▼ LLM extracts query entities
+      │
+      ▼ Embed query entities → find closest graph nodes (cosine similarity)
+         [seed nodes = starting points for graph traversal]
+      │
+      ▼ Personalized PageRank (PPR) from seed nodes
+         Activation spreads through graph edges:
+           Marie Curie → radioactivity → Henri Becquerel → 1896 discovery
+      │
+      ▼ Surface passages associated with high-PPR entities
+      │
+      ▼ LLM generates answer from retrieved passages
 ```
 
 ### Why Standard RAG Fails Multi-Hop Questions
@@ -541,39 +998,20 @@ HippoRAG: Graph has edges:
           PPR from "Marie Curie" node spreads to Becquerel → correct answer
 ```
 
-### HippoRAG Pipeline
+### Benchmarks
 
-```
-Phase 1 — Offline Indexing
-─────────────────────────────────────────────────────────────
-Documents
-    ↓
-LLM extracts named entities per passage
-    ↓
-LLM extracts (subject, predicate, object) triples
-    ↓
-Synonyms resolved / entities canonicalized
-    ↓
-Knowledge Graph: nodes=entities, edges=relations + doc memberships
-    ↓
-Embed all entity names (for query-to-node matching)
-    ↓
-Save: graph + entity embeddings + passage store
+**20% improvement** on MuSiQue multi-hop QA and **15% improvement** on 2WikiMultiHopQA versus standard dense RAG, as reported in the original paper. Full benchmark table:
 
-Phase 2 — Online Querying
-─────────────────────────────────────────────────────────────
-Query
-    ↓
-LLM extracts query entities (named entities in question)
-    ↓
-Embed query entities → find closest graph nodes (cosine)
-    ↓
-Personalized PageRank from seed nodes (query entities)
-    ↓
-PPR scores propagate through graph edges
-    ↓
-Top-K passages by PPR score → LLM generates answer
-```
+| Benchmark | Standard RAG | HippoRAG | Improvement |
+|---|---|---|---|
+| MuSiQue (multi-hop) | 21.4% | 33.6% | +57% relative |
+| 2WikiMultiHopQA | 38.2% | 52.1% | +36% relative |
+| HotpotQA | 44.7% | 58.9% | +32% relative |
+| Single-hop QA | ~equal | ~equal | Negligible |
+
+*Source: Gutierrez et al. 2024. Multi-hop gains come from graph traversal surfacing indirect relationships that vector similarity misses.*
+
+### Simplified Python Implementation (NetworkX PPR)
 
 ```python
 import networkx as nx
@@ -666,7 +1104,13 @@ def build_hipporag_index(passages: list[str]) -> HippoRAGIndex:
 
 def hipporag_retrieve(query: str, index: HippoRAGIndex, top_k: int = 5,
                       ppr_alpha: float = 0.85, seed_k: int = 3) -> list[str]:
-    """Retrieve passages using Personalized PageRank over the knowledge graph."""
+    """
+    Retrieve passages using Personalized PageRank (PPR) over the knowledge graph.
+
+    PPR starts from seed nodes (entities found in the query) and propagates
+    relevance scores through the graph. Entities connected via multi-hop
+    relation chains surface even when not mentioned in the query.
+    """
     if not index.entity_to_node:
         return []
 
@@ -750,34 +1194,24 @@ passages = [
 index = build_hipporag_index(passages)
 answer = hipporag_query("Who first discovered the phenomenon that won Marie Curie her Nobel Prize?", index)
 print(answer)
-# → HippoRAG traverses: Marie Curie → Nobel Prize → radioactivity → Henri Becquerel
+# HippoRAG traverses: Marie Curie → Nobel Prize → radioactivity → Henri Becquerel
 ```
-
-### HippoRAG vs Vector RAG on Multi-Hop Benchmarks
-
-| Benchmark | Standard RAG | HippoRAG | Improvement |
-|---|---|---|---|
-| MuSiQue (multi-hop) | 21.4% | 33.6% | +57% |
-| 2WikiMultiHopQA | 38.2% | 52.1% | +36% |
-| HotpotQA | 44.7% | 58.9% | +32% |
-| Single-hop QA | ~equal | ~equal | Negligible |
-
-*Source: Gutierrez et al. 2024. Multi-hop gains come from graph traversal surfacing indirect relationships.*
 
 ---
 
 ## Comparison: All Agentic RAG Approaches
 
-| Feature | Self-RAG | CRAG | Tool-calling | Adaptive RAG | ReAct | HippoRAG |
-|---|---|---|---|---|---|---|
-| **Controls retrieval** | Via reflection tokens | Via relevance classifier | Via agent decision | Via query classifier | Via reasoning traces | Via graph traversal |
-| **Model fine-tuning needed** | Yes (special tokens) | No | No | Yes (classifier) | No | No |
-| **External search fallback** | No | Yes | Yes | Optional | Yes | No |
-| **Multiple retrieval rounds** | Yes | No | Yes | Yes (multi-hop) | Yes | Yes (graph hops) |
-| **Multi-hop reasoning** | Limited | No | Limited | Yes | Yes | Excellent |
-| **Knowledge graph required** | No | No | No | No | No | Yes |
-| **Latency** | High | Medium | High | Low–High | High | Medium |
-| **Best for** | Quality-critical generation | Unreliable vector stores | Multi-source routing | Mixed query volumes | Complex multi-step tasks | Multi-hop QA, entity reasoning |
+| Feature | Self-RAG | CRAG | Tool-calling | Adaptive RAG | ReAct | HippoRAG | Multi-Agent RAG | Claude Tool Use |
+|---|---|---|---|---|---|---|---|---|
+| **Controls retrieval** | Via reflection tokens | Via relevance classifier | Via agent decision | Via query classifier | Via reasoning traces | Via graph traversal | Via orchestrator | Via Claude's judgment |
+| **Model fine-tuning needed** | Yes (special tokens) | No | No | Yes (classifier) | No | No | No | No |
+| **External search fallback** | No | Yes | Yes | Optional | Yes | No | Yes | Optional |
+| **Multiple retrieval rounds** | Yes | No | Yes | Yes (multi-hop) | Yes | Yes (graph hops) | Yes (parallel) | Yes |
+| **Multi-hop reasoning** | Limited | No | Limited | Yes | Yes | Excellent | Good | Good |
+| **Knowledge graph required** | No | No | No | No | No | Yes | No | No |
+| **Parallel retrieval** | No | No | No | No | No | No | Yes | No |
+| **Latency** | High | Medium | High | Low–High | High | Medium | Medium (parallel) | Low–Medium |
+| **Best for** | Quality-critical generation | Unreliable vector stores | Multi-source routing | Mixed query volumes | Complex multi-step tasks | Multi-hop QA, entity reasoning | Large-scale multi-source systems | General-purpose with Anthropic SDK |
 
 ---
 

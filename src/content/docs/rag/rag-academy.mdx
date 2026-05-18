@@ -1,17 +1,85 @@
 ---
 tableOfContents: false
 title: RAG Academy
-description: End-to-end interactive course on RAG systems — from basic retrieval to advanced pipeline design
+description: End-to-end interactive course on RAG systems — from document loading and chunking through embedding, vector search, hybrid retrieval, reranking, and production deployment. May 2026.
 sidebar:
   order: 2
 ---
 
 import RagAcademy from '../../../components/interactive/RagAcademy.jsx';
 
-An end-to-end interactive course walking you through every layer of production RAG — chunks, embeddings, vector search, reranking, and generation — with live examples and code you can run.
+**RAG Academy** is a structured, interactive course covering every layer of a production RAG system. Each module builds on the last, taking you from a single-file prototype to a hybrid, reranked, evaluated pipeline.
 
-For the full written reference on each topic, see [Chunking](../chunking), [Embedding Models](../embedding-models), [Vector Stores](../vector-stores), and [Retrieval Strategies](../retrieval-strategies).
+## Course Modules
+
+| Module | Topics covered |
+|---|---|
+| **1 — Foundations** | What RAG is, why it reduces hallucinations, when to use it |
+| **2 — Chunking** | Fixed-size, recursive, semantic, late chunking, agentic chunking |
+| **3 — Embeddings** | Bi-encoder vs cross-encoder, MTEB benchmarks, model selection |
+| **4 — Vector Search** | HNSW, IVF, flat index, ANN algorithms, distance metrics |
+| **5 — Hybrid Search** | BM25 + dense, RRF fusion, when to use each component |
+| **6 — Reranking** | Cross-encoder reranking, FlashRank, Cohere Rerank, ColBERT |
+| **7 — Generation** | Prompt assembly, citation formatting, context window management |
+| **8 — Evaluation** | RAGAS metrics, faithfulness, answer relevancy, context precision |
+| **9 — Production** | Semantic caching, observability, guardrails, cost optimization |
+
+## How to Use This Course
+
+The course is fully self-contained — each module includes:
+- A concept explanation with visual examples
+- Live code you can inspect and modify
+- A mini-quiz to check understanding before advancing
 
 <div class="interactive-tool">
   <RagAcademy client:only="react" />
 </div>
+
+## The Complete RAG Stack
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        RAG SYSTEM                                │
+│                                                                  │
+│  INDEXING PIPELINE (offline)                                     │
+│  ─────────────────────────────────────────────                   │
+│  Documents → Chunking → Embedding → Vector Store                 │
+│                                          ↓                       │
+│                                    HNSW Index                    │
+│                                    + BM25 Index                  │
+│                                                                  │
+│  QUERY PIPELINE (online, per request)                            │
+│  ─────────────────────────────────────────────                   │
+│  User Query → Embed Query → Hybrid Search (dense + BM25)         │
+│                                    ↓                             │
+│                              RRF Fusion                          │
+│                                    ↓                             │
+│                           Cross-encoder Reranking                │
+│                                    ↓                             │
+│                              Top-N Chunks                        │
+│                                    ↓                             │
+│                           Prompt Assembly                        │
+│                                    ↓                             │
+│                            LLM Generation                        │
+│                                    ↓                             │
+│                         Answer + Citations                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## Before and After Academy
+
+**Before:** build a basic LangChain RAG chain in 20 lines of Python.
+
+**After:** understand every design decision — why 512-token chunks, why BGE outperforms MiniLM, why BM25 catches what dense search misses, why faithfulness drops when context precision is low.
+
+## Reference Docs
+
+For the written deep-dives on each topic:
+- [Chunking Strategies](../chunking) — all chunking methods with benchmarks
+- [Embedding Models](../embedding-models) — complete model comparison with MTEB scores
+- [Vector Stores](../vector-stores) — index algorithms, filtering, quantization, multi-tenancy
+- [Retrieval Strategies](../retrieval-strategies) — BM25, hybrid, HyDE, ColBERT, reranking
+- [Advanced RAG](../advanced-rag) — query rewriting, RAG-Fusion, RAPTOR, STORM, CAG
+- [Agentic RAG](../agentic-rag) — Self-RAG, CRAG, LangGraph, multi-agent architectures
+- [Evaluation](../evaluation) — RAGAS v0.2, G-Eval, DeepEval, CI/CD pipelines
+- [Production RAG](../production-rag) — caching, observability, guardrails, cost control

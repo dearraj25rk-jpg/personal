@@ -1,11 +1,11 @@
 ---
 title: Production RAG
-description: Operating RAG systems at scale — latency optimization, Anthropic prompt caching, semantic caching, vLLM, LiteLLM, async retrieval, cost control, W&B Weave observability, guardrails, and CI/CD for RAG pipelines.
+description: Operating RAG systems at scale — latency optimization, Anthropic prompt caching, semantic caching, vLLM, LiteLLM, Langfuse v3, OpenTelemetry, async retrieval, cost control, guardrails, model routing, W&B Weave observability, and CI/CD for RAG pipelines.
 sidebar:
   order: 13
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 
 ## Production RAG vs Prototype RAG
 
@@ -16,6 +16,47 @@ A RAG proof-of-concept works end-to-end in hours. A production RAG system must h
 - **Reliability:** graceful degradation when retrieval returns poor results
 - **Observability:** knowing *why* an answer was wrong
 - **Safety:** preventing prompt injection, topic drift, and harmful outputs
+
+---
+
+## Production RAG System Architecture
+
+A complete production system layers multiple concerns: routing, caching, safety, observability, and cost optimization. The diagram below shows how these interact end-to-end.
+
+```
+User ──→ Load Balancer ──→ API Gateway
+                                │
+                ┌───────────────┼───────────────────┐
+                ▼               ▼                   ▼
+          Input Guard     Query Classifier     Semantic Cache
+                │         (simple/complex)          │
+                ▼               │                   │ cache hit → return
+          Embedding Service ◄───┘ complex           │
+                │                                   │ miss ↓
+                ▼                                   ▼
+          Vector Store ──→ Retrieval ──→ Reranker ──→ LLM Router
+                                                         │
+                                                ┌────────┴─────────┐
+                                                ▼                  ▼
+                                           Small LLM          Large LLM
+                                                │                  │
+                                                └────────┬─────────┘
+                                                         ▼
+                                                Output Guard ──→ Response
+```
+
+Each component addresses a distinct concern:
+
+| Component | Purpose | Tools |
+|---|---|---|
+| Input Guard | Block injections, PII, out-of-scope | NeMo Guardrails, Guardrails AI |
+| Query Classifier | Route simple vs. complex queries | Rule-based + LLM fallback |
+| Semantic Cache | Avoid redundant LLM calls | Redis + vector similarity |
+| Embedding Service | Query vectorization | Shared service, GPU-backed |
+| Reranker | Improve context precision | Cross-encoder, Cohere Rerank |
+| LLM Router | Match cost to query complexity | LiteLLM Router |
+| Output Guard | Factuality check, toxicity filter | Guardrails AI, content safety APIs |
+| Observability | Trace every step | Langfuse, OpenTelemetry, W&B Weave |
 
 ---
 
@@ -32,6 +73,23 @@ Profile every step to find the bottleneck. A typical advanced RAG call:
 | LLM generation (local) | 200–800 ms | GPU, quantization |
 
 **Total:** typical end-to-end p50 is 800ms–3s. Most latency is in LLM generation.
+
+```
+  Latency Waterfall — Typical Advanced RAG Request
+  ─────────────────────────────────────────────────────────────────
+  Time (ms)   0      100    200    400    800   1600   2400
+  ──────────┤──────┤──────┤──────┤──────┤──────┤──────┤──────
+  Embed     █ (12ms)
+  VSearch    █ (8ms)
+  Rerank      ████ (80ms)
+  LLM                    ████████████████████████ (1200ms)
+  ──────────┤──────┤──────┤──────┤──────┤──────┤──────┤──────
+  Total end-to-end: ~1300ms p50
+
+  Optimization priority: LLM latency dominates — address it first
+  via streaming, caching, model routing, and quantization.
+  ─────────────────────────────────────────────────────────────────
+```
 
 ---
 
@@ -300,36 +358,175 @@ result = rag_chain.invoke("How does hybrid search work?")
 
 ---
 
-## 8. Guardrails
+## 8. Guardrails — Production Safety
 
-### Input Guardrails (prompt injection prevention)
+Production RAG systems need safety layers at both the input and output boundaries. Input guardrails prevent the system from processing malicious or out-of-scope requests. Output guardrails prevent the system from returning harmful or unfaithful responses.
+
+```
+  Guardrail Layers
+  ──────────────────────────────────────────────────────────────
+  User Query
+      │
+      ▼
+  INPUT GUARDRAILS (pre-retrieval)
+  ├── Prompt injection detection  ("ignore previous instructions")
+  ├── Topic scope check           (is this in-domain?)
+  └── PII detection               (avoid logging personal data)
+      │
+      ▼
+  [Retrieval + Generation]
+      │
+      ▼
+  OUTPUT GUARDRAILS (post-generation)
+  ├── Factuality check            (claims vs. retrieved context)
+  ├── Toxicity filter             (content safety API)
+  └── Off-topic detection         (did LLM stay on context?)
+      │
+      ▼
+  Safe Response → User
+  ──────────────────────────────────────────────────────────────
+```
+
+### Input Guardrails (before retrieval)
+
+**Prompt injection detection** looks for patterns that attempt to override system instructions:
+
+```python
+INJECTION_PATTERNS = [
+    "ignore previous instructions",
+    "disregard all prior",
+    "you are now",
+    "forget everything",
+    "jailbreak",
+    "act as if",
+    "pretend you are",
+    "your new instructions are",
+]
+
+def detect_prompt_injection(query: str) -> bool:
+    """Return True if the query appears to be a prompt injection attempt."""
+    q_lower = query.lower()
+    return any(pattern in q_lower for pattern in INJECTION_PATTERNS)
+
+
+def check_topic_scope(query: str, allowed_topics: list[str]) -> bool:
+    """
+    Use a lightweight classifier to check if the query is in scope
+    for this RAG system. Returns True if in scope.
+    """
+    classifier_prompt = (
+        f"The following topics are in scope for this system: {', '.join(allowed_topics)}.\n"
+        f"Is this query in scope? Answer only YES or NO.\nQuery: {query}"
+    )
+    result = fast_llm.invoke(classifier_prompt).content.strip().upper()
+    return result.startswith("YES")
+
+
+import re
+
+PII_PATTERNS = [
+    r"\b\d{3}-\d{2}-\d{4}\b",          # SSN
+    r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",  # email
+    r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b",  # credit card
+    r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b",  # phone
+]
+
+def contains_pii(text: str) -> bool:
+    """Return True if the text contains PII patterns that should not be logged."""
+    return any(re.search(pattern, text) for pattern in PII_PATTERNS)
+```
+
+### NeMo Guardrails Integration
+
+NeMo Guardrails (NVIDIA, open source) uses a declarative Colang configuration to define allowed and blocked behaviors:
+
+```colang
+# config/rails.co — NeMo Guardrails config
+
+define user ask off topic
+  "Tell me a joke"
+  "Write me a poem"
+  "What is the weather today?"
+
+define bot refuse off topic
+  "I can only answer questions about our products and policies."
+
+define flow off topic check
+  user ask off topic
+  bot refuse off topic
+
+define user attempt jailbreak
+  "ignore your instructions"
+  "pretend you are a different AI"
+  "forget the rules"
+
+define bot refuse jailbreak
+  "I cannot process that request."
+
+define flow jailbreak prevention
+  user attempt jailbreak
+  bot refuse jailbreak
+```
+
+```python
+from nemoguardrails import RailsConfig, LLMRails
+
+# Load the guardrails config
+config = RailsConfig.from_path("./config")
+rails = LLMRails(config)
+
+async def safe_rag_with_nemo(query: str) -> str:
+    """RAG with NeMo Guardrails applied to both input and output."""
+    response = await rails.generate_async(
+        messages=[{"role": "user", "content": query}]
+    )
+    return response["content"]
+```
+
+### Guardrails AI — Output Validation
+
+Guardrails AI validates structured outputs and applies validators to ensure response quality:
 
 ```python
 from guardrails import Guard
-from guardrails.hub import DetectPII, ToxicLanguage
+from guardrails.hub import DetectPII, ToxicLanguage, RestrictToTopic
 
-guard = Guard().use(DetectPII, pii_entities=["EMAIL_ADDRESS", "PHONE_NUMBER"])
+# Input guard: block PII and toxicity
+input_guard = Guard().use_many(
+    DetectPII(pii_entities=["EMAIL_ADDRESS", "PHONE_NUMBER", "SSN"], on_fail="exception"),
+    ToxicLanguage(on_fail="exception"),
+)
 
-def safe_rag(query: str) -> str:
+# Output guard: ensure response stays on topic and is non-toxic
+output_guard = Guard().use_many(
+    ToxicLanguage(on_fail="reask"),
+    RestrictToTopic(
+        valid_topics=["product policies", "shipping", "returns"],
+        on_fail="reask",
+    ),
+)
+
+def guarded_rag(query: str) -> str:
     # Validate input
-    result = guard.validate(query)
-    if not result.validation_passed:
-        return "I cannot process requests containing personal information."
+    try:
+        input_guard.validate(query)
+    except Exception as e:
+        return f"I cannot process that request: {e}"
 
-    # Check for prompt injection patterns
-    injection_patterns = [
-        "ignore previous instructions",
-        "disregard all prior",
-        "you are now",
-        "forget everything",
-    ]
-    if any(p in query.lower() for p in injection_patterns):
-        return "I cannot process that request."
+    # Run RAG pipeline
+    docs = retriever.invoke(query)
+    context = "\n\n".join([d.page_content for d in docs])
+    answer = llm.invoke(f"Context:\n{context}\n\nQuestion: {query}").content
 
-    return rag_chain.invoke(query)
+    # Validate output
+    try:
+        validated = output_guard.validate(answer)
+        return validated.validated_output
+    except Exception:
+        return "I was unable to generate a safe response to that question."
 ```
 
-### Output Guardrails (hallucination check)
+### Output Guardrails (after generation)
 
 ```python
 def rag_with_grounding_check(query: str) -> str:
@@ -444,13 +641,11 @@ jobs:
 
 ---
 
----
-
 ## 11. Anthropic Prompt Caching
 
 Prompt caching dramatically reduces cost and latency when the same large context (system prompt, documents, few-shot examples) is reused across queries.
 
-**2026 updates:**
+**May 2026 updates:**
 - **Workspace-level isolation** (February 2026): caches are now isolated per API workspace — data never bleeds between workspaces within the same org
 - **1-hour cache duration** available at 2× the write price (vs. 5-min at 1.25×)
 - **Automatic caching**: Anthropic now automatically caches system prompt static parts without requiring explicit `cache_control` markers
@@ -465,7 +660,7 @@ Prompt caching dramatically reduces cost and latency when the same large context
 
 ```
   WITHOUT CACHING:
-  ─────────────────────────────────────────────────────────────
+  ─────────────────────────────────────────────────────────────────
   Query 1: system_prompt (2000 tok) + docs (8000 tok) + question (50 tok)
   Query 2: system_prompt (2000 tok) + docs (8000 tok) + question (48 tok)
   Query 3: system_prompt (2000 tok) + docs (8000 tok) + question (55 tok)
@@ -473,7 +668,7 @@ Prompt caching dramatically reduces cost and latency when the same large context
   Total input billed: 3 × 10,050 = 30,150 tokens at full price
 
   WITH CACHING (mark first 10,000 tokens as cacheable):
-  ─────────────────────────────────────────────────────────────
+  ─────────────────────────────────────────────────────────────────
   Query 1: 10,000 tokens (cache WRITE) + 50 tokens = 10,050 tokens billed
   Query 2: 50 tokens (cache HIT, 10,000 at 10% = 1,000 effective) + 48 tokens
   Query 3: 50 tokens (cache HIT) + 55 tokens
@@ -570,7 +765,144 @@ def batch_rag_with_cached_corpus(
 
 ---
 
-## 12. vLLM — High-Throughput Self-Hosted Inference
+## 12. Prompt Caching for Production RAG — Deep Dive
+
+This section extends the caching overview with ROI calculations and multi-turn conversation patterns.
+
+**When caching pays off:** If the same system prompt is used for more than one request within the cache TTL window (5 minutes for standard, 1 hour for extended), caching saves money. In practice, almost every production RAG deployment qualifies because the system prompt rarely changes between queries.
+
+**ROI calculation example:**
+```
+  System prompt tokens:      10,000
+  Retrieved context tokens:   5,000
+  Total cacheable tokens:    15,000
+  Model price:               $3.00/MTok input
+
+  Cost per query WITHOUT cache:
+    15,000 tok × $3.00/1M = $0.045/query
+
+  Cost per query WITH cache (after first write):
+    15,000 tok × $0.30/1M (10% read rate) = $0.0045/query
+
+  Savings per query: $0.0405 (90% reduction)
+  Break-even: first two queries in the same 5-minute window
+```
+
+### Complete Multi-Turn RAG with Prompt Caching
+
+In a multi-turn conversation, the system prompt and initial retrieved context can be cached across all turns. Only the new user messages and fresh context need to be sent at full price.
+
+```python
+import anthropic
+from typing import Optional
+
+client = anthropic.Anthropic()
+
+class CachedRAGConversation:
+    """
+    Multi-turn RAG conversation with prompt caching.
+
+    Caches:
+    1. System prompt (always — changes only when system instructions change)
+    2. Retrieved context (per-conversation — same docs used across turns)
+    """
+
+    SYSTEM_PROMPT = """You are a precise document assistant. Answer questions using only
+the provided context documents. When you cite information, reference the specific document.
+If the context does not contain enough information to answer, say so clearly rather than
+guessing. Do not introduce information from outside the provided context."""
+
+    def __init__(self, context_docs: list[str]):
+        self.context = "\n\n---\n\n".join(context_docs)
+        self.conversation_history: list[dict] = []
+        self.total_cache_writes = 0
+        self.total_cache_reads = 0
+        self.total_new_tokens = 0
+
+    def ask(self, question: str) -> str:
+        # Build the messages list
+        # First user turn: include cached context
+        if not self.conversation_history:
+            first_user_content = [
+                {
+                    "type": "text",
+                    "text": f"<context>\n{self.context}\n</context>",
+                    "cache_control": {"type": "ephemeral"},
+                    # This block is cached. On subsequent turns, it is read from cache.
+                },
+                {
+                    "type": "text",
+                    "text": f"Question: {question}",
+                },
+            ]
+            self.conversation_history.append({
+                "role": "user",
+                "content": first_user_content,
+            })
+        else:
+            # Subsequent turns: just append the new question
+            # The cached context block in the first message is automatically reused
+            self.conversation_history.append({
+                "role": "user",
+                "content": question,
+            })
+
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system=[
+                {
+                    "type": "text",
+                    "text": self.SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                    # System prompt is cached for all turns in this conversation
+                }
+            ],
+            messages=self.conversation_history,
+        )
+
+        answer = response.content[0].text
+
+        # Track cache usage
+        usage = response.usage
+        self.total_cache_writes += usage.cache_creation_input_tokens
+        self.total_cache_reads  += usage.cache_read_input_tokens
+        self.total_new_tokens   += usage.input_tokens
+
+        # Add assistant response to history for next turn
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": answer,
+        })
+
+        return answer
+
+    def print_cache_stats(self):
+        print(f"Cache writes (billed at 1.25x): {self.total_cache_writes:,} tokens")
+        print(f"Cache reads  (billed at 0.10x): {self.total_cache_reads:,} tokens")
+        print(f"New input tokens (billed at 1x): {self.total_new_tokens:,} tokens")
+        effective_rate = (
+            self.total_cache_writes * 1.25
+            + self.total_cache_reads * 0.10
+            + self.total_new_tokens * 1.00
+        ) / max(1, self.total_cache_writes + self.total_cache_reads + self.total_new_tokens)
+        print(f"Effective billing rate: {effective_rate:.2f}x (vs 1.00x without caching)")
+
+
+# Usage
+docs = retriever.invoke("Tell me about the refund policy")
+context_docs = [d.page_content for d in docs]
+
+conv = CachedRAGConversation(context_docs)
+print(conv.ask("What is the refund window?"))
+print(conv.ask("Does it apply to digital products?"))
+print(conv.ask("What if the product is defective?"))
+conv.print_cache_stats()
+```
+
+---
+
+## 13. vLLM — High-Throughput Self-Hosted Inference
 
 **GitHub:** `vllm-project/vllm`  
 **Website:** vllm.ai
@@ -631,7 +963,7 @@ def rag_stream_vllm(question: str, context: str):
 
 ---
 
-## 13. LiteLLM — Unified Multi-Provider API
+## 14. LiteLLM — Unified Multi-Provider API
 
 **GitHub:** `BerriAI/litellm`  
 **Website:** litellm.ai
@@ -706,7 +1038,545 @@ def tiered_rag(question: str, context: str) -> str:
 
 ---
 
-## 14. Weights & Biases Weave — Production Observability
+## 15. Model Routing for Cost Optimization
+
+Routing queries to the appropriate model based on complexity is one of the highest-ROI optimizations available. Simple factual lookups ("What is the return window?") do not need a powerful reasoning model. Complex multi-step questions ("Compare the refund policies across our three product lines and explain the exceptions") do.
+
+```
+  Model Routing Decision
+  ──────────────────────────────────────────────────────────────
+  Query: "What is the return window?"
+     │
+     ▼
+  Rule-based classifier:
+  ├── Length <= 15 words?         YES
+  ├── Contains "compare"?         NO
+  ├── Contains "analyze"?         NO
+  ├── Contains "explain why"?     NO
+  └── → SIMPLE QUERY ──→ Small Model (Claude Haiku / gpt-4o-mini)
+
+  Query: "Analyze how our refund policy compares to industry standards
+          and explain why the 30-day window might disadvantage us."
+     │
+     ▼
+  Rule-based classifier:
+  ├── Contains "compare"?         YES
+  └── → COMPLEX QUERY ──→ Large Model (Claude Sonnet / gpt-4o)
+  ──────────────────────────────────────────────────────────────
+```
+
+**Expected cost savings:** 60–80% cost reduction with no user-perceived quality drop on simple queries (which typically constitute 60–70% of RAG workloads in customer-facing applications).
+
+### Rule-Based Router with LLM Fallback
+
+```python
+import re
+import time
+from dataclasses import dataclass, field
+from litellm import Router
+
+# ── Model configuration ────────────────────────────────────────
+
+router = Router(
+    model_list=[
+        {
+            "model_name": "small",
+            "litellm_params": {"model": "claude-haiku-4-5-20251001", "api_key": "YOUR_KEY"},
+        },
+        {
+            "model_name": "large",
+            "litellm_params": {"model": "claude-sonnet-4-6", "api_key": "YOUR_KEY"},
+        },
+    ],
+)
+
+# ── Complexity detection ───────────────────────────────────────
+
+COMPLEX_KEYWORDS = [
+    "compare", "contrast", "analyze", "analyse", "explain why",
+    "reason", "evaluate", "assess", "critique", "synthesize",
+    "what are the implications", "how does .* differ", "pros and cons",
+]
+
+COMPLEX_PATTERNS = [re.compile(kw, re.IGNORECASE) for kw in COMPLEX_KEYWORDS]
+
+
+def classify_query(query: str) -> str:
+    """
+    Rule-based complexity classifier.
+    Returns 'simple' or 'complex'.
+    Combines heuristic rules with a lightweight LLM fallback for ambiguous cases.
+    """
+    word_count = len(query.split())
+
+    # Fast path: clearly simple
+    if word_count <= 8 and "?" in query:
+        return "simple"
+
+    # Fast path: clearly complex (contains complexity keywords)
+    for pattern in COMPLEX_PATTERNS:
+        if pattern.search(query):
+            return "complex"
+
+    # Ambiguous: use LLM classifier (lightweight model, <50ms)
+    if 8 < word_count <= 25:
+        classifier_response = router.completion(
+            model="small",
+            messages=[{
+                "role": "user",
+                "content": (
+                    "Classify this query as SIMPLE (single factual lookup) or COMPLEX "
+                    "(requires reasoning, comparison, or multi-step analysis).\n"
+                    f"Query: {query}\n"
+                    "Answer with only one word: SIMPLE or COMPLEX."
+                ),
+            }],
+            max_tokens=5,
+            temperature=0,
+        )
+        verdict = classifier_response.choices[0].message.content.strip().upper()
+        return "complex" if "COMPLEX" in verdict else "simple"
+
+    # Long queries default to complex
+    return "complex" if word_count > 25 else "simple"
+
+
+# ── Routing logic ──────────────────────────────────────────────
+
+@dataclass
+class RoutingStats:
+    total_queries: int = 0
+    simple_queries: int = 0
+    complex_queries: int = 0
+    small_model_cost_usd: float = 0.0
+    large_model_cost_usd: float = 0.0
+
+stats = RoutingStats()
+
+# Approximate pricing per 1K tokens (input + output combined estimate)
+MODEL_COST_PER_1K = {
+    "small": 0.00025,   # Claude Haiku
+    "large": 0.003,     # Claude Sonnet
+}
+
+def routed_rag(question: str, context: str) -> dict:
+    """
+    Route query to appropriate model, return answer + routing metadata.
+    """
+    query_class = classify_query(question)
+    model = "small" if query_class == "simple" else "large"
+
+    t0 = time.perf_counter()
+    response = router.completion(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": "Answer the question using only the provided context. Be concise.",
+            },
+            {
+                "role": "user",
+                "content": f"Context:\n{context}\n\nQuestion: {question}",
+            },
+        ],
+        temperature=0,
+        max_tokens=512,
+    )
+    latency_ms = (time.perf_counter() - t0) * 1000
+
+    # Track stats
+    total_tokens = response.usage.total_tokens
+    cost = (total_tokens / 1000) * MODEL_COST_PER_1K[model]
+
+    stats.total_queries += 1
+    if model == "small":
+        stats.simple_queries += 1
+        stats.small_model_cost_usd += cost
+    else:
+        stats.complex_queries += 1
+        stats.large_model_cost_usd += cost
+
+    return {
+        "answer": response.choices[0].message.content,
+        "model_used": model,
+        "query_class": query_class,
+        "latency_ms": round(latency_ms, 1),
+        "tokens": total_tokens,
+        "cost_usd": round(cost, 6),
+    }
+
+
+def print_routing_report():
+    """Print cost summary after a batch of queries."""
+    total_cost = stats.small_model_cost_usd + stats.large_model_cost_usd
+    hypothetical_large_only = stats.total_queries * (
+        (stats.small_model_cost_usd / max(1, stats.simple_queries))
+        * (MODEL_COST_PER_1K["large"] / MODEL_COST_PER_1K["small"])
+        + stats.large_model_cost_usd / max(1, stats.total_queries)
+    )
+    print(f"Total queries: {stats.total_queries}")
+    print(f"  Simple (small model): {stats.simple_queries} ({100*stats.simple_queries//max(1,stats.total_queries)}%)")
+    print(f"  Complex (large model): {stats.complex_queries} ({100*stats.complex_queries//max(1,stats.total_queries)}%)")
+    print(f"Actual cost:   ${total_cost:.4f}")
+    print(f"Savings vs large-only: ~{100*(1 - total_cost/max(0.0001,hypothetical_large_only)):.0f}%")
+```
+
+---
+
+## 16. Langfuse v3 Observability
+
+**GitHub:** `langfuse/langfuse`  
+**Website:** langfuse.com  
+**Version:** v3 (2025)
+
+Langfuse is an open-source LLM observability platform with first-class support for RAG pipeline tracing. It captures the full trace of each request — from query embedding through retrieval, reranking, and generation — as a hierarchy of spans, making it possible to diagnose exactly where latency or quality problems occur.
+
+```
+  Langfuse Trace Structure for RAG
+  ──────────────────────────────────────────────────────────────
+  Trace: rag_query (trace_id=abc123)
+  │  input:  "What is the refund policy?"
+  │  output: "Refunds are available within 30 days."
+  │  latency: 1,340ms
+  │  cost: $0.0032
+  │
+  ├── Span: embed_query
+  │   │  latency: 12ms
+  │   └── observation: {model: "bge-large-en", tokens: 8}
+  │
+  ├── Span: vector_retrieval
+  │   │  latency: 9ms
+  │   └── observation: {k: 5, top_score: 0.91, docs: [...]}
+  │
+  ├── Span: rerank
+  │   │  latency: 87ms
+  │   └── observation: {model: "cross-encoder", top_k: 3}
+  │
+  └── Generation: llm_generate
+      │  latency: 1,232ms
+      │  model: claude-sonnet-4-6
+      │  input_tokens: 1,843
+      │  output_tokens: 42
+      │  cost: $0.0031
+      └── quality_score: 0.94 (from RAGAS feedback)
+  ──────────────────────────────────────────────────────────────
+```
+
+### Python SDK Integration
+
+```python
+from langfuse import Langfuse
+from langfuse.decorators import observe, langfuse_context
+import anthropic
+
+langfuse = Langfuse(
+    public_key="YOUR_PUBLIC_KEY",
+    secret_key="YOUR_SECRET_KEY",
+    host="https://cloud.langfuse.com",  # or your self-hosted URL
+)
+
+client = anthropic.Anthropic()
+
+
+@observe(name="embed_query")
+def embed_query(query: str) -> list[float]:
+    """Embed the user query for vector search."""
+    return embedding_model.encode(query).tolist()
+
+
+@observe(name="vector_retrieval")
+def retrieve_documents(query_embedding: list[float], k: int = 5) -> list[dict]:
+    """Retrieve top-k documents from vector store."""
+    results = vectorstore.similarity_search_by_vector(query_embedding, k=k)
+    langfuse_context.update_current_observation(
+        metadata={
+            "k": k,
+            "top_score": results[0].metadata.get("score", 0) if results else 0,
+            "doc_ids": [d.metadata.get("id") for d in results],
+        }
+    )
+    return results
+
+
+@observe(name="rerank")
+def rerank_documents(query: str, docs: list, top_n: int = 3) -> list:
+    """Rerank retrieved documents using cross-encoder."""
+    scores = cross_encoder.predict([(query, d.page_content) for d in docs])
+    ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+    top_docs = [d for d, _ in ranked[:top_n]]
+    langfuse_context.update_current_observation(
+        metadata={"input_docs": len(docs), "output_docs": top_n}
+    )
+    return top_docs
+
+
+@observe(name="llm_generate", as_type="generation")
+def generate_answer(question: str, context: str) -> str:
+    """Generate answer using LLM with retrieved context."""
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=512,
+        system="Answer questions using only the provided context.",
+        messages=[{
+            "role": "user",
+            "content": f"Context:\n{context}\n\nQuestion: {question}",
+        }],
+    )
+
+    # Report token usage to Langfuse
+    langfuse_context.update_current_observation(
+        usage={
+            "input": response.usage.input_tokens,
+            "output": response.usage.output_tokens,
+        },
+        model="claude-sonnet-4-6",
+    )
+    return response.content[0].text
+
+
+@observe(name="rag_pipeline")
+def rag_pipeline(question: str) -> str:
+    """Full RAG pipeline — traced end-to-end."""
+    query_embedding = embed_query(question)
+    docs = retrieve_documents(query_embedding)
+    reranked = rerank_documents(question, docs)
+    context = "\n\n".join([d.page_content for d in reranked])
+    answer = generate_answer(question, context)
+
+    # Optionally attach a quality score (e.g., from RAGAS)
+    langfuse_context.update_current_trace(
+        tags=["production"],
+        metadata={"context_chunks": len(reranked)},
+    )
+    return answer
+
+
+# Manual trace creation (for more control)
+def rag_with_manual_trace(question: str) -> str:
+    trace = langfuse.trace(
+        name="rag_query",
+        input={"question": question},
+        tags=["v2", "production"],
+    )
+
+    retrieval_span = trace.span(name="retrieval", input={"query": question})
+    docs = retriever.invoke(question)
+    retrieval_span.end(output={"doc_count": len(docs)})
+
+    generation = trace.generation(
+        name="generation",
+        model="claude-sonnet-4-6",
+        input={"question": question, "context_chunks": len(docs)},
+    )
+    answer = generate_answer(question, "\n".join([d.page_content for d in docs]))
+    generation.end(output=answer, usage={"input": 1843, "output": 42})
+
+    trace.update(output=answer)
+    langfuse.flush()
+    return answer
+```
+
+### Dashboard Capabilities
+
+Langfuse's dashboard provides:
+- **Latency per span:** See exactly which step is slow (embedding vs. retrieval vs. LLM)
+- **Token cost per span:** Identify which queries cost the most to serve
+- **Quality scores over time:** Plot RAGAS metrics alongside production traffic
+- **Session replay:** Drill into any individual trace to see exact inputs and outputs
+- **User-level analytics:** Which users ask the most expensive queries?
+
+### Dataset Replay
+
+One of Langfuse's most powerful features is the ability to collect real production traces into a dataset and replay them through an updated pipeline to measure improvements:
+
+```python
+# Collect traces into a labeled dataset
+dataset = langfuse.create_dataset(name="production-sample-100")
+
+# Add items from real traces (flagged for evaluation during production)
+for trace_id in flagged_trace_ids:
+    trace = langfuse.get_trace(trace_id)
+    dataset.create_item(
+        input={"question": trace.input["question"]},
+        expected_output=trace.output,  # or human-labeled output
+    )
+
+# Run new pipeline version against dataset
+for item in dataset.items:
+    with item.observe(run_name="pipeline-v2") as span:
+        answer = rag_pipeline_v2(item.input["question"])
+        span.score(name="faithfulness", value=compute_faithfulness(answer, item))
+```
+
+### Self-Hosting
+
+Langfuse v3 ships as a Docker Compose stack (Postgres + Redis + web server). For teams with data residency requirements:
+
+```bash
+git clone https://github.com/langfuse/langfuse.git
+cd langfuse
+docker compose up -d
+
+# Access at http://localhost:3000
+```
+
+---
+
+## 17. OpenTelemetry for RAG
+
+OpenTelemetry (OTel) is the CNCF vendor-neutral standard for distributed tracing, metrics, and logs. Using OTel for RAG means your pipeline traces can be sent to any compatible backend — Phoenix (Arize), Jaeger, Grafana Tempo, Honeycomb, or Langfuse — without changing application code.
+
+```
+  OpenTelemetry Architecture for RAG
+  ──────────────────────────────────────────────────────────────
+  RAG Application
+  ├── OTEL SDK (Python)
+  │   ├── Auto-instrumentation: LangChain, httpx, SQLAlchemy
+  │   └── Manual spans: retrieval, reranking, custom steps
+  │
+  ▼
+  OTEL Collector (sidecar or central)
+  ├── Receives: OTLP (HTTP or gRPC)
+  ├── Processes: sampling, batching, enrichment
+  └── Exports to multiple backends simultaneously:
+      ├── Phoenix (Arize) — local evaluation UI
+      ├── Jaeger — distributed trace visualization
+      ├── Grafana Tempo — metrics + trace correlation
+      └── LangSmith — via OTLP endpoint
+  ──────────────────────────────────────────────────────────────
+```
+
+### RAG-Specific OTel Attributes (OpenInference Standard)
+
+The OpenInference project (Arize AI) defines standard OTel span attributes for AI/LLM workloads:
+
+| Attribute | Type | Description |
+|---|---|---|
+| `openinference.span.kind` | string | `RETRIEVER`, `RERANKER`, `LLM`, `CHAIN`, `AGENT` |
+| `retrieval.documents[i].content` | string | Content of i-th retrieved document |
+| `retrieval.documents[i].score` | float | Relevance score of i-th document |
+| `retrieval.documents[i].id` | string | Document identifier |
+| `llm.model_name` | string | Model used for generation |
+| `llm.token_count.prompt` | int | Input tokens |
+| `llm.token_count.completion` | int | Output tokens |
+| `llm.input_messages[i].content` | string | Messages sent to LLM |
+| `embedding.model_name` | string | Embedding model used |
+| `embedding.vector` | float[] | Query embedding vector (optional) |
+
+### Instrumenting a LangChain RAG Pipeline
+
+```python
+# pip install opentelemetry-sdk opentelemetry-exporter-otlp openinference-instrumentation-langchain
+
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from openinference.instrumentation.langchain import LangChainInstrumentor
+
+# Configure OTel provider
+tracer_provider = TracerProvider()
+tracer_provider.add_span_processor(
+    BatchSpanProcessor(
+        OTLPSpanExporter(
+            endpoint="http://localhost:4318/v1/traces",  # OTEL Collector
+        )
+    )
+)
+trace.set_tracer_provider(tracer_provider)
+
+# Auto-instrument LangChain — all chains, retrievers, and LLM calls
+# are now automatically traced with OpenInference attributes
+LangChainInstrumentor().instrument()
+
+# Your RAG chain runs as normal — tracing is automatic
+result = rag_chain.invoke("What is the refund policy?")
+
+# The trace will appear in Phoenix, Jaeger, or any configured backend
+# with spans for: retrieval, LLM call, full chain
+# and attributes like: retrieval.documents[0].content, llm.token_count.prompt, etc.
+```
+
+### Manual Span Instrumentation
+
+For custom retrieval steps not covered by auto-instrumentation:
+
+```python
+from opentelemetry import trace
+from opentelemetry.semconv._incubating.attributes import gen_ai_attributes
+
+tracer = trace.get_tracer("rag.pipeline")
+
+def retrieve_with_tracing(query: str, k: int = 5) -> list:
+    with tracer.start_as_current_span("rag.retrieval") as span:
+        span.set_attribute("openinference.span.kind", "RETRIEVER")
+        span.set_attribute("input.value", query)
+
+        docs = vectorstore.similarity_search(query, k=k)
+
+        # Record retrieved documents using OpenInference schema
+        for i, doc in enumerate(docs):
+            span.set_attribute(f"retrieval.documents.{i}.content", doc.page_content[:500])
+            span.set_attribute(f"retrieval.documents.{i}.id", doc.metadata.get("source", ""))
+            if "score" in doc.metadata:
+                span.set_attribute(f"retrieval.documents.{i}.score", doc.metadata["score"])
+
+        span.set_attribute("retrieval.document_count", len(docs))
+        return docs
+
+
+def rerank_with_tracing(query: str, docs: list, top_n: int = 3) -> list:
+    with tracer.start_as_current_span("rag.rerank") as span:
+        span.set_attribute("openinference.span.kind", "RERANKER")
+        span.set_attribute("reranker.input_documents", len(docs))
+        span.set_attribute("reranker.top_k", top_n)
+
+        scores = cross_encoder.predict([(query, d.page_content) for d in docs])
+        ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+        top_docs = [d for d, _ in ranked[:top_n]]
+
+        span.set_attribute("reranker.output_documents", len(top_docs))
+        return top_docs
+```
+
+### Sending OTel Traces to Multiple Backends
+
+```yaml
+# otel-collector-config.yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+exporters:
+  otlp/phoenix:
+    endpoint: http://localhost:6006/v1/traces
+    tls:
+      insecure: true
+
+  otlp/jaeger:
+    endpoint: http://jaeger:4317
+    tls:
+      insecure: true
+
+  otlp/langsmith:
+    endpoint: https://api.smith.langchain.com
+    headers:
+      x-api-key: "${LANGCHAIN_API_KEY}"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp/phoenix, otlp/jaeger, otlp/langsmith]
+```
+
+---
+
+## 18. Weights & Biases Weave — Production Observability
 
 **Website:** weave.wandb.ai  
 **GitHub:** `wandb/weave`
@@ -784,10 +1654,12 @@ results = asyncio.run(evaluation.evaluate(rag_pipeline))
 - [ ] Response streaming enabled
 - [ ] **vLLM** deployed for self-hosted inference (if using open-source models)
 - [ ] **LiteLLM Router** configured with fallback providers
-- [ ] LangSmith, Phoenix, or **W&B Weave** tracing active
+- [ ] **Model routing** implemented (simple vs. complex query classification)
+- [ ] **Langfuse v3** or **OpenTelemetry** tracing configured with RAG-specific spans
+- [ ] **Input guardrails** deployed (prompt injection, PII, topic scope)
+- [ ] **Output guardrails** deployed (factuality check, toxicity filter)
+- [ ] LangSmith, Phoenix, or **W&B Weave** dashboard active
 - [ ] **DeepEval** or RAGAS evaluation in CI/CD pipeline
-- [ ] Input validation and prompt injection detection
-- [ ] Output grounding verification
 - [ ] Fallback responses for retrieval failures
 - [ ] Cost monitoring and alerting per provider
 - [ ] Nightly re-indexing job for updated documents

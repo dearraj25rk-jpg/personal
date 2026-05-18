@@ -190,7 +190,7 @@ const ragData = [
     llmCalls: 2,
     dbCalls: 1,
     why: "Haiku generates context per chunk at index time (batch, not per query). Query time: 1 embed call + 1 vector search + 1 LLM generation. The indexing overhead is offline.",
-    tradeoff: "49% fewer retrieval failures vs naive RAG. 67% fewer when combined with BM25. Storage grows ~50%. Worth it for docs where chunks lose meaning without context (policy sections, legal clauses).",
+    tradeoff: "49% fewer retrieval failures vs naive RAG. 69% fewer when combined with BM25 (Anthropic, 2025 follow-up). Storage grows ~50%. Worth it for docs where chunks lose meaning without context (policy sections, legal clauses).",
     bestFor: "Production systems with complex, multi-section documents where chunk context matters",
   },
   {

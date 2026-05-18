@@ -1,19 +1,90 @@
 ---
 tableOfContents: false
 title: RAG Types Comparison
-description: Interactive side-by-side comparison of naive, advanced, modular, and agentic RAG — pipelines, code, accuracy, and when to use each
+description: Interactive side-by-side comparison of all RAG generations — Naive, Advanced, Modular, and Agentic — showing pipeline diagrams, code samples, accuracy ratings, latency profiles, and decision guidance. May 2026.
 sidebar:
   order: 8
 ---
 
 import RAGTypes from '../../../components/interactive/RAGTypes.jsx';
 
-Interactive comparison of all four RAG generations — Generation 1 (Naive), Generation 2 (Advanced + Modular), and Generation 3 (Agentic). Select any architecture to see its pipeline diagram, code sample, accuracy rating, and ideal use case.
+Four generations of RAG architecture have emerged since the original 2020 paper. Each generation adds capability at the cost of complexity and latency. This interactive guide lets you select any architecture to see its complete pipeline, code, accuracy benchmark, and when to choose it.
 
-For the deep dive on each architecture:
-- [Advanced RAG](../advanced-rag) — query rewriting, FLARE, step-back prompting
-- [Agentic RAG](../agentic-rag) — Self-RAG, CRAG, tool-calling, LangGraph
+## The Four Generations
+
+| Generation | Architecture | Key addition | RAGAS Faithfulness (typical) | Latency |
+|---|---|---|---|---|
+| **Gen 1: Naive** | query → retrieve → generate | Baseline | 0.72 | 800ms |
+| **Gen 2: Advanced** | pre/post retrieval optimizations | Query rewriting, reranking | 0.84 | 1.5s |
+| **Gen 2b: Modular** | swappable components | Custom retrievers, compressors | 0.85 | 1.8s |
+| **Gen 3: Agentic** | LLM drives retrieval decisions | Self-reflection, tool calling | 0.91 | 3–8s |
+| **Gen 3b: Multi-Agent** | specialized retriever agents | Parallel multi-source retrieval | 0.93 | 4–10s |
+
+## Pipeline Comparison
+
+```
+NAIVE RAG (Gen 1)
+──────────────────────────────────────────────────────
+Query → [Embed] → [ANN Search] → [Top-k Chunks] → [LLM] → Answer
+
+ADVANCED RAG (Gen 2)
+──────────────────────────────────────────────────────
+Query → [Rewrite] → [Multi-Query] → [Hybrid Search]
+                                           ↓
+                                   [RRF Fusion]
+                                           ↓
+                                   [Reranking]
+                                           ↓
+                              [Compression] → [LLM] → Answer
+
+AGENTIC RAG (Gen 3)
+──────────────────────────────────────────────────────
+Query → [Agent: analyze query]
+              │
+              ├── retrieve? ── [Tool: Vector Search]
+              │                [Tool: BM25 Search]
+              │                [Tool: Web Search]
+              │
+              ├── [Grade retrieved docs]
+              │         ├── relevant → generate
+              │         └── irrelevant → rewrite query → retrieve again
+              │
+              └── [Grade answer]
+                        ├── good → return
+                        └── hallucination detected → regenerate
+```
 
 <div class="interactive-tool">
   <RAGTypes client:only="react" />
 </div>
+
+## When to Choose Each
+
+**Use Naive RAG when:**
+- Prototyping or internal tooling
+- Corpus is small (<10K chunks) and queries are simple
+- Latency budget is tight (<1s)
+- Accuracy requirement is moderate (faithfulness > 0.72 is acceptable)
+
+**Use Advanced RAG when:**
+- Faithfulness requirement > 0.80
+- Queries are phrased differently from indexed documents (vocabulary mismatch)
+- Production system with measurable accuracy SLA
+
+**Use Agentic RAG when:**
+- Multi-hop questions requiring multiple retrieval rounds
+- Queries span multiple knowledge sources (database + documents + web)
+- High accuracy requirement (faithfulness > 0.88) justifies 3–8s latency
+- Complex reasoning tasks (comparison, synthesis, analysis)
+
+**Use Multi-Agent RAG when:**
+- Multiple heterogeneous knowledge bases (structured + unstructured)
+- Team of specialists with domain-specific retrieval strategies
+- Parallel retrieval reduces latency vs sequential agent steps
+
+## Reference Docs
+
+- [Advanced RAG](../advanced-rag) — query rewriting, step-back prompting, RAG-Fusion, HyDE, RAPTOR, STORM, CAG
+- [Agentic RAG](../agentic-rag) — Self-RAG, CRAG, HippoRAG, multi-agent RAG, Claude tool use, LangGraph
+- [Retrieval Strategies](../retrieval-strategies) — BM25, hybrid RRF, ColBERT, cross-encoder reranking
+- [Evaluation](../evaluation) — how to measure which generation is right for your use case

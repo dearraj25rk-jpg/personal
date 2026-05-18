@@ -1,11 +1,11 @@
 ---
 title: "GraphRAG & Knowledge Graphs"
-description: Microsoft GraphRAG (2024), LightRAG (2024), NodeRAG (2025), Graph-R1 (2026) — community detection for global queries, dual-level graph retrieval, Neo4j integration — when entity relationships beat vector similarity, with Anthropic SDK and LangChain implementations.
+description: Microsoft GraphRAG (2024), LightRAG (2024), NodeRAG (2025), HippoRAG (2024), Graph-R1 (2026) — community detection for global queries, dual-level graph retrieval, Neo4j integration — when entity relationships beat vector similarity, with Anthropic SDK and LangChain implementations.
 sidebar:
   order: 18
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 
 ## Why Graphs for Retrieval?
 
@@ -851,24 +851,418 @@ def leiden_communities(G: nx.DiGraph, resolution: float = 1.0) -> list[list[str]
 
 ---
 
-## NodeRAG (2025)
+## NodeRAG (Microsoft, 2025)
 
-**Paper:** NodeRAG — "Structuring Graph as Nodes for Retrieval-Augmented Generation" (2025)
+**Paper:** "NodeRAG: Structuring Graph as Nodes for Retrieval-Augmented Generation" (2025)
 
-NodeRAG demonstrates performance advantages over both Microsoft GraphRAG and LightRAG in indexing time, query efficiency, and multi-hop QA accuracy. The key innovation: rather than treating communities as retrieval units, NodeRAG makes **individual graph nodes** (entities, relationships, passages) directly retrievable — enabling finer-grained retrieval without community summarization overhead.
+NodeRAG introduces a fundamentally different indexing strategy compared to GraphRAG. Rather than grouping entities into communities and generating LLM summaries for each community (which requires many LLM calls and significant compute), NodeRAG creates a **unified node type system** where every element of the knowledge structure — entities, semantic units, relationships, and attributes — becomes a directly retrievable node.
 
-### NodeRAG vs. GraphRAG vs. LightRAG
+```
+  GRAPHRAG INDEXING vs. NODERAG INDEXING
+  ─────────────────────────────────────────────────────────────
+
+  GRAPHRAG:
+  Chunks → Extract entities → Build graph
+        → Detect communities (Leiden)
+        → LLM summarizes EACH community at EACH level
+        → Store: entities + communities + summaries
+
+  LLM calls at index time:
+    extraction:       1 call per chunk
+    community summaries: 1 call per community × N levels
+    Total: O(chunks + communities × levels)
+    Cost example: 1000 chunks × ~10 entities each = ~10,000
+                  extraction calls + community summary calls
+
+  NODERAG:
+  Chunks → Extract entities → Build heterogeneous node graph
+        → Each node type is directly queryable:
+          - Atomic entity nodes (people, orgs, concepts)
+          - Semantic unit nodes (paragraphs with context)
+          - Relationship nodes (edges become retrievable nodes)
+          - Attribute nodes (properties with values)
+        → NO community summarization step
+
+  LLM calls at index time:
+    extraction only: 1 call per chunk
+    Cost: ~3× cheaper than GraphRAG
+    Speed: ~3× faster to build index
+```
+
+### NodeRAG Node Types
+
+```
+  NODERAG UNIFIED NODE SCHEMA
+  ─────────────────────────────────────────────────────────────
+
+  Atomic Entity Node:
+  ┌─────────────────────────────────────────────────────────┐
+  │  id: "entity_openai"                                    │
+  │  type: ENTITY                                           │
+  │  name: "OpenAI"                                         │
+  │  entity_type: ORGANIZATION                              │
+  │  description: "AI safety and research company..."       │
+  │  embedding: [0.23, -0.11, ...]  ← retrievable by vec   │
+  └─────────────────────────────────────────────────────────┘
+
+  Relationship Node (edges become nodes):
+  ┌─────────────────────────────────────────────────────────┐
+  │  id: "rel_ms_openai_001"                                │
+  │  type: RELATIONSHIP                                     │
+  │  subject: "Microsoft"                                   │
+  │  predicate: "INVESTED_IN"                               │
+  │  object: "OpenAI"                                       │
+  │  context: "$10B investment, January 2023"               │
+  │  embedding: [...]  ← retrievable by vector search       │
+  └─────────────────────────────────────────────────────────┘
+
+  Semantic Unit Node (context-preserving chunk):
+  ┌─────────────────────────────────────────────────────────┐
+  │  id: "sem_unit_042"                                     │
+  │  type: SEMANTIC_UNIT                                    │
+  │  content: "Microsoft's $10B investment in OpenAI..."    │
+  │  linked_entities: ["Microsoft", "OpenAI"]               │
+  │  embedding: [...]                                       │
+  └─────────────────────────────────────────────────────────┘
+```
+
+### NodeRAG vs. GraphRAG vs. LightRAG — Comparison
 
 | Metric | Microsoft GraphRAG | LightRAG | NodeRAG |
 |---|---|---|---|
-| Indexing time | Very slow (community detection) | Fast | Fast |
-| Query latency | High (community summary lookup) | Medium | Low |
-| Multi-hop QA | Good | Good | **Best** |
-| Global synthesis | **Best** | Good | Good |
+| Index build cost | Very high (community LLM calls) | Medium | Low (~3x cheaper than GraphRAG) |
+| Index build speed | Very slow | Medium | Fast |
+| Query latency | High (community lookup) | Medium | Low |
+| Multi-hop QA accuracy | Good | Good | Best |
+| Global synthesis | Best (deep community hierarchy) | Good | Good |
+| Narrow/specific queries | Good | Good | Best |
 | Setup complexity | High | Medium | Medium |
-| Storage overhead | High (summaries) | Medium | Low |
+| Storage overhead | High (summaries at every level) | Medium | Low |
+| Recommended for new projects | No (cost) | Maybe | Yes (2025+) |
 
-NodeRAG is the recommended starting point for new graph RAG implementations in 2025–2026 when indexing speed and query efficiency matter.
+NodeRAG is the recommended starting point for new graph RAG implementations when indexing speed and query efficiency matter. GraphRAG remains superior for global corpus synthesis questions that require multi-level community hierarchies.
+
+---
+
+## HippoRAG (Princeton/Ohio State, 2024)
+
+**Paper:** Gutierrez et al., "HippoRAG: Neurobiologically Inspired Long-Term Memory for Large Language Models" (Princeton / Ohio State, NeurIPS 2024)
+
+HippoRAG draws an explicit analogy to the hippocampus — the brain region responsible for associative memory. The hippocampus doesn't store memories as isolated facts; it encodes them as **relational networks** where concepts activate related concepts through learned associations. HippoRAG replaces vector cosine similarity with **Personalized PageRank (PPR)** on a knowledge graph, enabling associative spreading activation similar to how human memory retrieves related facts.
+
+### Architecture
+
+```
+  HIPPORAG PIPELINE
+  ─────────────────────────────────────────────────────────────
+
+  OFFLINE: KNOWLEDGE GRAPH CONSTRUCTION
+  ─────────────────────────────────────────────────────────────
+
+  Step 1: LLM extracts open IE triples from each passage
+  ─────────────────────────────────────────────────────
+  Passage: "Sam Altman, CEO of OpenAI, announced GPT-4 in March 2023.
+            GPT-4 was trained on diverse internet text."
+
+  Extracted triples:
+  (Sam Altman, is_CEO_of, OpenAI)
+  (Sam Altman, announced, GPT-4)
+  (GPT-4, announced_in, March 2023)
+  (GPT-4, trained_on, diverse internet text)
+
+  Step 2: Build knowledge graph (KG)
+  ──────────────────────────────────
+  Nodes: all entities from all triples across the corpus
+  Edges: relationships between entities
+  Also: link each triple → source passage for retrieval
+
+  ONLINE: QUERY-TIME RETRIEVAL
+  ─────────────────────────────────────────────────────────────
+
+  Step 3: Query entity extraction
+  ────────────────────────────────
+  Query: "Who announced GPT-4 and what company do they lead?"
+
+  LLM extracts query entities: ["GPT-4", "company"]
+  Embed query entities → find matching KG nodes
+
+  Step 4: Personalized PageRank (PPR)
+  ────────────────────────────────────
+  Seed nodes = query entity nodes in KG
+  PPR propagates relevance through the graph:
+  - Nodes directly connected to seeds get high scores
+  - Scores decay with graph distance
+  - Restart probability r controls locality
+
+  PPR score vector s(v) for all nodes v:
+  s = r × e_seed + (1-r) × A^T × s
+  where:
+    r = restart probability (typically 0.15)
+    e_seed = indicator vector over seed nodes
+    A = row-normalized adjacency matrix
+
+  Step 5: Passage retrieval
+  ─────────────────────────
+  Top-PPR-scored nodes → linked source passages
+  Return passages as context for LLM
+
+  ─────────────────────────────────────────────────────────────
+
+  WHY PPR BEATS COSINE SIMILARITY:
+  Query: "Who co-founded OpenAI with Sam Altman?"
+  Vector RAG: finds passages with "co-founded" + "Sam Altman"
+  HippoRAG: seeds on "Sam Altman" → PPR spreads to
+            "Elon Musk", "Greg Brockman", "Ilya Sutskever"
+            via CO_FOUNDED_WITH edges → finds answer even if
+            no passage says "co-founded" and "Sam Altman" together
+```
+
+### Benchmark Results
+
+```
+  HIPPORAG vs. STANDARD RAG — MULTI-HOP QA BENCHMARKS
+  ─────────────────────────────────────────────────────────────
+
+  Dataset: MuSiQue (multi-hop reasoning, 2-4 hops required)
+  ─────────────────────────────────────────────────────────────
+  Standard RAG (BM25)          42.3% F1
+  Standard RAG (dense)         48.1% F1
+  HippoRAG                     58.4% F1    (+21% over dense)
+
+  Dataset: 2WikiMultiHopQA
+  ─────────────────────────────────────────────────────────────
+  Standard RAG (BM25)          51.2% F1
+  Standard RAG (dense)         54.8% F1
+  HippoRAG                     63.1% F1    (+15% over dense)
+
+  Dataset: HotpotQA
+  ─────────────────────────────────────────────────────────────
+  Standard RAG (dense)         62.4% F1
+  HippoRAG                     68.2% F1    (+9% over dense)
+```
+
+### NetworkX PPR Implementation
+
+```python
+"""
+hipporag.py — HippoRAG-inspired retrieval using Personalized PageRank
+pip install networkx anthropic numpy
+"""
+import anthropic
+import networkx as nx
+import numpy as np
+import json
+from dataclasses import dataclass, field
+
+client = anthropic.Anthropic()
+
+
+@dataclass
+class Triple:
+    subject: str
+    predicate: str
+    obj: str
+    source_passage_id: int
+
+
+def extract_triples(passage: str) -> list[tuple[str, str, str]]:
+    """Extract open IE (subject, predicate, object) triples from a passage."""
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=512,
+        messages=[{
+            "role": "user",
+            "content": (
+                "Extract factual (subject, predicate, object) triples from this text.\n"
+                "Return JSON: {\"triples\": [[\"subject\", \"predicate\", \"object\"], ...]}\n"
+                "Use short, specific predicates. Only extract explicit facts.\n\n"
+                f"Text: {passage}"
+            ),
+        }],
+    )
+    raw = response.content[0].text.strip()
+    if "```" in raw:
+        raw = raw.split("```")[1].lstrip("json").strip()
+    try:
+        data = json.loads(raw)
+        return [tuple(t) for t in data.get("triples", [])]
+    except Exception:
+        return []
+
+
+class HippoRAG:
+    """
+    HippoRAG: Knowledge graph + Personalized PageRank for retrieval.
+    Associative memory via graph spreading activation.
+    """
+
+    def __init__(self, passages: list[str]):
+        self.passages = passages
+        self.graph = nx.Graph()        # undirected for PPR spreading
+        self.entity_to_passages: dict[str, list[int]] = {}
+        self.triples: list[Triple] = []
+
+        # Build KG
+        self._build_knowledge_graph()
+
+    def _build_knowledge_graph(self):
+        print(f"Building HippoRAG knowledge graph from {len(self.passages)} passages...")
+        for passage_id, passage in enumerate(self.passages):
+            raw_triples = extract_triples(passage)
+            for subj, pred, obj in raw_triples:
+                # Add nodes
+                for entity in [subj, obj]:
+                    if entity not in self.graph:
+                        self.graph.add_node(entity)
+                    self.entity_to_passages.setdefault(entity, []).append(passage_id)
+
+                # Add edge (weighted by frequency)
+                if self.graph.has_edge(subj, obj):
+                    self.graph[subj][obj]["weight"] += 1
+                else:
+                    self.graph.add_edge(subj, obj, predicate=pred, weight=1.0)
+
+                self.triples.append(Triple(subj, pred, obj, passage_id))
+
+        print(f"  Graph: {self.graph.number_of_nodes()} nodes, {self.graph.number_of_edges()} edges")
+
+    def _personalized_pagerank(
+        self,
+        seed_nodes: list[str],
+        restart_prob: float = 0.15,
+        max_iter: int = 100,
+    ) -> dict[str, float]:
+        """
+        Run Personalized PageRank from seed nodes.
+
+        restart_prob (alpha): probability of teleporting back to seeds
+                              0.15 = standard (explores broadly)
+                              0.50 = stays close to seeds (precise)
+
+        Returns dict of node → PPR score.
+        Higher score = more relevant to the seeds.
+        """
+        if not seed_nodes or not self.graph.number_of_nodes():
+            return {}
+
+        # Filter to nodes that exist in graph
+        valid_seeds = [n for n in seed_nodes if n in self.graph]
+        if not valid_seeds:
+            return {}
+
+        # Personalization vector: uniform over seed nodes
+        personalization = {
+            node: (1.0 / len(valid_seeds) if node in valid_seeds else 0.0)
+            for node in self.graph.nodes()
+        }
+
+        ppr_scores = nx.pagerank(
+            self.graph,
+            alpha=1 - restart_prob,   # NetworkX: alpha = damping = 1 - restart
+            personalization=personalization,
+            max_iter=max_iter,
+            weight="weight",
+        )
+        return ppr_scores
+
+    def _extract_query_entities(self, query: str) -> list[str]:
+        """Extract entities from query to use as PPR seeds."""
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Extract the key entity names from this query for knowledge graph lookup.\n"
+                    f"Return JSON: {{\"entities\": [\"Entity1\", \"Entity2\"]}}\n\n"
+                    f"Query: {query}\n\n"
+                    f"Known graph entities (sample): {list(self.graph.nodes())[:30]}"
+                ),
+            }],
+        )
+        raw = response.content[0].text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1].lstrip("json").strip()
+        try:
+            return json.loads(raw).get("entities", [])
+        except Exception:
+            return []
+
+    def retrieve(
+        self,
+        query: str,
+        k: int = 5,
+        restart_prob: float = 0.15,
+    ) -> list[dict]:
+        """
+        Retrieve passages using HippoRAG: entity extraction → PPR → passage ranking.
+        """
+        # Step 1: Extract query entities
+        query_entities = self._extract_query_entities(query)
+        print(f"  Query entities: {query_entities}")
+
+        # Step 2: PPR from query entity seeds
+        ppr_scores = self._personalized_pagerank(query_entities, restart_prob)
+
+        # Step 3: Score passages by aggregating PPR scores of their entities
+        passage_scores: dict[int, float] = {}
+        for node, ppr_score in ppr_scores.items():
+            for passage_id in self.entity_to_passages.get(node, []):
+                passage_scores[passage_id] = passage_scores.get(passage_id, 0.0) + ppr_score
+
+        # Step 4: Return top-k passages
+        ranked = sorted(passage_scores.items(), key=lambda x: x[1], reverse=True)
+        return [
+            {
+                "passage": self.passages[pid],
+                "score": score,
+                "passage_id": pid,
+            }
+            for pid, score in ranked[:k]
+        ]
+
+    def answer(self, query: str, k: int = 5) -> str:
+        """Full HippoRAG QA: retrieve passages → synthesize answer."""
+        results = self.retrieve(query, k=k)
+        context = "\n\n---\n\n".join(
+            f"[Passage {r['passage_id']+1}]\n{r['passage']}"
+            for r in results
+        )
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system="Answer precisely using the provided passages.",
+            messages=[{
+                "role": "user",
+                "content": f"Context:\n{context}\n\nQuestion: {query}",
+            }],
+        )
+        return response.content[0].text
+
+
+# ─── Usage ───────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    passages = [
+        "Sam Altman co-founded OpenAI in 2015 with Elon Musk and Greg Brockman.",
+        "OpenAI created GPT-4, which powers ChatGPT and GitHub Copilot.",
+        "Microsoft invested $10 billion in OpenAI in 2023.",
+        "Elon Musk departed OpenAI's board in 2018 due to conflicts of interest.",
+        "GitHub Copilot is developed by GitHub, a Microsoft subsidiary.",
+    ]
+
+    hippo = HippoRAG(passages)
+    answer = hippo.answer("Who co-founded OpenAI with Sam Altman?")
+    print(answer)
+```
+
+---
+
+## NodeRAG (Microsoft, 2025)
+
+NodeRAG demonstrates performance advantages over both Microsoft GraphRAG and LightRAG in indexing time, query efficiency, and multi-hop QA accuracy. The key innovation: rather than treating communities as retrieval units, NodeRAG makes **individual graph nodes** (entities, relationships, passages) directly retrievable — enabling finer-grained retrieval without community summarization overhead.
+
+See the [NodeRAG section](#noderag-microsoft-2025) above for the full comparison table and node type schemas.
 
 ---
 
@@ -876,13 +1270,179 @@ NodeRAG is the recommended starting point for new graph RAG implementations in 2
 
 **Paper:** "Graph-R1: Towards Agentic GraphRAG Framework via End-to-End Reinforcement Learning" (2026)
 
-Graph-R1 treats retrieval as a **multi-turn agent-environment interaction**, trained with reinforcement learning rather than supervised graph extraction. Key innovations:
+Graph-R1 applies **reinforcement learning** (specifically GRPO — Group Relative Policy Optimization) to graph traversal for RAG. Rather than using hand-coded routing rules (local vs. global) or static community summaries, the agent learns which graph traversal paths lead to correct answers through trial and error on QA datasets.
 
-- **Lightweight knowledge hypergraph**: replaces heavy Leiden community detection with learned hyperedges
-- **RL-trained retrieval agent**: learns which graph paths to traverse for a given query — not hand-coded routing
-- **End-to-end training**: both graph construction and retrieval policy are jointly optimized
+```
+  GRAPH-R1 ARCHITECTURE
+  ─────────────────────────────────────────────────────────────
 
-Graph-R1 outperforms traditional GraphRAG in reasoning accuracy and retrieval efficiency, particularly on multi-hop reasoning benchmarks where static community summaries are insufficient.
+  STANDARD GRAPHRAG (static):
+  ─────────────────────────────────────────────────────────────
+  Query → rule-based router → fixed traversal strategy
+        → answer
+
+  Path selection: human-designed heuristics
+  Improvement: manual re-engineering
+
+  GRAPH-R1 (RL-trained):
+  ─────────────────────────────────────────────────────────────
+  Query → RL agent → dynamic traversal strategy selection
+        ↑  │              │
+        │  ▼              ▼
+        │  State:       Actions:
+        │  - Query emb  - Expand neighborhood
+        │  - Current    - Follow specific edge type
+        │    graph pos  - Jump to community summary
+        │  - Hops taken - Stop and synthesize
+        │
+        └── Reward: answer correctness on training QA set
+            GRPO updates policy to prefer paths that led to
+            correct answers
+
+  TRAINING:
+  - Environment: knowledge graph (static, pre-built)
+  - Reward function: exact match / F1 on QA dataset
+  - Policy: transformer that maps (query, graph_state) → action
+  - Training data: multi-hop QA datasets (MuSiQue, HotpotQA)
+
+  INFERENCE:
+  Query → trained agent → autonomous traversal → answer
+  Agent decides: how many hops, which edge types to follow,
+  when to use community summaries vs. raw entity data
+
+  ─────────────────────────────────────────────────────────────
+  RESULTS (2026):
+  +15% over static GraphRAG on multi-hop QA benchmarks
+  Particularly strong on 3+ hop questions where static
+  heuristics fail to identify the correct traversal path
+```
+
+Graph-R1 represents the shift from rule-based to learned graph traversal. The RL agent discovers traversal strategies that human engineers would not have encoded manually.
+
+---
+
+## Cost and Scale Considerations
+
+Building a graph index involves many LLM calls. Understanding the cost model helps decide whether GraphRAG is justified for a given corpus.
+
+```
+  GRAPHRAG INDEX BUILD COST MODEL
+  ─────────────────────────────────────────────────────────────
+
+  Cost driver: LLM calls for entity extraction + community summaries
+
+  Entity extraction:
+    Input: each text chunk (500 tokens)
+    Output: entities + relationships (JSON, ~300 tokens)
+    Cost per chunk: ~800 tokens × $0.001/1K = $0.0008
+
+  Typical extraction yield per page:
+    1 document page ≈ 500 tokens
+    1 page → 5-15 entities
+    1 page → 3-8 relationships
+    Each entity/relationship: ~2 LLM passes (extract + deduplicate)
+
+  ─────────────────────────────────────────────────────────────
+  WORKED EXAMPLE: 1,000-page corpus
+
+  Chunks:         1,000 pages × 1 chunk/page = 1,000 chunks
+  Extraction:     1,000 calls × $0.0008       = $0.80
+  Entities:       1,000 × 10 avg             = 10,000 entities
+  Deduplication:  ~20% merge rate             → ~8,000 unique
+
+  Community detection (Leiden): free (CPU algorithm)
+  Community count: ~80 communities (Leiden, default resolution)
+  Community summaries (4 levels):
+    80 communities × 4 levels × 400 tokens = 128,000 tokens
+    128,000 × $0.001/1K = $0.13
+
+  TOTAL BUILD COST: ~$0.93 for 1,000 pages
+  (Using claude-haiku at $0.80/MTok input, $4/MTok output)
+  ─────────────────────────────────────────────────────────────
+
+  Scaling:
+    10,000 pages:   ~$9.30
+    100,000 pages:  ~$93
+    1,000,000 pages: ~$930 (consider incremental updates)
+```
+
+**When the build cost is justified:**
+
+```
+  WORTH IT:
+  - The graph enables queries that vector search CANNOT answer
+    (multi-hop relationships, global corpus synthesis)
+  - Corpus is stable (built once, queried many times)
+  - High-value domain (legal, biomedical, enterprise knowledge base)
+    where retrieval errors are expensive
+
+  NOT WORTH IT:
+  - Simple FAQ or customer support (vector RAG is sufficient)
+  - Real-time corpus (graph rebuild too slow for live updates)
+  - Small corpus (<100 docs) — just use long-context LLM
+  - General prose without clear entity relationships
+```
+
+**Incremental graph updates — avoiding full rebuild:**
+
+```python
+def add_documents_to_graph(
+    new_chunks: list[str],
+    existing_graph: KnowledgeGraph,
+    existing_community_summaries: list[str],
+) -> KnowledgeGraph:
+    """
+    Add new documents to an existing graph without full rebuild.
+
+    Strategy:
+    1. Extract entities/relations from new chunks only
+    2. Merge new entities into existing graph
+       (entity deduplication by name matching)
+    3. Run community detection on merged graph
+    4. Regenerate summaries ONLY for communities that changed
+       (community change detection by membership diff)
+
+    This avoids O(total_corpus) LLM calls on each update.
+    Rebuild cost = O(new_chunks + changed_communities)
+    """
+    print(f"Adding {len(new_chunks)} new chunks to existing graph...")
+
+    # Track existing community memberships for change detection
+    old_communities = existing_graph.get_community_entities()
+    old_membership = {
+        entity: i
+        for i, community in enumerate(old_communities)
+        for entity in community
+    }
+
+    # Add new chunks (entity extraction only)
+    for i, chunk in enumerate(new_chunks):
+        existing_graph.add_chunk(chunk, f"new_chunk_{i}")
+
+    # Re-detect communities on merged graph
+    new_communities = existing_graph.get_community_entities()
+
+    # Find which communities changed membership
+    changed_community_indices = []
+    for i, community in enumerate(new_communities):
+        for entity in community:
+            old_community_idx = old_membership.get(entity)
+            if old_community_idx is None or old_community_idx != i:
+                changed_community_indices.append(i)
+                break
+
+    print(f"  {len(changed_community_indices)} communities require summary regeneration")
+
+    # Regenerate summaries only for changed communities
+    for idx in changed_community_indices:
+        new_summary = summarize_community(new_communities[idx], existing_graph)
+        if idx < len(existing_community_summaries):
+            existing_community_summaries[idx] = new_summary
+        else:
+            existing_community_summaries.append(new_summary)
+
+    return existing_graph
+```
 
 ---
 
@@ -891,13 +1451,13 @@ Graph-R1 outperforms traditional GraphRAG in reasoning accuracy and retrieval ef
 ```
   USE GRAPH RAG WHEN:                    AVOID GRAPH RAG WHEN:
   ──────────────────────────────────     ──────────────────────────────
-  ✓ Queries need entity relationships    ✗ Documents are unrelated prose
-  ✓ "How is X connected to Y?"           ✗ No clear entities/relationships
-  ✓ Multi-hop reasoning required         ✗ Questions about specific passages
-  ✓ Global corpus summarization          ✗ Small corpus (<100 docs)
-  ✓ Knowledge bases (org charts,         ✗ Real-time/streaming data
-    drug interactions, org hierarchy)    ✗ Very short latency required
-  ✓ Research literature (citations,      ✗ Numerical/statistical queries
+  Queries need entity relationships      Documents are unrelated prose
+  "How is X connected to Y?"            No clear entities/relationships
+  Multi-hop reasoning required           Questions about specific passages
+  Global corpus summarization            Small corpus (<100 docs)
+  Knowledge bases (org charts,           Real-time/streaming data
+    drug interactions, org hierarchy)    Very short latency required
+  Research literature (citations,        Numerical/statistical queries
     author networks, topic clusters)       (use SQL retrieval instead)
 
   DOCUMENT TYPES:
@@ -914,7 +1474,7 @@ Graph-R1 outperforms traditional GraphRAG in reasoning accuracy and retrieval ef
 
 ---
 
-## Comparison: GraphRAG vs. Other Vectorless Approaches
+## Comparison: GraphRAG Variants and Related Approaches
 
 ```
   ┌──────────────────┬──────────────┬─────────────┬─────────────┐
@@ -928,6 +1488,18 @@ Graph-R1 outperforms traditional GraphRAG in reasoning accuracy and retrieval ef
   │ Query latency    │ Medium       │ Medium      │ Very low    │
   │ Corpus size      │ Scales well  │ Per-doc     │ Scales well │
   │ Structured PDFs  │ No           │ Yes         │ Partial     │
+  └──────────────────┴──────────────┴─────────────┴─────────────┘
+
+  ┌──────────────────┬──────────────┬─────────────┬─────────────┐
+  │                  │  GraphRAG    │  NodeRAG    │  HippoRAG   │
+  ├──────────────────┼──────────────┼─────────────┼─────────────┤
+  │ Build cost       │ High         │ Low         │ Medium      │
+  │ Multi-hop QA     │ Good         │ Best        │ Best        │
+  │ Global synthesis │ Best         │ Good        │ Poor        │
+  │ Associative mem  │ No           │ No          │ Yes (PPR)   │
+  │ Query latency    │ High         │ Low         │ Medium      │
+  │ Recommended      │ Global Q     │ Narrow Q    │ Multi-hop   │
+  │ for              │             │ efficiency  │ reasoning   │
   └──────────────────┴──────────────┴─────────────┴─────────────┘
 ```
 

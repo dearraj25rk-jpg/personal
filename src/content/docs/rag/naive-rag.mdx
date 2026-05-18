@@ -1,17 +1,81 @@
 ---
 tableOfContents: false
 title: Naive RAG Explainer
-description: Step-by-step visual walkthrough of a basic RAG pipeline — chunking, embedding, retrieval, and generation
+description: Step-by-step interactive visual walkthrough of a basic RAG pipeline — document loading, chunking, embedding, vector storage, cosine similarity retrieval, prompt assembly, and LLM answer generation. May 2026.
 sidebar:
   order: 3
 ---
 
 import NaiveRAG from '../../../components/interactive/NaiveRAG.jsx';
 
-A step-by-step visual walkthrough using a school library analogy. See every phase of naive RAG — document loading, chunking, embedding, vector storage, cosine similarity retrieval, and LLM answer generation — with interactive controls.
+**Naive RAG** is the foundational architecture: index documents, embed queries, retrieve by similarity, generate with an LLM. Understanding every step here is the prerequisite for everything in Advanced and Agentic RAG.
 
-For the deep technical reference: [Chunking Strategies](../chunking) · [Embedding Models](../embedding-models) · [Retrieval Strategies](../retrieval-strategies)
+This interactive explainer uses a school library analogy to walk through each phase. You can control the speed, step forward and backward, and inspect the data at every stage.
+
+## What You Will See
+
+| Phase | What happens |
+|---|---|
+| **Document Loading** | Raw text loaded from a source (PDF, DOCX, web page) |
+| **Chunking** | Text split into overlapping segments (default 512 tokens, 10% overlap) |
+| **Embedding** | Each chunk converted to a dense vector by a bi-encoder model |
+| **Vector Storage** | Vectors indexed in an HNSW graph for fast nearest-neighbor search |
+| **Query Embedding** | User query converted to a vector by the same model |
+| **Cosine Similarity Retrieval** | Top-k most similar chunks found via ANN search |
+| **Prompt Assembly** | Retrieved chunks + query assembled into a structured prompt |
+| **LLM Generation** | Language model generates a grounded answer with citations |
+
+## Key Naive RAG Limitations
+
+Seeing these in the explainer makes the motivations for Advanced RAG concrete:
+
+- **Chunking breaks context** — a chunk mid-sentence loses surrounding meaning
+- **Single-vector query** — one embedding cannot capture multi-faceted questions
+- **Fixed top-k** — always retrieves k chunks even if only 1 is relevant
+- **No reranking** — the chunk ranked #1 by cosine similarity may not be the most useful for the LLM
+- **One-shot retrieval** — if the first retrieval fails, the pipeline has no fallback
 
 <div class="interactive-tool">
   <NaiveRAG client:only="react" />
 </div>
+
+## Pipeline Diagram
+
+```
+Documents (PDF / DOCX / HTML / plain text)
+    │
+    ▼  Chunking (RecursiveCharacterTextSplitter, 512 tokens, 10% overlap)
+[Chunk 1] [Chunk 2] [Chunk 3] ... [Chunk N]
+    │
+    ▼  Bi-encoder embedding (all-MiniLM-L6-v2, BGE, text-embedding-3)
+[v1]      [v2]      [v3]          [vN]   ← 384–3072 dimensional vectors
+    │
+    ▼  Vector index (HNSW / FAISS / Qdrant)
+┌──────────────────────────────────────────┐
+│           Vector Store                   │
+│  Each vector + chunk text + metadata     │
+└──────────────────────────────────────────┘
+                     │
+                     │ ← User query: "How does X work?"
+                     ▼
+             Embed query → q_vec
+                     │
+                     ▼  ANN search (cosine similarity)
+             Top-k chunks (k = 5–20)
+                     │
+                     ▼  Prompt assembly
+             System prompt
+             + Retrieved context (chunk 3, chunk 7, chunk 1)
+             + User question
+                     │
+                     ▼  LLM generation
+             Answer with citations
+```
+
+## Reference Docs
+
+- [Chunking Strategies](../chunking) — fixed-size, recursive, semantic, late chunking, agentic chunking
+- [Embedding Models](../embedding-models) — model comparison, MTEB benchmarks, Qwen3, BGE-M3, Nomic
+- [Vector Stores](../vector-stores) — FAISS, Qdrant, pgvector, Chroma, LanceDB, index algorithms
+- [Retrieval Strategies](../retrieval-strategies) — dense, BM25, hybrid RRF, reranking, ColBERT
+- [Advanced RAG](../advanced-rag) — what to add next when naive RAG underperforms

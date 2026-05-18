@@ -1,11 +1,11 @@
 ---
 title: Advanced RAG
-description: Complete 2025 guide — pre/post retrieval optimizations, RAG-Fusion, HyDE, Proposition Indexing, RAPTOR, FLARE, contextual compression, and reranking pipelines for production RAG systems.
+description: Complete May 2026 guide — pre/post retrieval optimizations, RAG-Fusion, HyDE, Proposition Indexing, RAPTOR, FLARE, CAG, Speculative RAG, STORM, contextual compression, and reranking pipelines for production RAG systems.
 sidebar:
   order: 9
 ---
 
-> **Current as of April 2026.**
+> **Current as of May 2026.**
 
 ## What Is "Advanced RAG"?
 
@@ -17,6 +17,61 @@ Advanced RAG:  query → [pre-retrieval] → retrieve → [post-retrieval] → L
 ```
 
 The goal: improve retrieval precision and recall without changing the underlying vector store.
+
+---
+
+## Advanced RAG Pipeline Overview
+
+The diagram below shows where each technique fits in the full pipeline. Techniques are not mutually exclusive — a production system typically combines several from each stage.
+
+```
+                          User Query
+                              │
+              ┌───────────────▼───────────────┐
+              │         Pre-Retrieval          │
+              │  ┌─────────────────────────┐  │
+              │  │  Query Rewriting        │  │
+              │  │  Step-Back Prompting    │  │
+              │  │  Query Decomposition    │  │
+              │  │  Multi-Query/RAG-Fusion │  │
+              │  │  HyDE                  │  │
+              │  └─────────────────────────┘  │
+              └───────────────┬───────────────┘
+                              │ (4-6 query variants
+                              │  or hypothetical doc)
+              ┌───────────────▼───────────────┐
+              │           Retrieval            │
+              │  ┌─────────────────────────┐  │
+              │  │  Dense / BM25 / Hybrid  │  │
+              │  │  RAPTOR Hierarchy       │  │
+              │  │  Proposition Index      │  │
+              │  │  ColPali (Vision PDF)   │  │
+              │  └─────────────────────────┘  │
+              └───────────────┬───────────────┘
+                              │ (top-30 to 150 candidates)
+              ┌───────────────▼───────────────┐
+              │        Post-Retrieval          │
+              │  ┌─────────────────────────┐  │
+              │  │  RRF Fusion             │  │
+              │  │  Cross-Encoder Reranking│  │
+              │  │  Contextual Compression │  │
+              │  │  Lost-in-Middle Reorder │  │
+              │  └─────────────────────────┘  │
+              └───────────────┬───────────────┘
+                              │ (top-5 compressed chunks)
+              ┌───────────────▼───────────────┐
+              │          Generation            │
+              │  ┌─────────────────────────┐  │
+              │  │  LLM with citations     │  │
+              │  │  FLARE re-retrieval     │  │
+              │  │  STORM (long-form)      │  │
+              │  └─────────────────────────┘  │
+              └───────────────────────────────┘
+                              │
+                          Answer
+```
+
+Alternatively, for **static knowledge bases**, skip retrieval entirely with **Cache-Augmented Generation (CAG)** — loading the full corpus into the LLM's KV cache at startup.
 
 ---
 
@@ -762,6 +817,21 @@ RAPTOR builds a **hierarchical tree** of summaries from the bottom up:
 
 This allows retrieval of both fine-grained chunks (for specific facts) and high-level summaries (for abstract questions), in a single index.
 
+```
+                   [Root Summary]
+                        │
+          ┌─────────────┴─────────────┐
+   [Cluster A Summary]        [Cluster B Summary]
+          │                           │
+   ┌──────┴──────┐             ┌──────┴──────┐
+[Chunk 1]  [Chunk 2]       [Chunk 3]  [Chunk 4]
+(leaf)     (leaf)          (leaf)     (leaf)
+
+Retrieval searches all levels simultaneously:
+  Abstract query → matches Root or Cluster summaries
+  Specific query → matches leaf chunks directly
+```
+
 ```python
 from langchain_community.document_loaders import DirectoryLoader
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -822,6 +892,462 @@ def crag_retrieve(query: str) -> list[Document]:
 
 ---
 
+## Cache-Augmented Generation (CAG)
+
+**Technique introduced:** 2025. Alternative to RAG when the knowledge base is static and small enough to fit within the LLM's context window.
+
+### Core Idea
+
+Standard RAG retrieves a small slice of the knowledge base per query. CAG eliminates retrieval entirely: the **entire knowledge base** is loaded into the LLM's KV (key-value) cache **once at startup**. Every subsequent query reuses that cached state, appending only the user question.
+
+```
+RAG (per query):
+  Query → embed → vector search → top-k chunks → LLM (new context every time)
+  Latency per query: embedding (~10ms) + retrieval (~20ms) + LLM generation
+
+CAG (startup + per query):
+  Startup: system_prompt + ALL documents → KV cache (~2s fill time, once)
+  Per query: append user question → reuse KV cache → LLM generation
+  Latency per query: LLM generation only (~0ms retrieval)
+```
+
+### When CAG Works
+
+CAG is not universally superior to RAG. It requires specific conditions:
+
+- **Knowledge base is static** (or updated infrequently — cache rebuild on update)
+- **Knowledge base fits in context window** (e.g., claude-sonnet-4-6 has 200K tokens — fits ~150K tokens of documents after prompt overhead)
+- **Low latency is critical** — queries arrive frequently enough that the startup cost amortizes
+
+### Architecture
+
+```
+  Startup (once)
+  ┌────────────────────────────────────────────┐
+  │  system_prompt                             │
+  │  + document_1 (with cache_control)         │
+  │  + document_2 (with cache_control)         │
+  │  + ...                                     │
+  │  + document_N (with cache_control)         │
+  └────────────────┬───────────────────────────┘
+                   │  LLM processes → KV cache saved
+                   ▼
+              [KV Cache]  ← stored in memory / on accelerator
+
+  Per Query (many times, zero retrieval cost)
+  ┌────────────────────────────────────────────┐
+  │  [KV Cache]  (reused — not reprocessed)    │
+  │  + user: "What is the refund policy?"      │
+  └────────────────┬───────────────────────────┘
+                   │
+                   ▼
+                Answer  (generation time only, no retrieval)
+```
+
+### Implementation with Anthropic SDK Prompt Caching
+
+The Anthropic SDK's `cache_control` parameter marks content for KV caching. Place `cache_control: {"type": "ephemeral"}` on the last document block — the API caches everything up to and including that block.
+
+```python
+import anthropic
+
+client = anthropic.Anthropic()
+
+def build_cag_system(documents: list[str]) -> list[dict]:
+    """
+    Build a system prompt list with all documents marked for caching.
+    The cache_control on the last block tells the API to cache the
+    entire prefix (system prompt + all document blocks).
+    """
+    blocks = [
+        {
+            "type": "text",
+            "text": (
+                "You are a helpful assistant. Answer questions using only "
+                "the documents below. If the answer is not in the documents, "
+                "say so.\n\n"
+            ),
+        }
+    ]
+
+    for i, doc in enumerate(documents):
+        block = {
+            "type": "text",
+            "text": f"<document index='{i+1}'>\n{doc}\n</document>\n\n",
+        }
+        # Add cache_control to the last document block only.
+        # The API caches the entire prefix up to this point.
+        if i == len(documents) - 1:
+            block["cache_control"] = {"type": "ephemeral"}
+        blocks.append(block)
+
+    return blocks
+
+def cag_query(question: str, system_blocks: list[dict]) -> str:
+    """
+    Send a query reusing the cached KV state.
+    Only the user question is new — the full document set is served from cache.
+    """
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        system=system_blocks,      # cache hit on second+ call
+        messages=[
+            {"role": "user", "content": question}
+        ],
+    )
+    # Check cache usage in response metadata
+    usage = response.usage
+    print(f"Cache read tokens: {getattr(usage, 'cache_read_input_tokens', 0)}")
+    print(f"Cache write tokens: {getattr(usage, 'cache_creation_input_tokens', 0)}")
+    return response.content[0].text
+
+# --- Usage ---
+
+# Load knowledge base (must fit in ~150K tokens for claude-sonnet-4-6)
+documents = [
+    open("policies/refund_policy.txt").read(),
+    open("policies/shipping_policy.txt").read(),
+    open("policies/privacy_policy.txt").read(),
+    # ... up to ~150K tokens total
+]
+
+# One-time startup: build cached system blocks
+# First call fills the cache (~2s), subsequent calls hit cache (~0ms overhead)
+system_blocks = build_cag_system(documents)
+
+# Serve many queries with zero retrieval latency
+questions = [
+    "What is the refund window for electronics?",
+    "Do you ship internationally?",
+    "How is my data used for marketing?",
+]
+
+for q in questions:
+    answer = cag_query(q, system_blocks)
+    print(f"Q: {q}\nA: {answer}\n")
+```
+
+### CAG vs. RAG — Decision Table
+
+| Factor | CAG Wins | RAG Wins |
+|---|---|---|
+| Knowledge base size | Fits in context window (<150K tokens) | Larger than context window |
+| Update frequency | Static or infrequent (daily/weekly) | Frequent (real-time, per-minute) |
+| Query latency requirement | Strict (<100ms end-to-end) | Tolerant of retrieval overhead |
+| Query volume | High — amortizes startup cost | Low — retrieval per query is fine |
+| Precision | All documents always available | Only retrieved chunks sent to LLM |
+| Cost per query | Low (cache hit is cheap) | Moderate (embedding + LLM) |
+| Cold start | ~2s cache fill at startup | None (retrieval on demand) |
+| Multi-tenant (per-user docs) | Poor — one cache per user | Good — query-time filtering |
+
+**Rule of thumb:** if your knowledge base fits comfortably in the model's context window and changes less than once a day, CAG will outperform RAG on both latency and answer quality (no retrieval misses).
+
+---
+
+## Speculative RAG
+
+**Paper:** Google DeepMind, "Speculative RAG: Enhancing Retrieval Augmented Generation through Drafting" (2024)
+
+### Problem
+
+Using a large LLM for both retrieval reasoning and final answer generation is expensive. Full pipeline: large LLM reads all retrieved documents, reasons over them, produces an answer. This is slow when the LLM is 70B+ parameters.
+
+### Solution: Drafter-Verifier Architecture
+
+A small **drafter** LLM (7B parameters) processes the retrieved documents and produces a candidate answer. A large **verifier** LLM sees only the candidate answer and key evidence — not the full retrieval — and revises or confirms.
+
+```
+                        User Query
+                             │
+                             ▼
+                      [Retrieval System]
+                             │ top-k chunks
+                             ▼
+              ┌──────────────────────────────┐
+              │     Drafter LLM (small, 7B)  │
+              │  Reads: query + all chunks   │
+              │  Produces:                   │
+              │    - candidate answer        │
+              │    - key supporting evidence │
+              │      (1-2 most relevant      │
+              │       sentences)             │
+              └──────────────┬───────────────┘
+                             │ candidate + evidence
+                             ▼
+              ┌──────────────────────────────┐
+              │   Verifier LLM (large, 70B+) │
+              │  Reads: query +              │
+              │         candidate answer +   │
+              │         key evidence only    │
+              │  (NOT the full doc set)      │
+              │  Produces:                   │
+              │    - confirmed answer, OR    │
+              │    - corrected answer        │
+              └──────────────┬───────────────┘
+                             │
+                             ▼
+                        Final Answer
+```
+
+**Why this is ~4x faster:** The verifier (the expensive model) never processes the full retrieved context — only the short candidate + a few evidence sentences. The bulk of document reading is done by the cheap drafter.
+
+### Code Sketch
+
+```python
+import anthropic
+
+client = anthropic.Anthropic()
+
+def speculative_rag(query: str, retrieved_chunks: list[str]) -> str:
+    """
+    Phase 1: small drafter produces candidate answer + selects key evidence.
+    Phase 2: large verifier reviews and confirms or corrects.
+    """
+    context = "\n\n".join(f"[Chunk {i+1}]: {c}" for i, c in enumerate(retrieved_chunks))
+
+    # --- Phase 1: Drafter ---
+    drafter_prompt = f"""You are given a question and retrieved context.
+Produce:
+1. A candidate answer to the question
+2. The 1-2 most relevant sentences from the context that support your answer
+
+Question: {query}
+
+Context:
+{context}
+
+Respond in this format:
+CANDIDATE_ANSWER: <your answer>
+KEY_EVIDENCE: <1-2 supporting sentences verbatim from context>"""
+
+    draft_response = client.messages.create(
+        model="claude-haiku-4-5-20251001",   # small/fast drafter
+        max_tokens=512,
+        messages=[{"role": "user", "content": drafter_prompt}],
+    )
+    draft_text = draft_response.content[0].text
+
+    # Parse draft
+    candidate_answer = ""
+    key_evidence = ""
+    for line in draft_text.splitlines():
+        if line.startswith("CANDIDATE_ANSWER:"):
+            candidate_answer = line.replace("CANDIDATE_ANSWER:", "").strip()
+        elif line.startswith("KEY_EVIDENCE:"):
+            key_evidence = line.replace("KEY_EVIDENCE:", "").strip()
+
+    # --- Phase 2: Verifier ---
+    verifier_prompt = f"""You are a fact-checking assistant. A smaller model produced a candidate answer.
+Review it using only the provided evidence. Confirm if correct, or provide the correct answer.
+
+Question: {query}
+Candidate answer: {candidate_answer}
+Supporting evidence: {key_evidence}
+
+Provide the final, verified answer (concise):"""
+
+    verify_response = client.messages.create(
+        model="claude-opus-4-6",   # large/accurate verifier
+        max_tokens=256,
+        messages=[{"role": "user", "content": verifier_prompt}],
+    )
+    return verify_response.content[0].text
+
+# Usage
+chunks = retriever.invoke("What year was the transformer architecture introduced?")
+chunk_texts = [c.page_content for c in chunks]
+answer = speculative_rag("What year was the transformer architecture introduced?", chunk_texts)
+```
+
+### When to Use Speculative RAG
+
+- Large LLM (70B+) is required for answer quality, but throughput is a concern
+- Retrieved context is long (many chunks) — drafter reads all of it cheaply
+- Answer verification is more important than generation from scratch (factual domains)
+
+---
+
+## STORM — Survey of the Topic via RAG Minds
+
+**Paper:** Shao et al., Stanford NLP, "Assisting in Writing Wikipedia-like Articles From Scratch with Large Language Models" (2024)  
+**Python package:** `knowledge-storm`
+
+### Goal
+
+STORM generates **comprehensive, well-structured long-form documents** (Wikipedia-quality articles, technical reports, competitive analyses) by simulating iterative research through multiple perspectives.
+
+### Two-Phase Process
+
+```
+Phase 1: Pre-Writing (Outline + Evidence Gathering)
+────────────────────────────────────────────────────────────
+
+Topic
+  │
+  ▼
+Identify N perspectives via few-shot prompting
+  (e.g., for "Transformer Architecture":
+    - ML researcher perspective
+    - NLP practitioner perspective
+    - Systems/efficiency perspective
+    - Historical/origins perspective)
+  │
+  ▼
+For each perspective:
+  Simulate multi-turn Q&A dialog with retrieval system
+  ┌─────────────────────────────────────────────┐
+  │  Perspective agent asks: "What problem did  │
+  │  transformers solve vs. RNNs?"              │
+  │       ↓ retrieval                          │
+  │  Perspective agent asks follow-up: "How    │
+  │  does self-attention scale with length?"   │
+  │       ↓ retrieval                          │
+  │  ... (3-5 turns per perspective)           │
+  └─────────────────────────────────────────────┘
+  │
+  ▼
+Aggregate all Q&A exchanges → build hierarchical outline
+  │
+  ▼
+Outline:
+  1. Introduction
+  2. Historical Context
+     2.1 Limitations of RNNs
+     2.2 Birth of the Attention Mechanism
+  3. Architecture
+     3.1 Self-Attention
+     3.2 Multi-Head Attention
+     ...
+
+
+Phase 2: Writing (Section-by-Section Generation)
+────────────────────────────────────────────────────────────
+
+For each section in outline:
+  ┌──────────────────────────────────────────────┐
+  │  Retrieve: relevant passages for this section│
+  │  Write: section content with citations       │
+  │  Cite: source documents inline               │
+  └──────────────────────────────────────────────┘
+  │
+  ▼
+Final document: multi-section article with citations
+(Wikipedia-quality, multi-source synthesized)
+```
+
+### Installation and Usage
+
+```bash
+pip install knowledge-storm
+```
+
+```python
+from knowledge_storm import STORMWikiRunner, STORMWikiRunnerArguments
+from knowledge_storm.rm import YouRM, BingSearch   # retrieval backends
+from langchain_openai import ChatOpenAI
+
+# Configure retrieval backend (use any search/retrieval API)
+rm = YouRM(ydc_api_key="YOUR_KEY", k=5)   # or BingSearch, or custom
+
+# Configure arguments
+args = STORMWikiRunnerArguments(
+    output_dir="./storm_output",
+    max_conv_turn=3,          # Q&A turns per perspective
+    max_perspective=5,        # number of perspectives to simulate
+    search_top_k=5,           # docs retrieved per query
+    max_thread_num=3,         # parallel perspective threads
+)
+
+# Initialize runner (uses GPT-4o by default; configurable)
+runner = STORMWikiRunner(
+    args=args,
+    lm_configs=None,          # use defaults, or pass custom LM configs
+    rm=rm,
+)
+
+# Run full STORM pipeline
+topic = "Retrieval-Augmented Generation"
+runner.run(
+    topic=topic,
+    do_research=True,         # Phase 1: outline + evidence
+    do_generate_outline=True,
+    do_generate_article=True, # Phase 2: write sections
+    do_polish_article=True,   # Final: refine + add intro
+)
+
+runner.post_run()
+runner.summary()
+# Output: ./storm_output/Retrieval-Augmented_Generation/storm_gen_article.txt
+```
+
+### Connecting a Custom Retriever
+
+```python
+from knowledge_storm.interface import Retriever, Information
+
+class CustomRetriever(Retriever):
+    """Plug in your own RAG retrieval backend for STORM's Q&A simulation."""
+
+    def __init__(self, vectorstore):
+        self.vectorstore = vectorstore
+
+    def retrieve(self, query: str, exclude_urls: list[str] = None) -> list[Information]:
+        docs = self.vectorstore.similarity_search(query, k=5)
+        results = []
+        for doc in docs:
+            results.append(Information(
+                url=doc.metadata.get("source", "internal"),
+                description=doc.metadata.get("title", ""),
+                snippets=[doc.page_content],
+                title=doc.metadata.get("title", "Document"),
+            ))
+        return results
+
+# Use custom retriever
+runner = STORMWikiRunner(args=args, lm_configs=None, rm=CustomRetriever(vectorstore))
+runner.run(topic="Transformer Architecture", do_research=True, do_generate_article=True)
+```
+
+### When to Use STORM
+
+| Use Case | STORM | Standard RAG |
+|---|---|---|
+| Research synthesis (competitive analysis) | Excellent | Poor |
+| Technical report generation | Excellent | Poor |
+| Wikipedia-style article creation | Excellent | Poor |
+| Single factual question answering | Overkill | Appropriate |
+| Real-time Q&A | Too slow (minutes) | Fast (seconds) |
+| Exploratory research on a new topic | Excellent | Limited |
+
+**Cost note:** STORM runs many LLM calls (N perspectives x T turns x sections). Expect 50-200 LLM calls per article. Use caching and cheaper models for the drafting steps.
+
+---
+
+## Technique Selection Guide
+
+Use this table to choose the right advanced technique for a given scenario. Techniques in the same row are complementary — combine freely.
+
+| Scenario | Recommended Advanced Technique |
+|---|---|
+| User query is vague or conversational | Query Rewriting |
+| Query needs broader foundational context | Step-Back Prompting |
+| Query has multiple distinct sub-questions | Query Decomposition |
+| Single phrasing may miss relevant docs | Multi-Query / RAG-Fusion |
+| Query style is very different from document style | HyDE |
+| Fact-dense documents; need pinpoint retrieval | Proposition Indexing |
+| Relevant information is spread across many chunks | RAPTOR (hierarchical summaries) |
+| Knowledge base is static and fits in context window | Cache-Augmented Generation (CAG) |
+| Large LLM is expensive; need throughput | Speculative RAG |
+| Need to generate a long, multi-section report | STORM |
+| Retrieved docs may be irrelevant | CRAG (web fallback) |
+| Long-form generation with uncertain facts | FLARE (iterative retrieval) |
+| PDFs with tables, figures, complex layouts | ColPali (vision RAG) |
+| Mixed simple/complex queries | Adaptive RAG (classifier routing) |
+| Production: general-purpose system | Query Rewriting + Hybrid Retrieval + Reranking |
+
+---
+
 ## Advanced RAG Architecture Pattern
 
 A production advanced RAG pipeline combining the above techniques:
@@ -865,19 +1391,6 @@ User Query
 │  FLARE: re-retrieve on uncertainty   │
 └──────────────────────────────────────┘
 ```
-
-### Technique Selection Guide
-
-| Scenario | Recommended techniques |
-|---|---|
-| Poorly phrased user queries | Query Rewriting, Multi-Query |
-| Vocabulary mismatch (user ≠ docs) | HyDE, Step-back |
-| Multi-hop factual questions | Query Decomposition, RAG-Fusion |
-| Fact-dense structured documents | Proposition Indexing |
-| Large document corpora | RAPTOR (hierarchical) |
-| Long-form generation tasks | FLARE |
-| Unreliable vector retrieval | CRAG (web fallback) |
-| Production: mixed query types | Query Rewriting + Hybrid + Reranking |
 
 ---
 

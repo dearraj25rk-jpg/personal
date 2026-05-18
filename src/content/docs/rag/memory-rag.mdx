@@ -1,17 +1,113 @@
 ---
 tableOfContents: false
 title: Memory-Augmented RAG
-description: Adding persistent memory layers to RAG systems for multi-turn and long-horizon tasks
+description: Interactive guide to adding persistent memory layers to RAG systems — episodic memory, semantic memory, procedural memory, multi-turn conversation tracking, and long-horizon task completion. May 2026.
 sidebar:
   order: 11
 ---
 
 import MemoryRAG from '../../../components/interactive/MemoryRAG.jsx';
 
-Memory-augmented RAG adds a persistent memory layer alongside the vector store, enabling multi-turn conversations where the system accumulates facts across sessions. This interactive guide shows how episodic memory, semantic memory, and procedural memory slots complement standard retrieval.
+Standard RAG is **stateless** — each query is independent. Memory-augmented RAG adds a persistent layer that accumulates facts, preferences, and context across conversations and sessions. This enables agents that remember what you told them last week and adapt to your preferences over time.
 
-For related production topics: [Agentic RAG](../agentic-rag) · [Production RAG](../production-rag)
+## Memory Types in RAG Systems
+
+| Memory Type | What it stores | Lifetime | Example |
+|---|---|---|---|
+| **Working memory** | Current conversation context | Session only | Last 10 turns of dialogue |
+| **Episodic memory** | Specific past events/interactions | Persistent | "User asked about refund policy on 2026-03-14" |
+| **Semantic memory** | Extracted facts and knowledge | Persistent | "User's name is Alex, prefers concise answers" |
+| **Procedural memory** | Learned workflows and patterns | Persistent | "User always wants code in Python" |
+| **Vector memory** | Embeddings of past conversations | Persistent | Retrieve relevant past exchanges |
+
+## Architecture: Memory Layer Alongside Vector Store
+
+```
+                         User Query
+                              │
+                              ▼
+                    ┌──────────────────┐
+                    │  Memory Manager  │
+                    └────────┬─────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+      Working Memory   Episodic Store  Semantic Store
+      (last N turns)   (past events)  (extracted facts)
+              │              │              │
+              └──────────────┼──────────────┘
+                             │ merged context
+                             ▼
+                    ┌──────────────────┐
+                    │   RAG Retrieval  │
+                    │  (document KB)   │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │   LLM + Prompt   │
+                    │  (memory + docs  │
+                    │   + query)       │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                         Answer
+                             │
+                             ▼
+                    Update memory stores
+                    (extract facts, log episode)
+```
+
+## Memory Update Strategies
+
+**After each turn:** extract entities, facts, and preferences from the conversation:
+
+```python
+MEMORY_EXTRACTION_PROMPT = """
+You are a memory extraction assistant.
+From the following conversation turn, extract:
+1. Factual claims made by the user about themselves
+2. Preferences the user expressed
+3. Topics the user is knowledgeable about
+4. Any explicit corrections the user made
+
+Output as JSON: {"facts": [...], "preferences": [...], "corrections": [...]}
+
+Conversation:
+{turn}
+"""
+```
+
+**Memory retrieval at query time:**
+1. Embed the current query
+2. Search episodic memory (past conversations) → retrieve relevant episodes
+3. Load semantic memory (user facts) → inject into system prompt
+4. Combine with document RAG context → unified prompt
+
+## Key Design Decisions
+
+**How much memory to surface:** Too much memory bloats the context; too little loses useful context. Recommended: top-3 episodic memories + all semantic facts (typically <500 tokens).
+
+**When to expire memory:** Episodic memories older than 30 days with low relevance score can be summarized and compressed. Semantic facts persist until explicitly contradicted.
+
+**Memory privacy:** Episodic memory may contain sensitive user data. Use separate per-user namespaces in the vector store, with encryption at rest.
 
 <div class="interactive-tool">
   <MemoryRAG client:only="react" />
 </div>
+
+## Memory Libraries
+
+| Library | Memory types | Backend | Notes |
+|---|---|---|---|
+| `mem0` (formerly MemGPT) | All types | PostgreSQL + vector | Production-ready, REST API |
+| `langchain.memory` | Buffer, summary, vector | Any LangChain-compatible | Simple, integrates easily |
+| `zep` | Episodic + semantic | Self-hosted or cloud | Automatic extraction, search |
+| `cognee` | Knowledge graph + vector | Neo4j + pgvector | Graph-based memory |
+
+## Reference Docs
+
+- [Agentic RAG](../agentic-rag) — agent architectures that combine memory + retrieval + tool use
+- [Production RAG](../production-rag) — caching, observability, and cost optimization for memory systems
+- [Vector Stores](../vector-stores) — per-user namespaces, metadata filtering for memory retrieval
+- [Evaluation](../evaluation) — how to evaluate multi-turn RAG quality (conversation coherence metrics)
