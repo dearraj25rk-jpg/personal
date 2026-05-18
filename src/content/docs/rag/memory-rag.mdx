@@ -86,7 +86,7 @@ Conversation:
 
 ## Key Design Decisions
 
-**How much memory to surface:** Too much memory bloats the context; too little loses useful context. Recommended: top-3 episodic memories + all semantic facts (typically <500 tokens).
+**How much memory to surface:** Too much memory bloats the context; too little loses useful context. Recommended: top-3 episodic memories + all semantic facts (typically &lt;500 tokens).
 
 **When to expire memory:** Episodic memories older than 30 days with low relevance score can be summarized and compressed. Semantic facts persist until explicitly contradicted.
 
