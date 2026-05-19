@@ -1,7 +1,12 @@
 ---
 tableOfContents: false
 title: Context Engineering for Claude Code
-description: Comprehensive interactive guide to context engineering in Claude Code — CE strategies, token simulator, session management, commands, and a full CE checklist. Covers all four CE primitives and real-world implementation patterns.
+description: >
+  Comprehensive interactive guide to context engineering in Claude Code — CE system overview,
+  context anatomy, CLAUDE.md hierarchy, JIT retrieval, compaction mechanics, four CE strategies
+  (WRITE/SELECT/COMPRESS/ISOLATE), session commands, interactive CE checklist, and token
+  simulator. Covers ToolSearch lazy loading, /advisor dual-model, MEMORY.md, and effort
+  system. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 16
 lastUpdated: 2026-05-19
@@ -13,55 +18,135 @@ import ContextEngineeringCE from '../../../components/interactive/ContextEnginee
   <ContextEngineeringCE client:only="react" />
 </div>
 
-## Context Engineering — Quick Reference
+## Context Engineering — Reference
 
 ### The Four CE Strategies
 
-| Strategy | When to use | How |
-|----------|------------|-----|
-| **Priming** | Start of task | Load relevant CLAUDE.md sections, rules, prior art |
-| **Anchoring** | Throughout task | `/compact "keep: auth module, database schema"` |
-| **Pruning** | Context fills up | `/clear` + re-prime with essentials |
-| **Checkpointing** | Long tasks | `/compact` at natural milestones |
+| Strategy | Primitive | In Claude Code | When to use |
+|----------|-----------|----------------|-------------|
+| **WRITE** | Persist to storage | Update CLAUDE.md, write NOTES.md/MEMORY.md | Key decisions, task state, architectural rules |
+| **SELECT** | Retrieve selectively | JIT via glob/grep, path-scoped rules, ToolSearch | Any read — avoid bulk-loading |
+| **COMPRESS** | Shrink before keeping | `/compact`, `/clear`, summarise bash output, `/effort low` | At 70% usage; between unrelated tasks |
+| **ISOLATE** | Separate context windows | Subagents via Task tool, `/branch` worktrees, `/clear` | Research-heavy subtasks, parallel work |
 
-### Token Budget (200K model)
+### Token Budget — 1M Window (Sonnet 4.6 / Opus 4.x)
 
 ```
-Total:          200,000 tokens
-├── System prompt:   ~2,000 tokens
-├── CLAUDE.md files: ~5,000 tokens (varies)
-├── Rules loaded:    ~1,000 tokens
-├── Skills active:   ~500 tokens
-├── Tools schema:    ~3,000 tokens
-└── Available:       ~188,500 tokens for conversation
+1,000,000 tokens total
+├── System prompt:                    ~3,100 tokens  (0.3%)
+├── Built-in tool schemas:           ~19,800 tokens  (2.0%)
+├── ToolSearch deferred savings:     −15,000 tokens  (most tools lazy-loaded v2.1.7+)
+├── MCP servers (5 × 2,650):        ~13,250 tokens  (1.3%)
+├── Custom agent definitions:         ~2,800 tokens  (0.3%)
+├── CLAUDE.md (project root):         ~1,600 tokens  (0.2%)   ← keep under 200 lines
+├── Path-scoped rules (matched):        ~500 tokens  (0.1%)   ← conditional load
+├── MEMORY.md (auto-memory):         up to 25KB / 200 lines   ← survives compaction
+├── Compaction reserve (16.5%):     ~165,000 tokens           ← fires at 835K
+└── Available for work:             ~794,000 tokens  (79.4%)
 ```
 
-### Auto-Compaction Thresholds
+**200K window (Haiku 4.5):** Same overheads consume ~9.8% — much tighter than 1M models.
 
-| Version | Threshold | Behaviour |
-|---------|----------|----------|
-| Pre-v2.1.89 | ~85% used | Auto-compact |
-| v2.1.89+ | ~85% + circuit breaker | Prevent thrash loop |
+### ToolSearch Lazy Loading (v2.1.7+)
+
+Deferred tools only load their full schema when first used in a session. Built-in tools stay eager (always loaded). This saves **60–80% of tool schema overhead** for most sessions with no configuration required.
+
+| Tool category | Loading | Token cost per tool |
+|--------------|---------|---------------------|
+| Built-in core (Read, Edit, Bash…) | Eager | ~2,900/tool (always) |
+| WebSearch, WebFetch, ToolSearch | Deferred | ~80 name+desc until used |
+| MCP tool schemas | Per-connection | ~2,650/server (fixed) |
+
+Check deferred tool state with `/context` — look for the "deferred tools" line.
+
+### MEMORY.md — Durable Auto-Memory
+
+MEMORY.md is Claude Code's durable per-project memory file. Unlike CLAUDE.md, it is:
+- Written automatically by Claude during sessions (via `/memory add`)
+- Reloaded fully after every compaction (not summarised away)
+- Stored at `~/.claude/projects/<hash>/memory/MEMORY.md`
+- Limited to 200 lines / 25KB
+
+Use `/memory` to view and edit. Add project-specific facts that should persist across all sessions: database schemas, API quirks, known bugs, architectural decisions already made.
+
+### /advisor — CE Superpower
+
+`/advisor` activates dual-model mode: Sonnet 4.6 handles execution (reading files, running tools, writing code) while Opus 4.7 reviews context periodically and provides strategic guidance.
+
+```
+Normal session:             Sonnet 4.6 → does everything
+/advisor activated:         Sonnet 4.6 → execution
+                            Opus 4.7   → strategic advice (periodic)
+```
+
+| Mode | Cost per session | Best for |
+|------|-----------------|---------|
+| Sonnet only | ~$5–15 | Standard feature work |
+| /advisor | ~$20–45 | Architecture, ambiguous bugs |
+| Opus only | ~$50–150 | Highest complexity, slowest |
+
+Activate: `/advisor` · Force immediate: `/advisor now` · Deactivate: `/advisor off`
+
+### Auto-Compaction Mechanics
+
+Compaction fires at **83.5% context used** (~835K of 1M, ~167K of 200K).  
+Each compaction costs **100–200K tokens** to execute. Run `/compact` proactively at 70%.
+
+| Survives compaction | Discarded by compaction |
+|--------------------|------------------------|
+| Project-root CLAUDE.md (reloaded from disk) | Redundant tool results |
+| MEMORY.md (fully reloaded, not summarised) | Path-scoped CLAUDE.md (auto-reloads on next file touch) |
+| Architectural decisions (summarised) | Old conversation turns |
+| 5 most-recently-accessed files | Raw bash outputs from completed tasks |
+| Skills (re-injected up to cap) | Thinking token traces from prior turns |
+| NOTES.md / TODO.md if Claude re-reads them | Repeated messages |
 
 ### Session Rhythm
 
-```
-1. START:    Load context → /memory show → set task scope
-2. WORK:     /todos to track → /compact at milestones
-3. FINISH:   /rewind if needed → /rename session for retrieval
-4. RESUME:   /resume → pick session → continue
+```bash
+# Session start
+/context          # Check starting budget
+/effort high      # Default is medium since Mar 2026 — set explicitly
+/status           # If parallel sessions — see all running costs
+
+# During work
+/compact          # Proactively at ~70% usage
+# Ask Claude to write decisions → CLAUDE.md or NOTES.md
+/advisor          # For complex architectural decisions
+/branch feature-x # Parallel worktree with isolated context window
+
+# Session end
+/rename my-task   # Name session for /resume retrieval
+# Or: /clear      # Fresh start if switching to unrelated task
 ```
 
-### Key CE Commands
+### Models (v2.1.126)
 
-| Command | What it does |
-|---------|-------------|
-| `/compact [instructions]` | Summarise conversation, keep essentials |
-| `/context` | Show token usage grid |
-| `/usage` | Show cost + token breakdown |
-| `/memory` | Edit persistent MEMORY.md |
-| `/clear` | Reset conversation (keep config) |
-| `/rewind` | Roll back code + conversation |
-| `/todos` | Track task state across /compact |
+| Model | Context | Effort | Best for |
+|-------|---------|--------|---------|
+| Opus 4.7 | 1M | xhigh default | Hardest tasks, architecture, migrations |
+| Opus 4.6 | 1M | high | Complex analysis, large codebases |
+| Sonnet 4.6 | 1M | medium | Daily coding — **default** |
+| Haiku 4.5 | 200K | low/medium | Bulk edits, formatting, quick lookups |
+
+**Effort changed March 2026:** Default dropped from `high` → `medium`. Medium can fabricate API versions on complex tasks. Always set `/effort high` before multi-file engineering sessions.
+
+### CE Command Reference
+
+| Command | CE role | Impact |
+|---------|---------|--------|
+| `/context` | Monitor token usage | See live breakdown by category |
+| `/compact [instructions]` | COMPRESS | Summarise at 70% — cheaper than auto at 83.5% |
+| `/clear` | ISOLATE | Fresh context for unrelated tasks |
+| `/effort` | COMPRESS | Control thinking token budget |
+| `/memory` | WRITE | View/edit MEMORY.md |
+| `/todos` | WRITE | Task state survives compaction |
+| `/advisor` | SELECT/COMPRESS | Opus reasoning without full-Opus cost |
+| `/branch` | ISOLATE | Parallel session with own context window |
+| `/status` | Monitor | View all parallel session costs |
+| `/agents` | ISOLATE | Named subagents with defined tool sets |
+| `/rewind` | COMPRESS | Roll back changes without clearing context |
+| `/usage` | Monitor | Cost and token breakdown |
+| `/debug` | Debug | Diagnose context/caching anomalies |
 
 → Full reference: [Context, Cost & Token Efficiency](./claude-code-efficiency-reference)

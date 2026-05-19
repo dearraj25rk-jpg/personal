@@ -10,7 +10,7 @@ const C = {
   errBg: "rgba(248,113,113,0.18)", errBd: "rgba(248,113,113,0.48)",  errT: "#f87171",
 }
 
-// ── GROUND-TRUTH MODEL DATA (April 19, 2026) ──────────────────────────────────
+// ── GROUND-TRUTH MODEL DATA (May 19, 2026) ──────────────────────────────────
 const MODELS = {
   // Sonnet 4.6, Opus 4.6, Opus 4.7 → 1M tokens natively (GA, no beta header, standard pricing)
   // Haiku 4.5 → 200K only (no 1M option)
@@ -103,6 +103,9 @@ const TOKEN_REFS = [
   {item:"CoT reasoning trace (medium effort)",  tokens:8000,  note:"Range: 2K–30K+ depending on task"},
   {item:"Compaction event (firing at 83.5%)",   tokens:150000,note:"Costs 100–200K tokens per firing"},
   {item:"Computer use system prompt overhead",  tokens:480,   note:"Adds 466–499 tokens to system prompt"},
+  {item:"Tool schema (standard, pre-ToolSearch)",  tokens:2900,  note:"Per tool — loaded upfront without ToolSearch"},
+  {item:"Tool schema (deferred, ToolSearch)",       tokens:80,    note:"Only name+desc loaded; full schema lazy-loaded on first use"},
+  {item:"ToolSearch lazy-load savings (typical)",   tokens:22000, note:"60–80% tool schema overhead reduction in most sessions"},
 ]
 
 // ── Micro-components ──────────────────────────────────────────────────────────
@@ -562,16 +565,17 @@ const S0 = () => (
     <Quote cite="Anthropic engineering blog, 'Effective Context Engineering for AI Agents' (Sep 2025)">"Claude Code loads CLAUDE.md files naively upfront, while primitives like glob and grep allow it to navigate its environment just-in-time. This self-managed context window keeps the agent focused on relevant subsets rather than drowning in exhaustive but potentially irrelevant information."</Quote>
     <Sub>What loads in every Claude Code session</Sub>
     <SessionLoadSVG/>
-    <Sub>Three ground-truth facts</Sub>
-    <G3>
+    <Sub>Four ground-truth facts</Sub>
+    <G4>
       {[
         {title:"Current models — context",body:"Opus 4.7 — 1M natively (Apr 16, 2026). Opus 4.6 — 1M natively (GA Mar 13, 2026). Sonnet 4.6 — 1M natively (GA Mar 13, 2026). Haiku 4.5 — 200K only (no 1M option). Sonnet 4/4.5 1M beta retires Apr 30 → migrate now."},
         {title:"Real cost benchmarks",body:"Average: ~$13/developer/active day, $150–250/month enterprise. A 500-line TS file ≈ 4,000 tokens. Detailed response ≈ 1,500–3,000 tokens. Single prompt in a long session can consume 50K–300K tokens due to full context being resent on retry."},
         {title:"Effort system change",body:"Default effort dropped from high → medium in March 2026. Medium uses adaptive thinking — decides reasoning depth per turn. Can cause 'rush to completion' fabrications. Always set /effort high explicitly for complex multi-file work. New xhigh level in Opus 4.7 only."},
+        {title:"ToolSearch lazy loading (v2.1.7+)",body:"Deferred tools only load their full schema when first used. Result: 60–80% reduction in tool schema overhead for most sessions. Built-in tools stay eager (always loaded). MCP tools, WebSearch, and ToolSearch itself are deferred. Check with /context — 'deferred tools' line shows how many are loaded vs waiting."},
       ].map((c,i)=>(
         <Card key={i}><div style={{fontSize:13,fontWeight:500,marginBottom:5}}>{c.title}</div><div style={{fontSize:12,color:C.text2,lineHeight:1.5}}>{c.body}</div></Card>
       ))}
-    </G3>
+    </G4>
   </div>
 )
 
@@ -606,6 +610,7 @@ const S1 = () => (
       <TH cols={[{label:"Source"},{label:"Tokens",flex:1},{label:"$/turn @ Sonnet 4.6",flex:1.2},{label:"Management strategy",flex:2}]}/>
       {[
         ["Each file read (500 lines)","~4,000","$0.000012/turn","Stays in context until /clear or compaction"],
+        ["ToolSearch lazy loading (active)","saves ~22K","saves ~$0.066/session","Deferred tools load only when needed — automatic, no config required (v2.1.7+)"],
         ["Bash command output","Varies (can be huge)","$0.000+","Ask for compressed summaries, not raw output"],
         ["Each assistant response","1,500–3,000","$0.030–0.045","Accumulates — compaction eventually summarises"],
         ["CoT thinking (medium)","~8,000/turn","$0.120/turn","Set /effort low for mechanical tasks; cap with MAX_THINKING_TOKENS"],
@@ -758,7 +763,7 @@ const S4 = () => (
     <G2>
       <Card border={C.okBd}>
         <div style={{fontSize:13,fontWeight:500,marginBottom:5,color:C.okT}}>Survives compaction</div>
-        <div style={{fontSize:12,color:C.text2,lineHeight:1.6}}>Project-root CLAUDE.md (reloaded from disk) · Architectural decisions summarised · Unresolved bugs and open tasks · Key implementation details · 5 most recently accessed files · Skills (re-injected up to per-skill cap, oldest dropped) · Custom auto-memory directory contents (with timestamps)</div>
+        <div style={{fontSize:12,color:C.text2,lineHeight:1.6}}>Project-root CLAUDE.md (reloaded from disk) · MEMORY.md (auto-memory — fully reloaded, not summarised) · Architectural decisions summarised · Unresolved bugs and open tasks · Key implementation details · 5 most recently accessed files · Skills (re-injected up to per-skill cap, oldest dropped) · Custom auto-memory directory contents (with timestamps)</div>
       </Card>
       <Card border={C.errBd}>
         <div style={{fontSize:13,fontWeight:500,marginBottom:5,color:C.errT}}>Discarded by compaction</div>
@@ -845,7 +850,7 @@ files and summarise schema evolution"
 // ── Section 6: Commands ───────────────────────────────────────────────────────
 const S6 = () => (
   <div>
-    <SecH2>Commands — CE control panel (v2.1.101)</SecH2>
+    <SecH2>Commands — CE control panel (v2.1.126)</SecH2>
     <Body>Claude Code ships with a set of slash commands and CLI flags that are your context engineering control panel. Several new CE-relevant commands shipped in Q1 2026. The most impactful addition for CE is <Code>/effort</Code>, which directly controls the single largest variable cost in most sessions.</Body>
     <Sub>Core CE commands — full reference</Sub>
     <Card>
@@ -864,6 +869,10 @@ const S6 = () => (
         ["/team-onboarding","Packages your Claude Code setup into a replayable guide.","Standardise CE patterns across teams"],
         ["/autofix-pr","Enable PR auto-fix from your terminal. Runs in isolated context.","Isolate CI fix loop from main session"],
         ["/ultraplan","Draft a plan in cloud web editor; run it remotely or pull back local.","Planning context never enters local session budget"],
+        ["/advisor","Activates dual-model mode: Sonnet 4.6 executor + Opus 4.7 advisor. Advisor reviews context periodically and provides strategic guidance. Use for complex decisions without paying full-Opus cost for every turn.","CE superpower — Opus reasoning at Sonnet cost for most turns"],
+        ["/branch","Create a git worktree with its own Claude Code session. Each worktree is an isolated context window. Run multiple tasks in true parallel without sharing context.","ISOLATE strategy — true parallel CE windows"],
+        ["/status","Real-time dashboard of all running sessions, subagent states, and costs. Single view across parallel sessions.","Monitor parallel CE contexts"],
+        ["/debug","Diagnose session issues: context corruption, tool failures, caching anomalies. Shows raw context stats.","Debug when /context doesn't tell the whole story"],
       ].map((r,i,arr)=>(
         <TR key={i} last={i===arr.length-1} cells={[{v:<Code>{r[0]}</Code>,flex:1},{v:r[1],flex:2},{v:r[2],flex:1.5,bold:true}]}/>
       ))}
@@ -933,6 +942,8 @@ const CHECKLIST = [
     {text:"If switching to a completely new task, use /clear — prior context pollutes new task reasoning",tag:"Isolate"},
     {text:"Only connect MCP servers needed for this specific task — disconnect others to preserve token budget",tag:"Select"},
     {text:"Set MAX_THINKING_TOKENS=8000 in env for routine sessions to cap unexpected thinking cost spikes",tag:"Cost"},
+    {text:"Check /status if you have parallel sessions — see which ones are still consuming budget",tag:"Monitor"},
+    {text:"Use /advisor for complex architectural decisions — gets Opus reasoning without paying full-Opus for every turn",tag:"Advisor"},
   ]},
   {cat:"During long sessions", items:[
     {text:"Use Plan Mode (Ctrl+G) to explore and plan before implementation — avoids costly wrong-approach cycles",tag:"Plan Mode"},
@@ -943,6 +954,9 @@ const CHECKLIST = [
     {text:"Delegate large research tasks (reading many docs, analysing many files) to a subagent with its own 200K window",tag:"Isolate"},
     {text:"Guide Claude to use glob/grep before read_file — avoid 'read all files in src/' style prompts",tag:"Select"},
     {text:"Use named sub-agents (/agents) for specialised recurring tasks — each has its own defined tool set and effort level",tag:"Agents"},
+    {text:"ToolSearch is active by default (v2.1.7+) — deferred tools only load when first used, saving 60–80% tool schema overhead",tag:"ToolSearch"},
+    {text:"If using /advisor, it fires every N turns automatically — use '/advisor now' to trigger immediately at a decision point",tag:"Advisor"},
+    {text:"Write key decisions to MEMORY.md via '/memory add' — these survive compaction and reload in every future session",tag:"Memory"},
   ]},
   {cat:"Cost management", items:[
     {text:"For mechanical tasks (renaming, formatting, quick lookups), use /effort low to disable thinking tokens",tag:"Cost"},
@@ -957,6 +971,7 @@ const CHECKLIST = [
     {text:"Periodically audit CLAUDE.md for stale content — every token is a permanent deduction from your budget, every turn",tag:"Compress"},
     {text:"After adding a new MCP server, remove from CLAUDE.md anything the MCP now makes redundant",tag:"Budget"},
     {text:"If CLAUDE.md exceeds 200 lines, move specialised sections to Skills (on-demand load) to reduce baseline cost",tag:"Budget"},
+    {text:"Use MEMORY.md (auto-memory) for project-specific facts that should persist indefinitely — separate from CLAUDE.md conventions",tag:"Memory"},
   ]},
   {cat:"Debugging degraded responses", items:[
     {text:"If Claude ignores instructions: run /context first — context usage >70% is the most common cause",tag:"Debug"},
@@ -1009,7 +1024,7 @@ export default function ContextEngineeringClaudeCode() {
   return (
     <div style={{maxWidth:820,margin:"0 auto",padding:"0 20px 80px",fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,sans-serif",background:C.bg3,color:C.text1,lineHeight:1.6,fontSize:15}}>
       <div style={{padding:"12px 0 16px",borderBottom:`0.5px solid ${C.borderMd}`}}>
-        <p style={{fontSize:13,color:C.text2,margin:0}}>v2.1.101 · Models: Opus 4.7, Sonnet 4.6, Haiku 4.5 · Source: Anthropic docs, Claude Code best practices, community data</p>
+        <p style={{fontSize:13,color:C.text2,margin:0}}>v2.1.126 · Models: Opus 4.7, Opus 4.6, Sonnet 4.6, Haiku 4.5 · Source: Anthropic docs, Claude Code best practices, community data</p>
       </div>
       <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",padding:"12px 0",borderBottom:`0.5px solid ${C.border}`,position:"sticky",top:"var(--sl-nav-height)",background:C.bg3,zIndex:20}}>
         <div style={{display:"flex",flexWrap:"nowrap",gap:3}}>
