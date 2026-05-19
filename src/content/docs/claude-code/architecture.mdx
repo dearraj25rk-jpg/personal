@@ -7,7 +7,7 @@ description: >
   shutdown. Shows file load order, scope boundaries, and precedence relationships. v2.1.126 (May 2026).
 sidebar:
   order: 11
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import ArchDiagram from '../../../components/interactive/ArchDiagram.jsx';
@@ -15,3 +15,73 @@ import ArchDiagram from '../../../components/interactive/ArchDiagram.jsx';
 <div class="interactive-tool">
   <ArchDiagram client:only="react" />
 </div>
+
+## Session Lifecycle — Quick Reference
+
+### Phase 1: Initialization
+| Step | What loads | Notes |
+|------|-----------|-------|
+| Enterprise settings | `~/.claude/managed-settings.json` | Cannot be overridden |
+| User settings | `~/.claude/settings.json` | Global preferences |
+| Project settings | `.claude/settings.json` | Commit to git |
+| Local settings | `.claude/settings.local.json` | Gitignore this |
+| Enterprise CLAUDE.md | Managed path | Always-on context |
+| User CLAUDE.md | `~/.claude/CLAUDE.md` | Cross-project context |
+| Project CLAUDE.md | `CLAUDE.md` (root) | Project context |
+| Sub-directory CLAUDE.md | Nested `CLAUDE.md` files | Path-specific context |
+| CLAUDE.local.md | `CLAUDE.local.md` | Personal overrides |
+| Rules | `.claude/rules/*.md` | Path-scoped |
+| MCP servers | `.mcp.json` | Tool extensions |
+| Hooks | `settings.json → hooks` | Automation triggers |
+
+### Phase 2: Tool Loop
+
+```
+Your prompt
+    ↓
+Claude API (reads context: CLAUDE.md + Rules + Memory + Skills)
+    ↓
+stop_reason == "tool_use"?
+    ├── YES → Execute tool → check hooks → append result → loop
+    └── NO  → Session complete
+```
+
+### Phase 3: Compaction
+- Triggers at **~85% context used** (auto) or via `/compact`
+- Summary replaces conversation history, **MEMORY.md survives**
+- Circuit breaker: prevents thrash loops (v2.1.89+)
+
+### Phase 4: Shutdown
+- `Stop` hook fires (blockable)
+- `PostSessionEnd` hook fires (observe-only)
+- Session saved for `/resume` retrieval
+
+### All 23 File Types — Quick Index
+
+| File | Load Phase | Scope | Git? |
+|------|-----------|-------|------|
+| Enterprise CLAUDE.md | Init | All projects | Managed |
+| User CLAUDE.md | Init | All projects | No |
+| Project CLAUDE.md | Init | Project | Yes |
+| CLAUDE.local.md | Init | Project | No |
+| `.claude/rules/*.md` | Init (path-conditional) | File-path scoped | Yes |
+| `.claude/skills/<n>/SKILL.md` | On `/skills` invocation | Session | Yes |
+| `.claude/agents/<n>.md` | On Task tool call | Subagent only | Yes |
+| `.claude/commands/<n>.md` | On `/command` | Per invocation | Yes |
+| `.claude/output-styles/<n>.md` | On `/config` select | Session | Yes |
+| `MEMORY.md` | Init (auto-memory) | Project | No |
+| Subagent MEMORY.md | Agent init | Agent scope | No |
+| `.mcp.json` | Init | Project | Yes |
+| `~/.claude/settings.json` | Init | Global | No |
+| `.claude/settings.json` | Init | Project | Yes |
+| `.claude/settings.local.json` | Init | Project | No |
+| Enterprise managed settings | Init | Org-wide | Managed |
+| Plugin components | On install | User/Project | Configurable |
+| CLI flags | Per invocation | Session | N/A |
+| Env vars | Per invocation | Session | N/A |
+| `~/.claude/keybindings.json` | Init | Global | No |
+| `~/.claude/themes/*.md` | On `/theme` | Session | No |
+| Windows registry (HKCU) | Init | User | N/A |
+| Managed MDM profile | Init | Device | Managed |
+
+→ Full details: [Every Markdown File — Complete Catalog](./file-catalog)

@@ -6,7 +6,7 @@ sidebar:
 
 # CLAUDE.md vs Skills vs Rules — Complete Architecture & Best Practices Guide
 
-> **Last updated: May 2026 — reflects Claude Code v2.1.126+**
+> **Last updated: May 19, 2026 — reflects Claude Code v2.1.126+**
 > **Document scope:** Complete configuration reference for CLAUDE.md, Rules, Skills, Commands, Output Styles, Subagents, Plugins, Hooks, MCP, and enterprise settings through v2.1.126 (May 2026).
 
 ## 1. The Core Problem These Three Files Solve
@@ -946,6 +946,48 @@ START: "I have instructions/knowledge for Claude"
   │                             or use a path-scoped rule
 ```
 
+### Complete Decision Framework — Which File to Use?
+
+```
+I want to...
+│
+├── Give Claude context about my project (what it is, tech stack, conventions)
+│   └── → CLAUDE.md (project root)
+│
+├── Give Claude personal preferences that apply to all my projects
+│   └── → ~/.claude/CLAUDE.md (user CLAUDE.md)
+│
+├── Override project context for my local setup only (no sharing with team)
+│   └── → CLAUDE.local.md (gitignored)
+│
+├── Give Claude rules only when editing certain files/directories
+│   └── → .claude/rules/<name>.md with paths: [glob/**]
+│
+├── Create a reusable capability (e.g., "deploy", "run-tests", "migrate-db")
+│   └── → .claude/skills/<name>/SKILL.md
+│
+├── Create a custom slash command for my team
+│   └── → .claude/commands/<name>.md
+│
+├── Change how Claude formats its responses
+│   └── → .claude/output-styles/<name>.md
+│
+├── Create a specialized subagent for a specific role (e.g., "security-reviewer")
+│   └── → .claude/agents/<name>.md
+│
+├── Connect Claude to a database, API, or external service
+│   └── → .mcp.json (MCP server configuration)
+│
+├── Configure tool permissions (allow/deny specific tool patterns)
+│   └── → .claude/settings.json (project) or ~/.claude/settings.json (user)
+│
+├── Store durable notes about this project that survive /compact
+│   └── → MEMORY.md (managed automatically, or /memory add "...")
+│
+└── Lock down settings for my organization (cannot be overridden by users)
+    └── → ~/.claude/managed-settings.json (enterprise)
+```
+
 ---
 
 ## 9. Common Anti-Patterns to Avoid
@@ -1062,6 +1104,34 @@ Understanding precisely how many tokens each file type consumes helps you make b
 | Auto-memory | ≤200 lines / ≤25KB | Session start | Hard cap; automatic curation at limit |
 | Subagent MEMORY.md | ≤200 lines / ≤25KB | On invocation | Per-agent, scoped to invocation context |
 | MCP tools | ~500-2K per server | Session start | Disable unused servers; ToolSearch for large sets |
+
+---
+
+### Token Budget Planning
+
+A 200K context window breaks down approximately as:
+
+```
+200,000 tokens total
+├── System prompt:                    ~2,000 tokens (fixed)
+├── Tool schemas (active tools):      ~1,500 tokens (ToolSearch lazy-loads)
+├── Enterprise CLAUDE.md:             ~1,000–5,000 tokens (org-managed)
+├── User CLAUDE.md:                   ~500–2,000 tokens (your personal config)
+├── Project CLAUDE.md (root):         ~1,000–3,000 tokens (project context)
+├── Subdirectory CLAUDE.md files:     ~500–2,000 tokens (path-specific, cumulative)
+├── CLAUDE.local.md:                  ~500–1,000 tokens (personal override)
+├── Active rules files (matched):     ~500–2,000 tokens (conditional)
+├── Active skills (if invoked):       ~1,000–3,000 tokens (on-demand)
+├── MEMORY.md (auto-memory):          up to ~25KB / 200 lines
+└── Available for conversation:       ~165,000–192,000 tokens
+```
+
+**Guidelines:**
+- Keep CLAUDE.md under 120 lines (~3,000 tokens)
+- Use `@import` to modularize large context
+- Path-scope rules to avoid loading irrelevant context
+- Use skills for large reusable capabilities (loaded on demand)
+- Set `claudeMdExcludes` to skip large generated files
 
 ---
 

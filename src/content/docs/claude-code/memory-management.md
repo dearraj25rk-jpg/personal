@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 15
   label: Memory Management
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Memory Management — Complete Reference
 
-> **Version**: Claude Code v2.1.126 | **Last Updated**: May 17, 2026
+> **Version**: Claude Code v2.1.126 | **Last Updated**: May 19, 2026
 
 ---
 
@@ -1239,6 +1239,22 @@ When you run `/compact` (or when automatic compaction triggers near the context 
 
 The key insight: **only files with a fixed disk location that Claude Code knows to re-read will survive compaction**. The project root CLAUDE.md (and enterprise CLAUDE.md) are always re-read. Everything else was in the context window that got compacted.
 
+### What Survives Context Compaction
+
+| Item | Survives compaction? | Notes |
+|------|---------------------|-------|
+| MEMORY.md | **Always** | Re-loaded at session start |
+| CLAUDE.md files | **Always** | Re-loaded from disk |
+| Rules files | **Always** | Re-loaded from disk |
+| Skills definitions | **Always** | Re-loaded on invocation |
+| Settings | **Always** | Config not in context |
+| Open TodoWrite tasks | **Always** | Tracked separately |
+| Conversation history | **Summary only** | Full history is compacted |
+| Tool results | **Not preserved** | Only summary matters |
+| Code edits | **Committed to disk** | Files written = permanent |
+| Session ID | **Preserved** | For `/resume` |
+| Cost accumulation | **Preserved** | Tracks total session cost |
+
 ### Implications
 
 **User CLAUDE.md does not survive compaction.** If you've been working for 4 hours, ran `/compact`, and notice Claude no longer follows your personal style preferences — that's why. You need to start a new session for user CLAUDE.md to be re-loaded, or add critical personal preferences to project CLAUDE.md.
@@ -1697,6 +1713,64 @@ When working with test files:
 - Tests must not depend on external services (mock or stub them)
 - Each test file should be independently runnable
 - Use `describe` blocks to group related tests
+```
+
+### Monorepo Memory Patterns
+
+In a monorepo with multiple packages, use nested CLAUDE.md files for package-specific context:
+
+```
+monorepo/
+├── CLAUDE.md                    ← Monorepo-wide conventions
+├── packages/
+│   ├── api/
+│   │   └── CLAUDE.md            ← API-specific context (loaded when in packages/api/)
+│   ├── web/
+│   │   └── CLAUDE.md            ← Web app context (loaded when in packages/web/)
+│   └── shared/
+│       └── CLAUDE.md            ← Shared library context
+├── .claude/
+│   ├── rules/
+│   │   ├── api.md               ← Rules for packages/api/ (paths: [packages/api/**])
+│   │   ├── web.md               ← Rules for packages/web/ (paths: [packages/web/**])
+│   │   └── testing.md           ← Rules for **/*.test.ts files
+│   └── settings.json
+└── CLAUDE.local.md              ← Developer-specific: local overrides
+```
+
+**Root CLAUDE.md (monorepo-wide):**
+```markdown
+# Monorepo Conventions
+- Package manager: pnpm with workspaces
+- Node version: 22.x
+- All packages use TypeScript strict mode
+- Shared types live in packages/shared/src/types/
+- Run tests with: pnpm test --filter=<package>
+```
+
+**Package-level CLAUDE.md (packages/api/CLAUDE.md):**
+```markdown
+# API Package Context
+- Framework: Fastify v5
+- Database: PostgreSQL via Drizzle ORM
+- Auth: JWT with RS256
+- API schemas use Zod validation
+- Never expose raw DB errors in API responses
+```
+
+**Excluding large generated files:**
+```json
+// CLAUDE.md or settings.json
+{
+  "claudeMdExcludes": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.next/**",
+    "**/coverage/**",
+    "**/*.generated.ts"
+  ]
+}
 ```
 
 ---

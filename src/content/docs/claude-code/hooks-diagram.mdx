@@ -8,7 +8,7 @@ description: >
   v2.1.126 (May 2026).
 sidebar:
   order: 18
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import HooksDiagram from '../../../components/interactive/HooksDiagram.jsx';
@@ -16,3 +16,61 @@ import HooksDiagram from '../../../components/interactive/HooksDiagram.jsx';
 <div class="interactive-tool">
   <HooksDiagram client:only="react" />
 </div>
+
+## Hooks Quick Reference
+
+### All Hook Events (v2.1.126)
+
+| Event | Category | Blockable | Fires when |
+|-------|----------|-----------|-----------|
+| `PreSessionStart` | Session | Yes | Before session initialises |
+| `PostSessionStart` | Session | No | Session fully initialised |
+| `Stop` | Session | Yes | User/system stop request |
+| `PostSessionEnd` | Session | No | Session terminated |
+| `PreToolUse` | Tool | Yes | Before any tool executes |
+| `PostToolUse` | Tool | No | After tool succeeds |
+| `PostToolUseFailure` | Tool | No | After tool fails |
+| `PreBash` | Tool | Yes | Before Bash runs |
+| `PostBash` | Tool | No | After Bash completes |
+| `PreFileWrite` | Tool | Yes | Before Write/Edit/MultiEdit |
+| `PostFileWrite` | Tool | No | After Write/Edit/MultiEdit |
+| `PreFileRead` | Tool | No | Before Read |
+| `PostFileRead` | Tool | No | After Read |
+| `PreWebFetch` | Tool | Yes | Before WebFetch |
+| `PostWebFetch` | Tool | No | After WebFetch |
+| `PreWebSearch` | Tool | Yes | Before WebSearch |
+| `PostWebSearch` | Tool | No | After WebSearch |
+| `PreTask` | Agent | Yes | Before Task tool spawns subagent |
+| `PostTask` | Agent | No | After Task tool completes |
+| `PreAgentTeamMessage` | Agent | Yes | Before Agent Teams message sent |
+| `PostAgentTeamMessage` | Agent | No | After Agent Teams message received |
+| `PrePrompt` | User | Yes | Before prompt sent to API |
+| `PostPrompt` | User | No | After API responds |
+| `PreCompact` | Session | Yes | Before context compaction |
+| `PostCompact` | Session | No | After compaction |
+| `PreMCPTool` | MCP | Yes | Before MCP tool call |
+| `PostMCPTool` | MCP | No | After MCP tool call |
+| `ToolSearchLoad` | Tool | No | When ToolSearch loads a deferred tool |
+| `PreMonitor` | Tool | No | Before Monitor starts |
+| `PostMonitor` | Tool | No | After Monitor completes |
+
+### Five Handler Types
+
+| Type | Since | Protocol | Use for |
+|------|-------|---------|---------|
+| `command` | v1.0 | stdout JSON or exit code | Shell scripts, validation, formatting |
+| `prompt` | v1.0 | stdout text | Add context to prompts |
+| `agent` | v2.1.32 | Claude as sub-model | LLM-based judgement |
+| `http` | v2.1.63 | POST to webhook URL | Audit logging, Slack alerts |
+| `mcp_tool` | v2.1.118 | MCP tool call | Structured integrations |
+
+### Exit Code Protocol (command handler)
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Allow (or observe) |
+| `1` | Block — generic error |
+| `2` | Block — show stdout to user |
+| `3` | Block — Claude sees stdout (not user) |
+
+→ Full reference: [Hooks System — Deep Dive](./hooks-deep-dive)

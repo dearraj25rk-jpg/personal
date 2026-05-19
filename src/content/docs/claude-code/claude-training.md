@@ -1,18 +1,19 @@
 ---
 title: Elite Claude Code Mastery — Training Program
 description: >
-  8-module curriculum for elite Claude Code mastery — CLI mastery, agent teams,
+  9-module curriculum for elite Claude Code mastery — CLI mastery, agent teams,
   hooks system, MCP servers, prompt engineering, RAG + enterprise integration,
-  CI/CD automation, and advanced architecture patterns. Targets .NET/Azure developers.
-  Covers Claude Code v2.1.126 (May 2026).
+  CI/CD automation, advanced architecture patterns, and new features deep dive
+  (path-scoped rules, Workload Identity Federation, service tiers, native binary tools,
+  /advisor pattern). Targets .NET/Azure developers. Covers Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 11
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Elite Claude Code mastery: a complete AI Engineer training program
 
-**This training program transforms an experienced .NET/Azure tech lead into an elite-level AI engineer** capable of orchestrating multi-agent systems, engineering production-grade RAG architectures, and leveraging Claude Code at its absolute ceiling. The curriculum spans 8 modules progressing from advanced CLI mastery through enterprise architecture patterns, with every technique grounded in the latest 2025-2026 documentation and real-world production implementations.
+**This training program transforms an experienced .NET/Azure tech lead into an elite-level AI engineer** capable of orchestrating multi-agent systems, engineering production-grade RAG architectures, and leveraging Claude Code at its absolute ceiling. The curriculum spans 9 modules progressing from advanced CLI mastery through enterprise architecture patterns and the newest platform features, with every technique grounded in the latest 2025-2026 documentation and real-world production implementations.
 
 The program assumes foundational Claude Code familiarity and jumps directly into power-user territory. Each module builds on the previous one, culminating in a capstone that integrates agent teams, MCP servers, hooks, and CI/CD automation into a cohesive enterprise workflow. All code examples and configurations prioritize the .NET/Azure ecosystem.
 
@@ -21,7 +22,7 @@ The program assumes foundational Claude Code familiarity and jumps directly into
 ## Learning Path Overview
 
 ```
-  CLAUDE CODE MASTERY — 8-MODULE PROGRESSION
+  CLAUDE CODE MASTERY — 9-MODULE PROGRESSION
   ════════════════════════════════════════════════════════════════════
 
   FOUNDATION TIER (Modules 1-2)
@@ -64,12 +65,20 @@ The program assumes foundational Claude Code familiarity and jumps directly into
          Council pattern → Framework selection → HITL → Stateful agents
          Outcome: Design and deploy enterprise-grade multi-agent systems
 
+  NEW FEATURES TIER (Module 9)
+  ─────────────────────────────
+  Module 9: New Features Deep Dive (v2.1.84–v2.1.126)
+         Path-scoped rules → Workload Identity Federation → Native binaries
+         Bedrock service tiers → /advisor pattern
+         Outcome: Master every feature introduced after the original curriculum
+
   DEPENDENCIES:
   Module 1 ──► All modules (CLI fundamentals required throughout)
   Module 2 ──► Module 8 (agent patterns build on team concepts)
   Module 3 ──► Module 7 (hooks underpin CI/CD quality gates)
   Module 4 ──► Module 6 (MCP enables RAG data access)
   Module 5 ──► Modules 6, 7, 8 (prompt design is cross-cutting)
+  Modules 1-8 ──► Module 9 (new features build on all prior concepts)
 ```
 
 ---
@@ -1565,9 +1574,193 @@ Five core HITL patterns from Google Cloud's architecture guidance: **Approval Ga
 
 ---
 
+## Module 9 — New Features Deep Dive (v2.1.84–v2.1.126)
+
+> **Prerequisites:** Modules 1–8 completed or equivalent experience
+> **Objective:** Master features introduced after the original curriculum — path-scoped rules, Workload Identity Federation, service tiers, native binary tools, and the extended /advisor pattern
+
+### Learning Objectives
+
+By the end of this module you will be able to:
+- Configure path-scoped rules to reduce per-session token overhead in large monorepos
+- Set up Workload Identity Federation for keyless CI/CD authentication to GCP Vertex AI
+- Explain the performance and capability differences introduced by the native binary build
+- Select the correct AWS Bedrock service tier for development, batch, and production workloads
+- Apply the /advisor pattern to get Opus-quality reasoning within Sonnet-budget sessions
+
+---
+
+### 9.1 Path-Scoped Rules (v2.1.84+)
+
+Rules files can now conditionally load based on file path, drastically reducing context overhead:
+
+```markdown
+<!-- .claude/rules/api-security.md -->
+---
+paths:
+  - src/api/**
+  - src/handlers/**
+  - tests/api/**
+---
+
+# API Security Rules
+- Always validate input with Zod schemas
+- Never return raw database errors to API clients
+- Log all authentication failures with user ID + IP
+- Use parameterized queries — never string interpolation in SQL
+- API responses must include Content-Security-Policy header
+```
+
+This rule loads ONLY when Claude touches files matching `src/api/**`, `src/handlers/**`, or `tests/api/**`. Working on `src/components/**`? This rule is invisible.
+
+**YAML list syntax (also supported):**
+```yaml
+paths:
+  - src/api/**
+  - src/handlers/**
+```
+
+**Relationship to `globs:` frontmatter:** The `paths:` key is the canonical path-scoped variant introduced in v2.1.84. Earlier versions used `globs:` (still supported) to restrict which files trigger a rule. `paths:` extends this by preventing the rule from loading at all when no matching files are in context — a stronger guarantee that reduces token overhead, not just relevance.
+
+**Exercise:** Create 3 path-scoped rules for your project: one for tests, one for database code, one for UI components. Measure token reduction with `/context`.
+
+---
+
+### 9.2 Workload Identity Federation in CI/CD (v2.1.121+)
+
+No more service account keys in CI secrets. Use short-lived OIDC tokens:
+
+**GitHub Actions + GCP Vertex AI:**
+```yaml
+permissions:
+  id-token: write    # Required for OIDC token
+  contents: read
+
+steps:
+  - uses: google-github-actions/auth@v2
+    with:
+      workload_identity_provider: 'projects/123/locations/global/workloadIdentityPools/my-pool/providers/github'
+      service_account: 'claude-code-ci@project.iam.gserviceaccount.com'
+  
+  - name: Run Claude Code
+    run: claude -p "Review this PR" --bare
+    env:
+      CLAUDE_CODE_USE_VERTEX: "1"
+      GOOGLE_CLOUD_PROJECT: ${{ vars.GCP_PROJECT }}
+```
+
+**Why WIF over service account keys:**
+- Keys can be leaked; WIF tokens expire in 1 hour
+- No credential rotation needed
+- Audit trail linked to GitHub identity
+- Principle of least privilege: CI can only assume the CI service account
+
+---
+
+### 9.3 Native Binary Tools (v2.1.113+)
+
+Claude Code is now a native binary — Node.js not required:
+
+| Pre-v2.1.113 | v2.1.113+ |
+|-------------|----------|
+| Requires Node.js 18+ | Self-contained binary |
+| `Glob` via Node glob | Embedded `bfs` (faster) |
+| `Grep` via ripgrep | Embedded `ugrep` (faster, more features) |
+| Slower cold start | 40% faster cold start |
+
+**New ugrep features available in Grep tool:**
+- PCRE2 regex (lookaheads, backreferences)
+- Binary file handling
+- Line ranges: `Grep(pattern, file, start=10, end=50)`
+- Context lines: `Grep(pattern, file, context=3)`
+
+---
+
+### 9.4 Bedrock Service Tiers (v2.1.122+)
+
+Three throughput tiers for AWS Bedrock deployments:
+
+```bash
+# Standard (default) - good for dev
+CLAUDE_CODE_BEDROCK_SERVICE_TIER=default
+
+# Flexible - scales with demand, good for batch
+CLAUDE_CODE_BEDROCK_SERVICE_TIER=flex
+
+# Priority - reserved capacity, lowest latency
+CLAUDE_CODE_BEDROCK_SERVICE_TIER=priority
+```
+
+**When to use each:**
+- `default`: Development, ad-hoc tasks, testing
+- `flex`: CI/CD pipelines, overnight batch jobs, variable load
+- `priority`: Production code review, latency-sensitive automation, time-boxed sprints
+
+---
+
+### 9.5 The /advisor Pattern for Complex Problems
+
+Use `/advisor` to get Opus-quality reasoning on Sonnet's budget:
+
+**Activation pattern:**
+1. Start session with Sonnet 4.6 (default)
+2. Hit a complex decision point → `/advisor`
+3. Opus 4.7 reviews context, provides strategic guidance
+4. Sonnet continues with Opus's guidance embedded in context
+
+**High-value /advisor triggers:**
+- "I'm not sure which architecture to choose..."
+- "This bug has 3 possible root causes..."
+- "The test is flaky but I can't reproduce it..."
+- "Should I refactor this now or later?"
+
+**Exercise:** Set up a complex task. Run it without `/advisor`, note where you get stuck. Re-run with `/advisor` at those decision points. Compare quality and cost.
+
+---
+
+### Module 9 — Common Mistakes
+
+| Mistake | Why it hurts | Fix |
+|---------|-------------|-----|
+| Using `globs:` when `paths:` is available | Loads rule even when no matching files in context | Upgrade to `paths:` for true conditional loading (v2.1.84+) |
+| Storing service account keys alongside WIF config | Defeats the purpose; key can still leak | Remove all key files; rely on OIDC token exchange only |
+| Installing Node.js alongside native binary | Unnecessary dependency; potential version conflicts | Use the native binary exclusively; drop Node.js requirement from Dockerfiles |
+| Using `priority` tier for batch workloads | Reserved capacity is expensive at low utilisation | Use `flex` for variable/batch loads; `priority` for latency-critical only |
+| Calling `/advisor` on every decision | Opus invocations add cost quickly | Reserve `/advisor` for decisions where error cost exceeds ~$5 or 1 hour of rework |
+
+### Module 9 — Assessment Questions
+
+1. What is the difference between `paths:` and `globs:` frontmatter in rules files? Which provides stronger context isolation?
+2. Explain why Workload Identity Federation is more secure than a long-lived service account key. What is the typical token lifetime?
+3. What embedded tools replaced ripgrep and Node glob in the native binary, and what capabilities do they add?
+4. A CI pipeline needs to run nightly batch analysis over 50,000 files. Which Bedrock service tier is most appropriate and why?
+5. At what point in a task should you invoke `/advisor`? What makes a decision "worth" an Opus consultation?
+6. You migrate from Node.js-installed Claude Code to the native binary. What cold-start improvement should you expect?
+7. A monorepo has 200 rule files. How do `paths:`-scoped rules reduce token usage compared to un-scoped rules?
+8. Write the GitHub Actions permissions block required for Workload Identity Federation OIDC token generation.
+9. List three high-value `/advisor` trigger phrases and explain what they have in common.
+10. You set `CLAUDE_CODE_BEDROCK_SERVICE_TIER=priority` for your dev environment. What is the likely consequence?
+
+### Module 9 — Assessment
+
+**Practical exercises:**
+1. Migrate existing `.claude/rules/*.md` to use `paths:` scoping; measure context reduction with `/context` before and after
+2. Set up WIF for your GitHub Actions → GCP Vertex AI pipeline; remove API key from secrets
+3. Profile cold start time before vs. after migrating to native binary install
+4. Create a `flex` tier Bedrock integration for your nightly code analysis job
+5. Identify 3 tasks in your workflow where `/advisor` would improve quality without significant cost increase
+
+**Mastery check:**
+- [ ] Can explain why path-scoped rules reduce costs for large monorepos
+- [ ] Can set up Workload Identity Federation without storing any API keys
+- [ ] Knows when to use `priority` vs `flex` Bedrock tier
+- [ ] Can predict cost/quality tradeoff for different /advisor frequencies
+
+---
+
 ## Conclusion: from operator to architect
 
-This program traces a deliberate arc from mastering Claude Code's full control surface through designing enterprise-grade AI systems. The key insight across all eight modules is that **constraint drives quality**: concise CLAUDE.md files outperform verbose ones, bounded agents outperform monolithic ones, proactive context management outperforms reactive compaction, and explicit planning phases prevent the most expensive failure mode — implementing the wrong solution.
+This program traces a deliberate arc from mastering Claude Code's full control surface through designing enterprise-grade AI systems and staying current with the newest platform capabilities. The key insight across all nine modules is that **constraint drives quality**: concise CLAUDE.md files outperform verbose ones, bounded agents outperform monolithic ones, proactive context management outperforms reactive compaction, and explicit planning phases prevent the most expensive failure mode — implementing the wrong solution.
 
 Three capabilities distinguish elite-level practitioners. First, **architectural thinking about context** — treating the up-to-1M token context window as a strategic resource, using subagents for isolation, hooks for verification, and MCP servers for reach. Second, **multi-agent orchestration literacy** — knowing when a SubAgent suffices versus when Agent Teams are worth the 5x token cost, and designing agent specializations that produce emergent quality. Third, **production hardening instincts** — security scanning hooks on every tool use, hybrid search in RAG pipelines, HITL gates on destructive operations, and observability via OpenTelemetry from day one.
 

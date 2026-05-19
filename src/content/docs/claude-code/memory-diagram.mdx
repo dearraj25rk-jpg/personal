@@ -9,7 +9,7 @@ description: >
   Includes @import syntax, memory commands, and environment variables. v2.1.126 (May 2026).
 sidebar:
   order: 23
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import MemoryDiagram from '../../../components/interactive/MemoryDiagram.jsx';
@@ -17,3 +17,63 @@ import MemoryDiagram from '../../../components/interactive/MemoryDiagram.jsx';
 <div class="interactive-tool">
   <MemoryDiagram client:only="react" />
 </div>
+
+## Memory System Quick Reference
+
+### All 7 Memory Types
+
+| Type | Location | Scope | Persists? | Compaction? | Size limit |
+|------|---------|-------|----------|------------|-----------|
+| Enterprise CLAUDE.md | Managed path | All sessions | Yes | Yes | Unlimited |
+| User CLAUDE.md | `~/.claude/CLAUDE.md` | All projects | Yes | No | ~50KB recommended |
+| Project CLAUDE.md | `CLAUDE.md` (root) | Project sessions | Yes | No | ~120 lines recommended |
+| CLAUDE.local.md | `CLAUDE.local.md` | Project (local) | Yes | No | ~120 lines recommended |
+| Auto-Memory (MEMORY.md) | `~/.claude/projects/<hash>/memory/MEMORY.md` | Per-project | Yes | **Survives** | 200 lines / 25KB |
+| Subagent MEMORY.md | Per-agent path | Subagent scope | Session | No | 200 lines / 25KB |
+| Rules `.claude/rules/*.md` | Project | Path-scoped | Yes | No | Per-rule file |
+
+### Precedence (Highest → Lowest)
+
+```
+Enterprise CLAUDE.md
+    ↓ (overridden by)
+User CLAUDE.md (~/.claude/CLAUDE.md)
+    ↓
+Project CLAUDE.md (root)
+    ↓
+Subdirectory CLAUDE.md files (path-scoped, cumulative)
+    ↓
+CLAUDE.local.md (personal overrides)
+    ↓
+.claude/rules/*.md (conditional, path-scoped)
+    ↓
+Auto-Memory MEMORY.md (per-project durable memory)
+```
+
+### @import Syntax
+
+```markdown
+# In any CLAUDE.md
+@path/to/other-file.md           # Import another markdown
+@.claude/shared/database.md      # Relative path import
+@../sibling-repo/conventions.md  # Cross-repo import
+```
+
+### Memory Commands
+
+| Command | What it does |
+|---------|-------------|
+| `/memory` | Open memory editor UI |
+| `/memory add <text>` | Add note to MEMORY.md |
+| `/memory clear` | Clear MEMORY.md |
+| `/memory show` | Display current MEMORY.md |
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `CLAUDE_CODE_MEMORY_PATH` | Override MEMORY.md location |
+| `claudeMdExcludes` | Glob patterns to exclude from loading |
+| `DISABLE_MEMORY` | Disable auto-memory entirely |
+
+→ Full reference: [Memory Management](./memory-management)

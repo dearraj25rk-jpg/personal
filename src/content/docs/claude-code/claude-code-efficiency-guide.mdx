@@ -8,7 +8,7 @@ description: >
   CCA-F study reference covering D1-D5.
 sidebar:
   order: 15
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import ClaudeCodeEfficiency from '../../../components/interactive/ClaudeCodeEfficiency.jsx';
@@ -16,3 +16,59 @@ import ClaudeCodeEfficiency from '../../../components/interactive/ClaudeCodeEffi
 <div class="interactive-tool">
   <ClaudeCodeEfficiency client:only="react" />
 </div>
+
+## Efficiency Quick Reference
+
+### Cost Optimisation Decision Tree
+
+```
+Is the task simple (formatting, docs, small edits)?
+  YES → Use Haiku 4.5 (cheapest)
+  NO  ↓
+
+Does it need deep reasoning (architecture, debugging)?
+  YES → Use Opus 4.7 with effort=high or xhigh
+  NO  ↓
+
+Standard feature work → Sonnet 4.6 (default, balanced)
+```
+
+### Effort Level Cost Impact
+
+| Level | Extended Thinking | Relative cost | Use when |
+|-------|-----------------|--------------|---------|
+| `low` | None | ~0.5x | Simple, deterministic tasks |
+| `normal` | Minimal | 1x (baseline) | Standard coding tasks |
+| `high` | Substantial | ~2–3x | Complex bugs, architecture decisions |
+| `xhigh` | Maximum | ~5–8x | Critical issues, complex refactors |
+
+### Prompt Caching Economics
+
+| Scenario | Cache hit rate | Cost savings |
+|----------|--------------|-------------|
+| Same CLAUDE.md, repeated tasks | 90%+ | ~75% off cached tokens |
+| New session, warm cache | 60–80% | ~60% off |
+| First run (cold cache) | 0% | Standard pricing |
+| CI runs (same YAML) | 85–95% | ~75% off |
+
+Cache read costs: **$0.30/M** vs $3.00/M input (Sonnet 4.6) → **10x cheaper**
+
+### Output Style Cost Impact
+
+| Style | Output length | Cost vs Default |
+|-------|-------------|----------------|
+| Default | Standard | 1x |
+| Explanatory | ~40% longer | ~1.4x |
+| Learning (tutor) | ~60% longer | ~1.6x |
+| Custom (minimal) | ~50% shorter | ~0.5x |
+
+### Model Pricing (May 2026)
+
+| Model | Input | Output | Cache read | Cache write |
+|-------|-------|--------|-----------|------------|
+| Opus 4.7 | $15/M | $75/M | $1.50/M | $3.75/M |
+| Opus 4.6 | $15/M | $75/M | $1.50/M | $3.75/M |
+| Sonnet 4.6 | $3/M | $15/M | $0.30/M | $0.75/M |
+| Haiku 4.5 | $0.80/M | $4/M | $0.08/M | $0.20/M |
+
+→ Full reference: [Context, Cost & Token Efficiency](./claude-code-efficiency-reference)

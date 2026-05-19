@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 13
   label: Plugins
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Plugins — Complete Reference
 
-> **Version:** v2.1.126 (May 17, 2026) · Plugin system introduced in v2.0.64; monitors added in v2.1.105.
+> **Version:** v2.1.126 (May 19, 2026) · Plugin system introduced in v2.0.64; monitors added in v2.1.105.
 
 Plugins are the **largest unit of Claude Code extension**. A single plugin can bundle commands, agents, skills, output styles, monitors, themes, bin executables, hooks, MCP servers, and LSP servers — all automatically namespaced under the plugin's name. Publish once to npm and any developer can install your entire integration in one command.
 
@@ -450,6 +450,59 @@ if [ "$DRY_RUN" = "true" ]; then
 else
   ./deploy.sh --region "$REGION"
 fi
+```
+
+### Plugin User Configuration (userConfig)
+
+The `userConfig` schema in `plugin.json` defines settings users can configure. Here is a complete example for a database query plugin:
+
+```json
+{
+  "name": "my-db-plugin",
+  "version": "1.0.0",
+  "description": "Database query plugin",
+  "userConfig": {
+    "connectionString": {
+      "type": "string",
+      "description": "PostgreSQL connection string",
+      "sensitive": true
+    },
+    "maxRows": {
+      "type": "integer",
+      "description": "Maximum rows returned per query",
+      "default": 100
+    },
+    "readOnly": {
+      "type": "boolean",
+      "description": "Restrict to SELECT queries only",
+      "default": true
+    }
+  }
+}
+```
+
+Users configure it with: `claude plugin config my-db-plugin`
+
+Access config values in your hooks/commands via environment variables (using the `CLAUDE_PLUGIN_OPTION_` prefix + uppercase key name):
+
+```bash
+# In hook scripts, config values are available as:
+echo $CLAUDE_PLUGIN_OPTION_CONNECTIONSTRING
+echo $CLAUDE_PLUGIN_OPTION_MAXROWS
+echo $CLAUDE_PLUGIN_OPTION_READONLY
+```
+
+Or via `${user_config.KEY}` substitution in `hooks.json`:
+
+```json
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/db-check --conn ${user_config.connectionString} --max-rows ${user_config.maxRows}"
+    }
+  ]
+}
 ```
 
 ---
@@ -2997,4 +3050,58 @@ Who needs the plugin?
 └── Just me
     └── Local path install (~/.claude/plugins or --scope local)
         (No publication needed; your personal plugin directory)
+```
+
+---
+
+### Publishing Plugins
+
+Share plugins via GitHub/npm for others to install:
+
+#### Directory Structure for Published Plugin
+
+```
+my-claude-plugin/
+├── package.json           ← npm manifest (if publishing to npm)
+├── plugin.json            ← Claude Code plugin manifest
+├── README.md
+├── commands/
+│   └── my-command.md
+├── agents/
+│   └── my-agent.md
+└── hooks/
+    └── pre-bash.sh
+```
+
+#### package.json for npm Distribution
+
+```json
+{
+  "name": "@yourorg/claude-plugin-my-plugin",
+  "version": "1.0.0",
+  "description": "Claude Code plugin for X",
+  "keywords": ["claude-code", "claude-plugin"],
+  "main": "plugin.json",
+  "files": ["plugin.json", "commands/", "agents/", "hooks/", "skills/"]
+}
+```
+
+#### Installation
+
+```bash
+# From npm
+npm install -g @yourorg/claude-plugin-my-plugin
+claude plugin install @yourorg/claude-plugin-my-plugin
+
+# From GitHub
+claude plugin install github:yourorg/claude-plugin-my-plugin
+
+# From local path
+claude plugin install ./my-claude-plugin
+
+# List installed plugins
+claude plugin list
+
+# Uninstall
+claude plugin uninstall my-plugin
 ```

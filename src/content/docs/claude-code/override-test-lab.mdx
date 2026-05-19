@@ -7,7 +7,7 @@ description: >
   and enterprise override behaviour. v2.1.126 (May 2026).
 sidebar:
   order: 13
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import OverrideTestLab from '../../../components/interactive/OverrideTestLab.jsx';
@@ -15,3 +15,33 @@ import OverrideTestLab from '../../../components/interactive/OverrideTestLab.jsx
 <div class="interactive-tool">
   <OverrideTestLab client:only="react" />
 </div>
+
+## Precedence Rules — Conceptual Reference
+
+### The 12 Test Scenarios Covered
+
+1. **Enterprise override** — Managed settings block all user overrides
+2. **User CLAUDE.md inheritance** — Global context flows into project
+3. **Project CLAUDE.md** — Project context merges with user context
+4. **CLAUDE.local.md** — Personal overrides win within same project
+5. **Rules path scoping** — `.claude/rules/frontend.md` loads only for `src/**/*.tsx`
+6. **Rules YAML list syntax** — `paths: [src/api/**, tests/**]`
+7. **Skill invocation** — Skills load only when invoked via slash command
+8. **Skill tool restrictions** — `tools:` field limits what skill can access
+9. **Memory scope** — MEMORY.md is project-scoped, not shared across projects
+10. **Subagent memory isolation** — Subagent gets own MEMORY.md
+11. **Settings inheritance** — `.claude/settings.local.json` overrides `.claude/settings.json`
+12. **CLI flag priority** — `--permission-mode bypassPermissions` beats all settings
+
+### Key Conflict Resolution Rules
+
+| Rule | Result |
+|------|--------|
+| Enterprise vs user setting | Enterprise always wins |
+| Two CLAUDE.md files at different paths | Both load; deeper path appended |
+| Project settings vs user settings | Project settings override user |
+| Local settings vs project settings | Local settings override project |
+| CLI flag vs settings file | CLI flag wins |
+| Same key in two rules files | Last-loaded file wins |
+
+→ Full reference: [Configuration Guide](./claude-code-config-guide)

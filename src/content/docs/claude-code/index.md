@@ -1,14 +1,14 @@
 ---
 title: Claude Code
-description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system, MCP servers, agent teams, CI/CD integration, permissions, context engineering, Agent SDK, worktrees, plugins, output styles, memory management, models & pricing, slash commands, and 11 interactive diagrams. Claude Code v2.1.126 (May 2026).
+description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles, memory management (7 types), models & pricing, slash commands, context engineering, and 14 interactive diagrams. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 1
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
 
-**Latest stable:** v2.1.126 (May 17, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions) · **Platforms:** macOS, Linux, WSL2, Windows native
+**Latest stable:** v2.1.126 (May 19, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions) · **Platforms:** macOS, Linux, WSL2, Windows native
 
 ```
 ┌────────────────────────── CLAUDE CODE ECOSYSTEM ──────────────────────────┐
@@ -65,9 +65,61 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 
 ---
 
+## Feature Map
+
+```
+Claude Code v2.1.126 — Feature Coverage
+═══════════════════════════════════════════════════════════════
+
+CONFIGURE                  EXTEND                    INTEGRATE
+──────────────             ──────────────             ──────────────────
+CLAUDE.md hierarchy        MCP Servers                GitHub Actions
+  23 file types            30+ hook events            GitLab CI
+  Configuration guide      Plugin system              Azure DevOps
+  Rules (path-scoped)      Agent Teams                AWS Bedrock
+  Skills                   Subagents                  GCP Vertex AI
+  Output Styles            Task tool                  Agent SDK (Py/TS)
+  Memory (7 types)         /advisor command           CI non-interactive
+  Settings hierarchy       Custom commands            Sandboxed mode
+
+CORE TOOLS                 EFFICIENCY                 SECURITY
+──────────────             ──────────────             ──────────────────
+Read / Write / Edit        Prompt caching             4 permission modes
+MultiEdit                  Effort levels              Tool allowlists
+Bash / Monitor             Context engineering        Enterprise managed
+Glob / Grep (ugrep)        Auto-compaction            Sandbox filesystem
+WebFetch / WebSearch       Token budgeting            Audit logging
+TodoWrite / TodoRead       Model selection            Secret scanning
+Task (subagent)            Output style costs         Role-based access
+```
+
+---
+
 ## Getting Started
 
 **New to Claude Code?** Start here → [Quick Start Guide](./quick-start)
+
+## Quick Setup (5 minutes)
+
+```bash
+# 1. Install
+curl -fsSL https://claude.ai/install.sh | bash
+
+# 2. Authenticate
+claude                    # Browser OAuth opens automatically
+
+# 3. Run your first task
+claude "Explain what this codebase does and what the main entry point is"
+
+# 4. Set up project context (optional but recommended)
+cat > CLAUDE.md << 'EOF'
+# Project Context
+[Describe your project, tech stack, conventions here]
+EOF
+claude "What patterns should I follow when adding new features?"
+```
+
+→ [Full Quick Start Guide](./quick-start)
 
 ---
 

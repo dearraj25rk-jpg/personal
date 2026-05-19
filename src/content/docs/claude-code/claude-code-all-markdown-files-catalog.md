@@ -6,7 +6,7 @@ sidebar:
 
 # Every Markdown File Claude Code Recognizes — Complete Catalog
 
-> **Last updated: May 17, 2026 — reflects Claude Code v2.1.126+**
+> **Last updated: May 19, 2026 — reflects Claude Code v2.1.126+**
 > All information sourced from official `code.claude.com` documentation.
 
 ---
@@ -632,6 +632,33 @@ hooks:
 ---
 ```
 
+#### `${CLAUDE_EFFORT}` in Skills (v2.1.120+)
+
+Skills can read the current session effort level and adapt their behavior:
+
+```markdown
+<!-- .claude/skills/review/SKILL.md -->
+---
+name: review
+description: Code review skill — depth adapts to effort level
+---
+
+# Code Review
+
+Current effort level: ${CLAUDE_EFFORT}
+
+{% if CLAUDE_EFFORT == "xhigh" %}
+Perform an exhaustive security audit: check all OWASP Top 10, trace all data flows,
+verify all authentication checks, analyse all error paths.
+{% elif CLAUDE_EFFORT == "high" %}
+Thorough review: focus on correctness, security, and test coverage.
+{% else %}
+Quick review: identify obvious bugs and style issues only.
+{% endif %}
+```
+
+This allows one skill definition to serve multiple quality levels without separate files.
+
 ---
 
 ### 6. Output Styles — Personal (`~/.claude/output-styles/*.md`)
@@ -826,6 +853,27 @@ paths:
 
 - Rules **without** `paths:` → loaded unconditionally at session start (global)
 - Rules **with** `paths:` → loaded only when Claude works with files matching those globs. Supports single string or YAML list of globs (YAML list added v2.1.84). Globs match against **absolute** file paths.
+
+#### Rules `paths:` YAML List Syntax (v2.1.84+)
+
+In addition to a single string, `paths:` accepts a YAML list:
+
+```yaml
+---
+paths:
+  - src/api/**
+  - src/handlers/**
+  - tests/api/**
+globs:
+  - "**/*.test.ts"
+---
+```
+
+Both `paths:` and `globs:` are supported (aliases for the same feature).
+
+**Evaluation:** The rule loads if ANY pattern in the list matches a file currently open or being edited. Once loaded, it stays active for the entire session.
+
+**Priority:** Rules with matching paths load after all CLAUDE.md files but before Skills. Multiple matching rules all load (additive, not exclusive).
 
 **Symlink support**: `.claude/rules/` supports symlinks, so you can maintain a shared set of rules and link them into multiple projects. Circular symlinks are detected and handled gracefully.
 

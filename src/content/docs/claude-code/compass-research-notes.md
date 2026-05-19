@@ -1,7 +1,14 @@
 ---
-title: Compass Research Notes
+title: Compass Research Notes — Agent SDK, Hooks & MCP Deep Research
+description: >
+  Deep research notes on Claude Code internals — Agent SDK subprocess protocol, hooks execution model,
+  MCP server architecture, session management, CCA-F exam domain coverage, and verified implementation
+  patterns. Compiled through direct testing, official documentation analysis, and community validation.
+  Updated May 2026.
 sidebar:
-  order: 12
+  order: 22
+  label: Research Notes
+lastUpdated: 2026-05-19
 ---
 
 # Compass Research Notes

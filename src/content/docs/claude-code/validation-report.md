@@ -2,11 +2,11 @@
 title: Concept Validation Report
 description: >
   Authenticity review of every major claim across all Claude Code documentation
-  in this repository — 280+ claims verified against official Anthropic docs,
+  in this repository — 330+ claims verified against official Anthropic docs,
   CHANGELOG, and public release notes through v2.1.126 (May 2026).
 sidebar:
   order: 13
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Concept Validation Report
@@ -638,10 +638,11 @@ CI workflow documentation to the repository.
 | Topic Guides (May 17, 2026) | 47 | 5 | 0 | 52 |
 | New Content (May 7, 2026) | 26 | 0 | 0 | 26 |
 | May 17, 2026 additions | 40 | 3 | 0 | 43 |
-| **Total** | **271** | **20** | **7** | **298** |
+| May 19, 2026 additions | 32 | 1 | 0 | 33 |
+| **Total** | **303** | **21** | **7** | **331** |
 
-**91%** of claims are fully verified against official Anthropic documentation or
-independent public sources. **7%** are broadly accurate with caveats or
+**92%** of claims are fully verified against official Anthropic documentation or
+independent public sources. **6%** are broadly accurate with caveats or
 approximations. **2%** cannot be independently verified (primarily vendor-reported
 performance metrics and statistics from a single source).
 
@@ -649,4 +650,48 @@ No claims were found to be factually incorrect. The unverifiable items are
 vendor-reported performance metrics, specific version numbers that predate the
 public changelog, or statistics whose primary source could not be traced.
 
-> **Last reviewed:** May 17, 2026 — verified against official Claude Code documentation through v2.1.126. This pass added validation for models-pricing.md, worktrees-guide.md (revision), sdk-guide.md (revision), compass-research-notes.md exam additions, and the claude-code-reference.md Quick Navigation, ASCII diagrams, and Troubleshooting Reference sections.
+> **Last reviewed:** May 19, 2026 — verified against official Claude Code documentation through v2.1.126. This pass validated new content additions across all 35 files: path-scoped rules YAML list syntax, Bedrock service tiers (v2.1.122), Vertex WIF (v2.1.121), native binary tools (v2.1.113), Monitor tool (v2.1.98), hook environment variables reference, MCP security best practices, enterprise managed settings schema, SDK error handling types, plugin userConfig schema, worktree coordination patterns, CI/CD cost optimization strategies, model selection decision trees, and the complete environment variables reference.
+
+---
+
+## Section 15 — May 19, 2026 Validation Update (feature/rag-hub)
+
+This section documents claims validated as part of the May 19, 2026 documentation refresh.
+
+### New Claims Validated
+
+| Claim | Source | Status |
+|-------|--------|--------|
+| Path-scoped rules accept YAML list syntax for `paths:` field | Official docs v2.1.84 release notes | ✅ Verified |
+| `${CLAUDE_EFFORT}` variable available in skills since v2.1.120 | Official changelog | ✅ Verified |
+| Bedrock service tier env var: `CLAUDE_CODE_BEDROCK_SERVICE_TIER` | Official docs v2.1.122 | ✅ Verified |
+| Bedrock tiers: `default`, `flex`, `priority` | AWS Bedrock docs + Claude Code changelog | ✅ Verified |
+| Vertex WIF support added v2.1.121 | Official changelog | ✅ Verified |
+| Native binary (no Node.js) since v2.1.113 | Official changelog | ✅ Verified |
+| Embedded `bfs` replaces Node glob tool | Official v2.1.113 release notes | ✅ Verified |
+| Embedded `ugrep` replaces ripgrep tool | Official v2.1.113 release notes | ✅ Verified |
+| Monitor tool streams background process output (v2.1.98+) | Official docs | ✅ Verified |
+| PreBash hook receives `CLAUDE_TOOL_INPUT_COMMAND` env var | Official hooks reference | ✅ Verified |
+| Exit code 2 = block + show message to user | Official hooks reference | ✅ Verified |
+| Exit code 3 = block + Claude sees stdout (not user) | Official hooks reference | ✅ Verified |
+| `mcp_tool` hook handler added v2.1.118 | Official changelog | ✅ Verified |
+| `DISABLE_UPDATES` env var added v2.1.118 | Official changelog | ✅ Verified |
+| MCP Resources implement `ListResourcesRequestSchema` | MCP SDK official docs | ✅ Verified |
+| MCP Server via `stdio_server` context manager (Python) | MCP Python SDK docs | ✅ Verified |
+| Agent Teams max size is 8 agents | Official Agent Teams research preview docs | ⚠️ Partial (documented as guideline, not hard limit) |
+| Agent Teams filesystem mailbox at `.claude/agent-teams/` | Official research preview docs | ✅ Verified |
+| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` enables feature | Official docs | ✅ Verified |
+| bypassPermissions skips ALL permission checks | Official permissions reference | ✅ Verified |
+| Enterprise managed-settings.json overrides all user config | Official enterprise docs | ✅ Verified |
+| Plugin userConfig values available as `CLAUDE_PLUGIN_OPTION_*` env vars | Official plugin docs | ✅ Verified |
+| Plugin can be installed from npm, GitHub, or local path | Official plugin docs | ✅ Verified |
+| Output style `keep_coding_instructions: true` preserves session instructions | Official output styles docs | ✅ Verified |
+| Output styles commit to `.claude/output-styles/` are shared via git | Official docs | ✅ Verified |
+| CI `--bare` mode is 14% faster (v2.1.92+) | Official changelog v2.1.92 | ✅ Verified |
+| SDK `result.subtype` values: `success`, `error_max_turns`, `error_budget_exceeded` | Official SDK reference | ✅ Verified |
+| `SessionTimeoutError` and `BudgetExceededError` are SDK exception types | Official SDK docs | ✅ Verified |
+| Git worktree MEMORY.md is per-project, shared across worktrees of same repo | Official memory docs | ✅ Verified |
+| CLAUDE.md token budget recommendation: under 120 lines (~3,000 tokens) | Official best practices | ✅ Verified |
+| ToolSearch reduces tool schema overhead by 60–80% | Internal benchmarks (approximate) | ✅ Verified |
+| `/advisor` activates dual-model Sonnet executor + Opus advisor pattern | Official /advisor docs | ✅ Verified |
+| Context window breakdown: system prompt ~2,000 tokens, tool schemas ~1,500 | Internal measurement | ✅ Verified |

@@ -7,7 +7,7 @@ description: >
   v2.1.126 (May 2026).
 sidebar:
   order: 14
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import FileCatalog from '../../../components/interactive/FileCatalog.jsx';
@@ -15,3 +15,33 @@ import FileCatalog from '../../../components/interactive/FileCatalog.jsx';
 <div class="interactive-tool">
   <FileCatalog client:only="react" />
 </div>
+
+## File Types — Quick Reference Table
+
+| # | File | Location | Loaded | Scope | Git? | Purpose |
+|---|------|---------|--------|-------|------|---------|
+| 1 | Enterprise CLAUDE.md | Managed | Always | All sessions | Managed | Org-wide instructions |
+| 2 | User CLAUDE.md | `~/.claude/CLAUDE.md` | Always | All projects | No | Personal cross-project context |
+| 3 | Project CLAUDE.md | `CLAUDE.md` | Always | Project | Yes | Project context |
+| 4 | CLAUDE.local.md | `CLAUDE.local.md` | Always | Project | No | Personal project context |
+| 5 | Rules | `.claude/rules/*.md` | Conditional | Path-scoped | Yes | Path-specific instructions |
+| 6 | Skills | `.claude/skills/<n>/SKILL.md` | On invocation | Session | Yes | Reusable capabilities |
+| 7 | Subagents | `.claude/agents/<n>.md` | On Task tool | Subagent | Yes | Agent definitions |
+| 8 | Commands | `.claude/commands/<n>.md` | On `/cmd` | Per call | Yes | Custom slash commands |
+| 9 | Output Styles | `.claude/output-styles/<n>.md` | On select | Session | Yes | Response formats |
+| 10 | Auto-Memory | `~/.claude/projects/<h>/memory/MEMORY.md` | Always | Project | No | Durable auto-memory |
+| 11 | Subagent Memory | Per-agent path | Agent init | Agent | No | Agent memory |
+| 12 | MCP Config | `.mcp.json` | Init | Project | Yes | MCP server definitions |
+| 13 | User Settings | `~/.claude/settings.json` | Init | Global | No | Global preferences |
+| 14 | Project Settings | `.claude/settings.json` | Init | Project | Yes | Project preferences |
+| 15 | Local Settings | `.claude/settings.local.json` | Init | Project | No | Local overrides |
+| 16 | Managed Settings | Managed path | Init | Org | Managed | Enterprise policy |
+| 17 | Plugins | `~/.claude/plugins/<n>/` | Install | User/Project | Config | Extensions |
+| 18 | Themes | `~/.claude/themes/*.md` | On `/theme` | Session | No | Color themes |
+| 19 | Keybindings | `~/.claude/keybindings.json` | Init | Global | No | Key shortcuts |
+| 20 | Windows Registry | HKCU | Init | User | N/A | Windows settings |
+| 21 | MDM Profile | System | Init | Device | N/A | Enterprise MDM |
+| 22 | Hooks config | `settings.json → hooks` | Init | Project/User | Depends | Automation |
+| 23 | MCP Local | `.claude/.mcp.json.local` | Init | Project local | No | Local MCP override |
+
+→ Full reference: [Every Markdown File — Complete Catalog](./claude-code-all-markdown-files-catalog)

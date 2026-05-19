@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 12
   label: Slash Commands
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Slash Commands — Complete Reference
 
-> **Version:** v2.1.126 (May 17, 2026) · Covers all built-in commands through v2.1.126 plus the complete custom command authoring API.
+> **Version:** v2.1.126 (May 19, 2026) · Covers all built-in commands through v2.1.126 plus the complete custom command authoring API.
 
 Slash commands are short, typed directives you send in the Claude Code REPL to control session behavior, navigate history, manage configuration, and invoke pre-written workflows. They complement natural-language prompts by providing fast, deterministic access to features that would otherwise require verbose instructions or navigating a settings file.
 
@@ -880,7 +880,19 @@ Project commands live in `.claude/commands/` within the project root and are com
 
 ## 11. Special Variables in Custom Commands
 
-Custom command files support four variable mechanisms that make commands dynamic at invocation time.
+Custom command files support several variable mechanisms that make commands dynamic at invocation time. The following table summarises all available variables:
+
+| Variable | What it contains |
+|----------|-----------------|
+| `$ARGUMENTS` | Text typed after the slash command name |
+| `$FILE_PATH` | Path of currently open/focused file |
+| `$SELECTION` | Currently selected text (if supported) |
+| `$GIT_BRANCH` | Current git branch name |
+| `$GIT_ROOT` | Root of the git repository |
+| `$SESSION_ID` | Current Claude Code session ID |
+| `$1`, `$2`, `$3` | Space-separated positional arguments |
+| `@path/to/file` | File contents injected at invocation time |
+| `` !`cmd` `` | Shell stdout injected at invocation time |
 
 ### `$ARGUMENTS` — Full argument text
 
@@ -925,6 +937,134 @@ Compare the implementation of `authenticate` in `src/v1/auth.ts` versus `src/v2/
 ```
 
 Arguments that contain spaces must be quoted: `/compare "my function" file-a.ts file-b.ts`.
+
+---
+
+### `$FILE_PATH` — Currently focused file
+
+`$FILE_PATH` expands to the path of the file currently open or focused in the editor. Useful for commands that should operate on "the file I'm looking at right now."
+
+```markdown
+<!-- ~/.claude/commands/explain-file.md -->
+---
+description: Explain the purpose and structure of the currently focused file.
+allowed-tools: Read
+---
+
+Read and explain the following file in plain English:
+$FILE_PATH
+```
+
+If no file is focused when the command is invoked, `$FILE_PATH` is an empty string.
+
+---
+
+### `$SELECTION` — Currently selected text
+
+`$SELECTION` expands to the text currently selected in the editor (if the terminal integration supports selection detection). Useful for commands that operate on a highlighted snippet.
+
+```markdown
+<!-- ~/.claude/commands/explain-selection.md -->
+---
+description: Explain the selected code snippet.
+allowed-tools: Read
+---
+
+Explain the following code in plain English, suitable for a junior developer:
+
+$SELECTION
+```
+
+If no text is selected, `$SELECTION` is an empty string — handle this case in your command body.
+
+---
+
+### `$GIT_BRANCH` — Current git branch name
+
+`$GIT_BRANCH` expands to the name of the currently checked-out git branch (equivalent to `git rev-parse --abbrev-ref HEAD`). Available without running a shell command.
+
+```markdown
+<!-- ~/.claude/commands/branch-review.md -->
+---
+description: Review conventions and expected changes for the current branch.
+---
+
+I'm on branch: $GIT_BRANCH
+
+Based on the branch name, explain:
+1. What type of work this branch likely contains (feature, bugfix, hotfix, etc.)
+2. What the expected scope of changes should be
+3. Any naming convention issues to flag
+```
+
+---
+
+### `$GIT_ROOT` — Repository root path
+
+`$GIT_ROOT` expands to the absolute path of the root of the current git repository. Useful for constructing absolute paths to project files.
+
+```markdown
+<!-- ~/.claude/commands/load-standards.md -->
+---
+description: Load and apply project coding standards from the repository root.
+---
+
+Apply the following coding standards when reviewing code:
+
+@$GIT_ROOT/.claude/standards/review-checklist.md
+
+Diff to review:
+$ARGUMENTS
+```
+
+---
+
+### `$SESSION_ID` — Current session identifier
+
+`$SESSION_ID` expands to the unique identifier of the current Claude Code session (same ID shown in `/debug`). Useful for logging, traceability, and audit trails in commands that write to logs.
+
+```markdown
+<!-- ~/.claude/commands/log-decision.md -->
+---
+description: Log an architectural decision with the current session ID for traceability.
+allowed-tools: Bash, Write
+---
+
+Log this architectural decision: $ARGUMENTS
+
+Session ID: $SESSION_ID
+Branch: $GIT_BRANCH
+
+Append the following to docs/decisions/adr-log.md:
+
+## Decision: $ARGUMENTS
+- **Date:** (use current date)
+- **Session:** $SESSION_ID
+- **Branch:** $GIT_BRANCH
+- **Decision:** (describe the decision made)
+- **Rationale:** (explain why)
+```
+
+---
+
+### Shell Execution in Custom Commands
+
+Use `!` prefix to run shell commands inline:
+
+```markdown
+<!-- .claude/commands/show-context.md -->
+---
+description: Show relevant context before starting work
+---
+Current branch: !git branch --show-current
+Recent commits: !git log --oneline -5
+Failing tests: !npm test 2>&1 | tail -20
+Changed files: !git diff --name-only HEAD~1
+
+Now analyze the above context and suggest what to work on next.
+```
+
+Run with `/show-context` — the shell commands execute and their output is injected before Claude processes the prompt.
 
 ---
 
@@ -1354,6 +1494,7 @@ End with an overall risk rating: SAFE TO MERGE / REVIEW REQUIRED / DO NOT MERGE
 | `/mcp` | MCP | View/manage MCP server connections |
 | `/branch [name]` | Git | Create worktree branch + new session |
 | `/init` | Setup | Auto-generate CLAUDE.md from codebase analysis |
+| `/status` | Info | Show current session status: model, mode, context usage |
 | `/doctor` | Diagnostics | Health check with auto-repair |
 | `/debug` | Diagnostics | Debug panel: session state, hooks, tool log |
 | `/terminal-setup` | Diagnostics | Configure scroll, clipboard, iTerm2 |
@@ -2349,6 +2490,11 @@ Frontmatter Fields
 
 Variable Injection
   $ARGUMENTS      Everything typed after the command name
+  $FILE_PATH      Path of currently open/focused file
+  $SELECTION      Currently selected text (if supported)
+  $GIT_BRANCH     Current git branch name
+  $GIT_ROOT       Root of the git repository
+  $SESSION_ID     Current Claude Code session ID
   $1, $2, $3      Space-separated positional arguments
   @path/to/file   File contents injected at invocation time
   !`cmd`          Shell stdout injected at invocation time

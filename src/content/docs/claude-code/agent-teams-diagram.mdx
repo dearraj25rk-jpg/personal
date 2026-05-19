@@ -9,7 +9,7 @@ description: >
   for choosing the right pattern. v2.1.126 (May 2026).
 sidebar:
   order: 20
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import AgentTeamsDiagram from '../../../components/interactive/AgentTeamsDiagram.jsx';
@@ -17,3 +17,69 @@ import AgentTeamsDiagram from '../../../components/interactive/AgentTeamsDiagram
 <div class="interactive-tool">
   <AgentTeamsDiagram client:only="react" />
 </div>
+
+## Agent Patterns Quick Reference
+
+### Pattern Comparison: Task Tool vs Agent Teams
+
+| Aspect | Task Tool | Agent Teams |
+|--------|----------|------------|
+| **Launch** | `Task` tool in conversation | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` |
+| **Topology** | Orchestrator → Subagent (tree) | Peer-to-peer mesh |
+| **Communication** | Tool input/output | Filesystem mailbox |
+| **Lifetime** | Single task, then done | Persistent across tasks |
+| **Memory** | Isolated MEMORY.md | Shared team mailbox |
+| **Status** | Stable | Research Preview |
+| **Use for** | Parallel isolated work | Collaborative agents |
+
+### Subagent YAML Frontmatter
+
+```yaml
+---
+name: code-reviewer
+description: Reviews pull requests for correctness and style
+model: claude-sonnet-4-6
+tools:
+  - Read
+  - Bash
+  - WebFetch
+allowedPaths:
+  - src/**
+  - tests/**
+maxTurns: 20
+memory: isolated        # isolated | shared | none
+temperature: 0.3
+---
+```
+
+### Task Tool Usage
+
+```python
+# In Claude's tool use
+Task(
+  description="Review the authentication module",
+  prompt="Read src/auth/ and identify security issues. Report findings.",
+  tools=["Read", "Grep"]
+)
+```
+
+### Agent Teams Filesystem Mailbox
+
+```
+.claude/agent-teams/
+├── team.json              ← team config
+├── mailbox/
+│   ├── orchestrator/
+│   │   ├── inbox/
+│   │   └── outbox/
+│   ├── agent-1/
+│   │   ├── inbox/
+│   │   └── outbox/
+│   └── agent-2/
+│       ├── inbox/
+│       └── outbox/
+└── shared/
+    └── state.json
+```
+
+→ Full reference: [Agent Teams & Subagents Guide](./agent-teams-guide)

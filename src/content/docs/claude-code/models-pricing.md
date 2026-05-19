@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 16
   label: Models & Pricing
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Models, Pricing & Effort — Complete Reference
 
-> **Version**: Claude Code v2.1.126 | **Last Updated**: May 17, 2026
+> **Version**: Claude Code v2.1.126 | **Last Updated**: May 19, 2026
 
 ---
 
@@ -74,6 +74,28 @@ Speed:       ██████████                      Opus 4.7
 Cost (input):$15.00/M                        Opus 4.7 & 4.6
              $3.00/M                         Sonnet 4.6
              $0.80/M                         Haiku 4.5
+```
+
+### Model Selection Decision Tree
+
+```
+What is your task?
+│
+├── Simple, deterministic (format, rename, small edit)
+│   └── → Haiku 4.5 (cheapest, fastest)
+│
+├── Standard feature work (add function, fix bug, write test)
+│   └── → Sonnet 4.6 (default) with effort=normal
+│
+├── Complex multi-file refactor or architecture
+│   ├── Context < 50K tokens → Sonnet 4.6 with effort=high
+│   └── Context > 50K tokens → Opus 4.6 (or Opus 4.7 for 1M window)
+│
+├── Critical debugging, ambiguous requirements, strategic decisions
+│   └── → Opus 4.7 with effort=xhigh (or use /advisor)
+│
+└── Long document analysis (legal, architecture docs > 200K tokens)
+    └── → Opus 4.7 (1M context window)
 ```
 
 ---
@@ -586,6 +608,21 @@ export CLAUDE_CODE_BEDROCK_SERVICE_TIER=priority
 | `flex` | Variable/higher | 20–40% lower | CI/CD, batch processing, non-interactive work |
 | `priority` | Lowest | 30–50% higher | Real-time interactive sessions at scale, SLA-bound pipelines |
 
+### AWS Bedrock Service Tiers (v2.1.122+)
+
+```bash
+# Three service tier options
+CLAUDE_CODE_BEDROCK_SERVICE_TIER=default    # Standard (default)
+CLAUDE_CODE_BEDROCK_SERVICE_TIER=flex       # Flexible capacity
+CLAUDE_CODE_BEDROCK_SERVICE_TIER=priority   # Priority throughput
+```
+
+| Tier | Throughput | Latency | Best for |
+|------|-----------|---------|---------|
+| `default` | Standard | Standard | Normal development work |
+| `flex` | Flexible (scales) | Variable | Batch/async workloads |
+| `priority` | High (reserved) | Low | Time-sensitive CI/CD |
+
 ### Bedrock Authentication Patterns
 
 ```bash
@@ -857,6 +894,19 @@ In settings.json:
 ---
 
 ## 11. Cost Optimization Strategies
+
+### Cost Optimization Patterns
+
+| Pattern | Savings | Implementation |
+|---------|---------|---------------|
+| Use Haiku for bulk edits | 80–90% | `--model haiku` for formatting/docs |
+| Use low effort for simple tasks | 40–60% | `CLAUDE_CODE_EFFORT=low` |
+| Warm prompt cache | 70–75% (cached tokens) | Send CLAUDE.md content before heavy work |
+| Use minimal output style | 30–50% (output tokens) | `/config` → select Minimal output style |
+| Set max budget | Prevent runaway costs | `--max-budget-usd 2.00` |
+| Use /compact frequently | 30–50% | Compact at milestones: `/compact "keep: ..."` |
+| Batch CI reviews | Cache reuse | Run multiple PR reviews in same session |
+| Use --bare in CI | 14% faster | `claude -p --bare "..."` |
 
 ### Strategy 1: Right-Size Model and Effort
 

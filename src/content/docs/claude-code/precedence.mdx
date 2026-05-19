@@ -7,7 +7,7 @@ description: >
   mechanics, and scope boundaries. v2.1.126 (May 2026).
 sidebar:
   order: 12
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import PrecedenceDiagram from '../../../components/interactive/PrecedenceDiagram.jsx';
@@ -15,3 +15,70 @@ import PrecedenceDiagram from '../../../components/interactive/PrecedenceDiagram
 <div class="interactive-tool">
   <PrecedenceDiagram client:only="react" />
 </div>
+
+## Precedence Hierarchy — Quick Reference
+
+### Full Precedence Stack (Highest → Lowest)
+
+```
+1. Enterprise Managed Settings     ← Cannot be overridden by anything
+       ↓
+2. CLI flags / environment vars    ← Per-invocation overrides
+       ↓
+3. .claude/settings.local.json     ← Local project (gitignore)
+       ↓
+4. .claude/settings.json           ← Project settings (commit to git)
+       ↓
+5. ~/.claude/settings.json         ← User global settings
+       ↓
+6. ~/.claude/CLAUDE.md             ← User context (all projects)
+       ↓
+7. CLAUDE.md (project root)        ← Project context
+       ↓
+8. Subdirectory CLAUDE.md files    ← Path-specific context (cumulative)
+       ↓
+9. CLAUDE.local.md                 ← Personal overrides
+       ↓
+10. .claude/rules/*.md             ← Path-scoped rules (conditional)
+       ↓
+11. Skills / Output Styles         ← On-demand (session scope)
+       ↓
+12. Auto-Memory (MEMORY.md)        ← Per-project durable memory
+```
+
+### Conflict Resolution Rules
+
+| Conflict type | Resolution |
+|--------------|-----------|
+| Same setting in enterprise vs user | Enterprise wins (always) |
+| Same setting in project vs user settings | Project settings win |
+| Same setting in local vs project settings | Local settings win |
+| Multiple CLAUDE.md files (different paths) | All load; deeper path appended last |
+| Same key in two rules files | Last-loaded alphabetically wins |
+| Rules `paths:` overlap | Both rules load for overlapping files |
+| Skills loaded simultaneously | Each skill is isolated, no conflict |
+
+### Override Syntax Examples
+
+```json
+// .claude/settings.json — allow specific tool
+{
+  "permissions": {
+    "allow": ["Bash(git *)", "Read", "Edit"],
+    "deny": ["Bash(rm -rf *)"]
+  }
+}
+```
+
+```markdown
+<!-- .claude/rules/api.md -->
+---
+paths:
+  - src/api/**
+  - tests/api/**
+---
+# API Development Rules
+Always validate input with Zod. Never expose raw DB errors.
+```
+
+→ Full reference: [Configuration Guide — CLAUDE.md vs Skills vs Rules](./claude-code-config-guide)

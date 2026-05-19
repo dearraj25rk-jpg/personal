@@ -1,14 +1,14 @@
 ---
 title: "Claude Code: Context, Cost & Token Efficiency — Reference"
 description: "Complete reference for context management, prompt caching, token budgets, model selection, effort controls, hooks, environment variables, and the advisor tool in Claude Code v2.1.126+. Covers all five CCA-F exam domains."
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 sidebar:
   order: 5
 ---
 
 # Claude Code: Context, Cost & Token Efficiency — Complete Reference
 
-> **Last updated:** May 17, 2026
+> **Last updated:** May 19, 2026
 
 ---
 
@@ -264,6 +264,31 @@ Claude can invoke ToolSearch using either a **regex variant** (`tool_search_tool
 - **Fix:** Strip the server name prefix from your query entirely. Use just `navigate evaluate` or `browser evaluate page`
 
 **Shared failure mode:** When neither variant returns the needed tool, Claude either attempts to call it by guessed name (fails with unknown tool) or halts and asks the user. Mitigation: keep tool descriptions distinct and keyword-rich; avoid tool names that differ only by suffix (`get_user`, `get_users`, `get_user_by_id` → `get_user_single`, `get_users_list`, `get_user_by_id`).
+
+### 3.4 ToolSearch Lazy Loading (v2.1.7+)
+
+ToolSearch defers loading rarely-used tool schemas until needed, reducing context overhead:
+
+```
+Before ToolSearch (v2.1.6 and earlier):
+  Context: [system prompt] + [ALL tool schemas] + [CLAUDE.md] + [conversation]
+  Tool schema overhead: ~3,000–8,000 tokens regardless of task
+
+After ToolSearch (v2.1.7+):
+  Context: [system prompt] + [ACTIVE tool schemas only] + [CLAUDE.md] + [conversation]
+  Tool schema overhead: ~500–1,500 tokens (only loaded tools)
+  On-demand: ToolSearch loads a tool schema when Claude needs it
+```
+
+**Efficiency gain:** 60–80% reduction in tool schema token overhead for typical sessions.
+
+**How it works:**
+1. Session starts with only core tools (Read, Write, Edit, Bash, Glob, Grep) loaded
+2. When Claude needs a rarely-used tool, ToolSearch fetches its schema
+3. `ToolSearchLoad` hook fires (can be monitored)
+4. Tool schema added to context, tool becomes callable
+
+**Implications for custom tools:** Register custom tools with ToolSearch for deferred loading.
 
 ---
 
@@ -1020,6 +1045,37 @@ claude -p "Review this diff for security issues" --bare \
 
 ## 14. The `/advisor` Slash Command — Day-to-Day Workflow
 
+### The /advisor Command — Dual-Model Efficiency
+
+`/advisor` routes complex reasoning questions to Opus while Sonnet handles execution:
+
+```
+Sonnet 4.6 (executor):         Cost: ~$3–15/M tokens
+  ↓ periodic snapshots
+Opus 4.7 (advisor):            Cost: ~$15–75/M tokens (but rarely)
+```
+
+**When to use /advisor:**
+- Architecture decisions: "How should I structure this?"
+- Complex debugging: "Why is this test flaky?"
+- Strategic planning: "What's the best approach for X?"
+- Code review: "Are there subtle security issues here?"
+
+**Cost comparison (1000-turn session):**
+| Mode | Est. cost | Quality |
+|------|----------|---------|
+| Haiku only | ~$0.50–2 | Basic tasks |
+| Sonnet only | ~$5–15 | Standard work |
+| /advisor (Sonnet + Opus reviews) | ~$15–30 | Complex decisions |
+| Opus only | ~$50–150 | Maximum quality |
+
+**Activate:**
+```bash
+/advisor          # Toggle on
+/advisor now      # Force immediate Opus consultation
+/advisor off      # Turn off
+```
+
 ### 14.1 What `/advisor` Actually Is
 
 Typing `/advisor` in Claude Code invokes the built-in advisor skill, which causes Claude to call the `advisor()` tool internally. No parameters, no configuration. What happens immediately:
@@ -1694,4 +1750,4 @@ Scenario 3: CI/CD automated review pipeline
 
 ---
 
-*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Introducing Claude Opus 4.7](https://www.anthropic.com/news/claude-opus-4-7), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated May 17, 2026 (v2.1.126).*
+*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Introducing Claude Opus 4.7](https://www.anthropic.com/news/claude-opus-4-7), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated May 19, 2026 (v2.1.126).*

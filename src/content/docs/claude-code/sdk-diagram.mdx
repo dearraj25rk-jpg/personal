@@ -10,7 +10,7 @@ description: >
   web apps, and parallel workloads. Agent SDK v1 · Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 21
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import SDKDiagram from '../../../components/interactive/SDKDiagram.jsx';
@@ -18,3 +18,72 @@ import SDKDiagram from '../../../components/interactive/SDKDiagram.jsx';
 <div class="interactive-tool">
   <SDKDiagram client:only="react" />
 </div>
+
+## Agent SDK Quick Reference
+
+### Architecture
+
+```
+Your Application
+        │
+        │  stdin: {"type":"user","message":"..."}
+        ▼
+   claude -p --output-format stream-json
+        │
+        │  stdout (newline-delimited JSON stream):
+        │  {"type":"system","subtype":"init",...}
+        │  {"type":"assistant","message":{...},"turn_number":1}
+        │  {"type":"tool_result",...}
+        │  {"type":"result","subtype":"success","total_cost_usd":0.042}
+        ▼
+Your Application (parse stream events)
+```
+
+### All SDK Event Types
+
+| Event type | Subtype | Contains |
+|-----------|---------|---------|
+| `system` | `init` | `session_id`, `model`, `tools`, `mcp_servers` |
+| `assistant` | — | `message` (full API response), `turn_number` |
+| `user` | — | Echoed user message or tool results |
+| `tool_result` | — | Tool name, output, duration |
+| `result` | `success` | `total_cost_usd`, `session_id`, `num_turns` |
+| `result` | `error` | `error` message, error `type` |
+| `result` | `error_max_turns` | Exceeded `--max-turns` |
+| `result` | `error_budget_exceeded` | Exceeded `--max-budget-usd` |
+
+### Python: Minimal Usage
+
+```python
+import anthropic
+
+client = anthropic.Anthropic()
+with client.beta.claude_code.sessions.stream(
+    max_turns=5,
+    tools=["Read", "Edit", "Bash"],
+    initial_message="Fix the failing tests in src/",
+) as stream:
+    for event in stream:
+        if event.type == "assistant":
+            print(event.message.content[0].text)
+        elif event.type == "result":
+            print(f"Cost: ${event.total_cost_usd:.4f}")
+```
+
+### TypeScript: StatefulClient
+
+```typescript
+import { ClaudeCode } from "@anthropic-ai/claude-code";
+
+const client = new ClaudeCode.StatefulClient();
+const session = await client.createSession({ tools: ["Read", "Edit", "Bash"] });
+
+const result = await session.send("Refactor the auth module for better error handling");
+console.log(result.totalCostUsd);
+
+// Continue same session
+const result2 = await session.send("Now add tests for the refactored code");
+await session.close();
+```
+
+→ Full reference: [Agent SDK Guide](./sdk-guide)

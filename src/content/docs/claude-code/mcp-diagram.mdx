@@ -9,7 +9,7 @@ description: >
   MCP Spec 1.1 · Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 19
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import MCPDiagram from '../../../components/interactive/MCPDiagram.jsx';
@@ -17,3 +17,69 @@ import MCPDiagram from '../../../components/interactive/MCPDiagram.jsx';
 <div class="interactive-tool">
   <MCPDiagram client:only="react" />
 </div>
+
+## MCP Quick Reference
+
+### Architecture Layers
+
+```
+┌─────────────────────────────────────────┐
+│              MCP HOST                   │
+│   (Claude Code, Claude Desktop, IDEs)   │
+│                                         │
+│   ┌─────────────────────────────────┐   │
+│   │          MCP CLIENT             │   │
+│   │  (one client per server)        │   │
+│   └──────────────┬──────────────────┘   │
+└──────────────────┼──────────────────────┘
+                   │ JSON-RPC 2.0
+   ┌───────────────▼──────────────────────┐
+   │           MCP SERVER                 │
+   │  Tools | Resources | Prompts         │
+   │  (your database, API, filesystem)    │
+   └──────────────────────────────────────┘
+```
+
+### Three Primitives
+
+| Primitive | Claude can | Analogy | Example |
+|-----------|-----------|---------|---------|
+| **Tools** | Call (execute actions) | Function call | `query_database`, `send_email` |
+| **Resources** | Read (get data) | File/URL | `file://project/schema.sql` |
+| **Prompts** | Use (preset templates) | Snippet | `code-review`, `summarize-pr` |
+
+### Transport Types
+
+| Transport | Status | When to use |
+|-----------|--------|------------|
+| `stdio` | **Recommended** | Local servers — simple, secure |
+| `http` (Streamable) | Current | Remote/cloud servers |
+| `sse` | **Deprecated** | Legacy only |
+
+### Configuration Scopes
+
+| Scope | File | Who it applies to |
+|-------|------|------------------|
+| Project | `.mcp.json` (root) | Anyone on the project |
+| User | `~/.claude/.mcp.json` | You, across all projects |
+| Local | `.claude/.mcp.json.local` | You, this project only |
+| Enterprise | Managed config | All org users |
+
+### Official MCP Servers (v2.1.126)
+
+| Server | Key tools | Install |
+|--------|----------|---------|
+| `filesystem` | read/write/search files | `@modelcontextprotocol/server-filesystem` |
+| `github` | repos, PRs, issues | `@modelcontextprotocol/server-github` |
+| `postgres` | query, schema inspection | `@modelcontextprotocol/server-postgres` |
+| `sqlite` | query, insert, schema | `@modelcontextprotocol/server-sqlite` |
+| `brave-search` | web search | `@modelcontextprotocol/server-brave-search` |
+| `fetch` | HTTP fetch | `@modelcontextprotocol/server-fetch` |
+| `memory` | KV store with embeddings | `@modelcontextprotocol/server-memory` |
+| `puppeteer` | browser automation | `@modelcontextprotocol/server-puppeteer` |
+| `slack` | channels, messages | `@modelcontextprotocol/server-slack` |
+| `google-maps` | geocoding, places | `@modelcontextprotocol/server-google-maps` |
+| `sentry` | issues, errors | `@modelcontextprotocol/server-sentry` |
+| `sequential-thinking` | multi-step reasoning | `@modelcontextprotocol/server-sequential-thinking` |
+
+→ Full reference: [MCP Servers — Architecture & Development](./mcp-servers-guide)

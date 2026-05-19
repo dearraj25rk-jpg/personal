@@ -8,7 +8,7 @@ description: >
   approach. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 17
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import AdvisorDiagram from '../../../components/interactive/AdvisorDiagram.jsx';
@@ -16,3 +16,55 @@ import AdvisorDiagram from '../../../components/interactive/AdvisorDiagram.jsx';
 <div class="interactive-tool">
   <AdvisorDiagram client:only="react" />
 </div>
+
+## /advisor Quick Reference
+
+### What /advisor Does
+
+```
+Normal session (default):
+  ┌──────────────────────────────────┐
+  │  claude-sonnet-4-6 (executor)    │
+  │  Does everything itself          │
+  └──────────────────────────────────┘
+
+/advisor activated:
+  ┌──────────────────────────────────┐
+  │  claude-sonnet-4-6 (executor)    │  ← you talk to this
+  │  Writes code, runs tools         │
+  │            │                     │
+  │            │ Context snapshot    │
+  │            ▼                     │
+  │  claude-opus-4-7 (advisor)       │  ← reviews periodically
+  │  Provides strategic guidance     │
+  └──────────────────────────────────┘
+```
+
+### When Advisor Fires
+
+| Trigger | Condition |
+|---------|----------|
+| Turn-count | Every N turns (configurable) |
+| Complexity threshold | When executor signals uncertainty |
+| Manual | `/advisor now` forces immediate consultation |
+| Checkpoint | After major file changes |
+
+### Cost Comparison
+
+| Mode | Cost per 1000-turn session | Quality |
+|------|--------------------------|---------|
+| Sonnet only | ~$5–15 | Good |
+| /advisor (Sonnet + Opus reviews) | ~$20–45 | Better for complex tasks |
+| Opus only | ~$50–150 | Best, slowest |
+
+### Activating /advisor
+
+```bash
+# In a Claude Code session
+/advisor                    # Toggle on/off
+/advisor --frequency 5      # Advisor every 5 turns
+/advisor --model opus-4-7   # Use specific Opus model
+/advisor now                # Force immediate consultation
+```
+
+→ Full reference: [Models & Pricing](./models-pricing)

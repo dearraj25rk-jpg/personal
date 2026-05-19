@@ -8,12 +8,12 @@ description: >
 sidebar:
   order: 5
   label: Hooks System
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Hooks System — Complete Reference
 
-> **Version:** v2.1.126 (May 17, 2026) · Hooks were introduced in v1.0.x and have grown to 30+ events through v2.1.126.
+> **Version:** v2.1.126 (May 19, 2026) · Hooks were introduced in v1.0.x and have grown to 30+ events through v2.1.126.
 
 Hooks are shell commands (or sub-agents) that fire automatically at well-defined lifecycle points during a Claude Code session. They let you intercept, audit, block, or augment Claude's behaviour without modifying any Claude Code internals.
 
@@ -285,25 +285,46 @@ If your `Stop` hook exits 2, Claude is forced to continue the session (as if the
 
 | Category | Event | Fires When | Blocks? | Exit 2 Effect |
 |----------|-------|-----------|---------|---------------|
-| Session | `SessionStart` | Session opens | No | Ignored |
-| Session | `SessionEnd` | Session closes | No | Ignored |
+| Session | `PreSessionStart` | Before a new session initialises | **Yes** | Session does not start |
+| Session | `PostSessionStart` | After session initialises (tools/MCP ready) | No | Ignored |
+| Session | `Stop` | Claude returns end_turn | **Yes** | Forces Claude to continue |
+| Session | `PostSessionEnd` | After session exits (cleanup) | No | Ignored |
+| Session | `PreCompact` | Before context compaction (manual or auto) | No | Yes — stdout injected |
+| Session | `PostCompact` | After context compaction completes | No | Ignored |
 | Session | `Notification` | Permission prompt or idle alert | No | Ignored |
-| Session | `PreCompact` | Before context compaction | No | Ignored |
-| Tool | `PreToolUse` | Before tool executes | **Yes** | Tool does not execute |
-| Tool | `PostToolUse` | After tool succeeds | **Yes** | Tool result rejected |
-| Tool | `PostToolUseFailure` | After tool fails | No | Ignored |
-| Agent | `SubagentStart` | Task subagent spawns | No | Ignored |
-| Agent | `SubagentStop` | Task subagent finishes | **Yes** | Subagent result rejected |
-| Agent | `TaskCreated` | Task tool call begins | No | Ignored |
-| Agent | `TaskCompleted` | Task tool call ends | No | Ignored |
-| Prompt | `UserPromptSubmit` | User submits a message | **Yes** | Prompt not sent to Claude |
-| Turn | `Stop` | Claude returns end_turn | **Yes** | Forces Claude to continue |
+| Tool | `PreToolUse` | Before any tool executes | **Yes** | Tool does not execute |
+| Tool | `PostToolUse` | After a tool succeeds | **Yes** | Tool result rejected |
+| Tool | `PostToolUseFailure` | After a tool fails | No | Ignored |
+| Tool | `PreBash` | Before a Bash tool execution | **Yes** | Bash does not execute |
+| Tool | `PostBash` | After a Bash tool execution | No | Ignored |
+| Tool | `PreFileWrite` | Before any file write (Edit/Write/MultiEdit) | **Yes** | Write does not occur |
+| Tool | `PostFileWrite` | After any file write completes | No | Ignored |
+| Tool | `PreFileRead` | Before a Read tool execution | **Yes** | Read does not occur |
+| Tool | `PostFileRead` | After a Read tool execution | No | Ignored |
+| Tool | `PreWebFetch` | Before a WebFetch tool execution | **Yes** | Fetch does not occur |
+| Tool | `PostWebFetch` | After a WebFetch tool execution | No | Ignored |
+| Tool | `PreWebSearch` | Before a WebSearch tool execution | **Yes** | Search does not occur |
+| Tool | `PostWebSearch` | After a WebSearch tool execution | No | Ignored |
+| Agent | `PreTask` | Before a Task subagent is spawned | **Yes** | Task does not execute |
+| Agent | `PostTask` | After a Task subagent finishes | **Yes** | Subagent result rejected |
+| Agent | `PreAgentTeamMessage` | Before an agent team message is sent | **Yes** | Message not delivered |
+| Agent | `PostAgentTeamMessage` | After an agent team message is received | No | Ignored |
+| Agent | `SubagentStart` | When a subagent (Task tool) begins | No | Ignored |
+| Agent | `SubagentStop` | When a subagent finishes | **Yes** | Subagent result rejected |
+| User | `PrePrompt` | Before Claude processes user input | **Yes** | Prompt not sent to Claude |
+| User | `PostPrompt` | After Claude responds to user | No | Ignored |
+| User | `UserPromptSubmit` | User submits a message (alias for PrePrompt) | **Yes** | Prompt not sent to Claude |
+| MCP | `PreMCPTool` | Before an MCP tool call executes | **Yes** | MCP call does not occur |
+| MCP | `PostMCPTool` | After an MCP tool call completes | No | Ignored |
+| MCP | `MCPServerConnected` | MCP server connects | No | Ignored |
+| MCP | `MCPServerDisconnected` | MCP server drops | No | Ignored |
+| Monitor | `PreMonitor` | Before a Monitor tool execution | **Yes** | Monitor does not start |
+| Monitor | `PostMonitor` | After a Monitor tool execution | No | Ignored |
+| ToolSearch | `ToolSearchLoad` | When ToolSearch loads deferred tool schemas | No | Ignored |
 | Plan | `PlanApproved` | User approves a plan | No | Ignored |
 | Plan | `PlanRejected` | User rejects a plan | No | Ignored |
 | Rewind | `CheckpointCreated` | Rewind checkpoint saved | No | Ignored |
 | Rewind | `RewindRequested` | User triggers a rewind | No | Ignored |
-| MCP | `MCPServerConnected` | MCP server connects | No | Ignored |
-| MCP | `MCPServerDisconnected` | MCP server drops | No | Ignored |
 
 ---
 
@@ -494,6 +515,31 @@ echo "Session: $CLAUDE_SESSION_ID"
 echo "Model: $CLAUDE_MODEL"
 echo "Project: $CLAUDE_PROJECT_DIR"
 ```
+
+---
+
+## 5.1 Hook Environment Variables (Injected by Claude Code)
+
+All hooks receive these environment variables:
+
+| Variable | Available in | Contains |
+|----------|-------------|---------|
+| `CLAUDE_SESSION_ID` | All hooks | Unique session identifier |
+| `CLAUDE_TOOL_NAME` | Tool hooks | Name of the tool being called |
+| `CLAUDE_TOOL_INPUT` | PreToolUse hooks | JSON-encoded tool input |
+| `CLAUDE_TOOL_OUTPUT` | PostToolUse hooks | Tool output (truncated at 10KB) |
+| `CLAUDE_TOOL_EXIT_CODE` | PostToolUse hooks | Exit code of the tool |
+| `CLAUDE_PROMPT` | PrePrompt/PostPrompt | The user's prompt text |
+| `CLAUDE_BASH_COMMAND` | PreBash/PostBash | The bash command string |
+| `CLAUDE_FILE_PATH` | PreFileWrite/PostFileWrite | File path being written |
+| `CLAUDE_MCP_TOOL` | PreMCPTool/PostMCPTool | MCP tool identifier (server:tool) |
+| `CLAUDE_AGENT_ID` | Agent hooks | Subagent identifier |
+| `CLAUDE_COMPACT_REASON` | PreCompact | Why compaction triggered |
+| `CLAUDE_MODEL` | All hooks | Current model name |
+| `CLAUDE_PROJECT_DIR` | All hooks | Absolute path to project root |
+| `CLAUDE_HOOK_EVENT` | All hooks | Name of the event that fired |
+
+> **Note:** Hook scripts also receive a full JSON payload on **stdin** (see Section 8: Hook Payload Reference). Environment variables are a convenience for simple shell scripts; complex hooks should parse stdin JSON for the full structured data.
 
 ---
 
@@ -758,6 +804,76 @@ echo "Active environment: ${NODE_ENV:-${ENVIRONMENT:-development}}"
   ]
 }
 ```
+
+### Security Gates with Hooks
+
+Use `PreBash` to block dangerous commands:
+
+```json
+{
+  "hooks": {
+    "PreBash": [
+      {
+        "type": "command",
+        "command": ".claude/hooks/bash-security.sh"
+      }
+    ]
+  }
+}
+```
+
+```bash
+#!/bin/bash
+# .claude/hooks/bash-security.sh
+# Exit 2 to block and show message to user
+
+COMMAND="$CLAUDE_TOOL_INPUT_COMMAND"
+
+# Block destructive patterns
+BLOCKED_PATTERNS=(
+  "rm -rf /"
+  "dd if="
+  "mkfs"
+  "> /dev/sd"
+  "chmod 777 /"
+  "curl .* | bash"
+  "wget .* | bash"
+)
+
+for pattern in "${BLOCKED_PATTERNS[@]}"; do
+  if echo "$COMMAND" | grep -qE "$pattern"; then
+    echo "BLOCKED: Command matches dangerous pattern: $pattern"
+    exit 2  # Block and show message to user
+  fi
+done
+
+exit 0  # Allow
+```
+
+### Audit Logging Pattern
+
+Log all tool executions to an audit file:
+
+```bash
+#!/bin/bash
+# .claude/hooks/audit-log.sh
+# PostToolUse hook — observe-only (exit 0 always)
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+SESSION_ID="${CLAUDE_SESSION_ID:-unknown}"
+TOOL_NAME="${CLAUDE_TOOL_NAME:-unknown}"
+
+# Get first 200 chars of tool input/output from env
+INPUT="${CLAUDE_TOOL_INPUT:0:200}"
+EXIT_CODE="${CLAUDE_TOOL_EXIT_CODE:-0}"
+
+echo "{\"ts\":\"$TIMESTAMP\",\"session\":\"$SESSION_ID\",\"tool\":\"$TOOL_NAME\",\"input\":\"$INPUT\",\"exit\":$EXIT_CODE}" \
+  >> ~/.claude/audit.jsonl
+
+exit 0  # Observe-only, never block
+```
+
+---
 
 ### Pattern 10: Security Gate — Full Pipeline
 

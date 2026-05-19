@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 10
   label: Agent SDK
-lastUpdated: 2026-05-07
+lastUpdated: 2026-05-19
 ---
 
 # Claude Code Agent SDK — Complete Guide
@@ -545,6 +545,83 @@ async def safe_run(prompt: str):
         print(f"SDK error: {e.code} — {e.message}")
         return None
 ```
+
+### Error Handling in SDK Sessions
+
+```python
+import anthropic
+
+async def run_with_error_handling():
+    client = anthropic.AsyncAnthropic()
+    try:
+        async with client.beta.claude_code.sessions.stream(
+            max_turns=10,
+            initial_message="Refactor the authentication module",
+        ) as stream:
+            async for event in stream:
+                if event.type == "result":
+                    if event.subtype == "error_max_turns":
+                        print(f"Max turns reached after {event.num_turns} turns")
+                    elif event.subtype == "error_budget_exceeded":
+                        print(f"Budget exceeded: ${event.total_cost_usd:.4f}")
+                    elif event.subtype == "success":
+                        print(f"Completed in {event.num_turns} turns, ${event.total_cost_usd:.4f}")
+    except anthropic.BudgetExceededError as e:
+        print(f"Hard budget ceiling hit: {e}")
+    except anthropic.SessionTimeoutError as e:
+        print(f"Session timed out: {e}")
+    except anthropic.ClaudeCodeError as e:
+        print(f"Claude Code error: {e.type} — {e.message}")
+```
+
+### TypeScript Error Handling
+
+```typescript
+import { ClaudeCode } from "@anthropic-ai/claude-code";
+
+const client = new ClaudeCode.StatefulClient();
+
+try {
+  const session = await client.createSession({
+    maxTurns: 10,
+    maxBudgetUsd: 5.00,
+  });
+
+  for await (const event of session.stream("Fix all type errors")) {
+    if (event.type === "result") {
+      switch (event.subtype) {
+        case "success":
+          console.log(`Done: $${event.totalCostUsd.toFixed(4)}`);
+          break;
+        case "error_max_turns":
+          console.warn("Max turns reached");
+          break;
+        case "error_budget_exceeded":
+          console.warn(`Budget exceeded: $${event.totalCostUsd.toFixed(4)}`);
+          break;
+      }
+    }
+  }
+} catch (e) {
+  if (e instanceof ClaudeCode.BudgetExceededError) {
+    console.error("Hard budget limit hit");
+  } else {
+    throw e;
+  }
+} finally {
+  await session.close();
+}
+```
+
+### Error Types Reference
+
+| Error | Cause | Recovery |
+|-------|-------|---------|
+| `BudgetExceededError` | Hard `--max-budget-usd` limit | Increase budget or break into smaller tasks |
+| `SessionTimeoutError` | Session idle timeout | Use `client.resumeSession(sessionId)` |
+| `ClaudeCodeError` | Generic Claude Code error | Check `e.type` and `e.message` |
+| `result.subtype == error_max_turns` | `--max-turns` reached | Increase turns or re-run with `/resume` |
+| `result.subtype == error_budget_exceeded` | Soft budget ceiling | Check `total_cost_usd` in result |
 
 ### 3.8 Cost and Token Tracking
 

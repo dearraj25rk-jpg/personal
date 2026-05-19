@@ -9,7 +9,7 @@ description: >
   Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 24
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import PluginsDiagram from '../../../components/interactive/PluginsDiagram.jsx';
@@ -17,3 +17,79 @@ import PluginsDiagram from '../../../components/interactive/PluginsDiagram.jsx';
 <div class="interactive-tool">
   <PluginsDiagram client:only="react" />
 </div>
+
+## Plugins Quick Reference
+
+### All 10 Plugin Component Types
+
+| Component | Directory | Purpose |
+|-----------|-----------|---------|
+| `commands` | `commands/` | Custom slash commands |
+| `agents` | `agents/` | Subagent definitions |
+| `skills` | `skills/` | Reusable skill modules |
+| `output-styles` | `output-styles/` | Response format styles |
+| `monitors` | `monitors/` | Background monitors |
+| `themes` | `themes/` | Color themes |
+| `hooks` | `hooks/` | Automation scripts |
+| `mcp-servers` | `mcp-servers/` | Bundled MCP servers |
+| `lsp-servers` | `lsp-servers/` | Language server extensions |
+| `userConfig` | `plugin.json` | User-configurable settings |
+
+### Plugin Directory Structure
+
+```
+my-plugin/
+├── plugin.json           ← required manifest
+├── commands/
+│   └── my-command.md
+├── agents/
+│   └── my-agent.md
+├── skills/
+│   └── my-skill/
+│       └── SKILL.md
+├── output-styles/
+│   └── my-style.md
+├── hooks/
+│   └── pre-bash.sh
+├── mcp-servers/
+│   └── my-server/
+│       └── index.js
+└── README.md
+```
+
+### plugin.json Manifest
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "Plugin description",
+  "author": "Your Name",
+  "userConfig": {
+    "apiKey": {
+      "type": "string",
+      "description": "API key for the service",
+      "required": true,
+      "secret": true
+    }
+  }
+}
+```
+
+### Installation Scopes
+
+| Scope | Location | Who it applies to |
+|-------|---------|------------------|
+| User | `~/.claude/plugins/<name>/` | You, all projects |
+| Project | `.claude/plugins/<name>/` | All project users |
+| Local | `.claude/plugins/<name>.local/` | You, this project |
+| Managed | MDM/enterprise path | All org users |
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `CLAUDE_PLUGIN_ROOT` | Override plugin installation root |
+| `CLAUDE_PLUGIN_DATA` | Override plugin data/config storage |
+
+→ Full reference: [Plugins Guide](./plugins-guide)

@@ -7,12 +7,12 @@ description: >
 sidebar:
   order: 9
   label: Permissions & Security
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Permissions, Sandbox & Security
 
-> **Version:** v2.1.126 (May 17, 2026)
+> **Version:** v2.1.126 (May 19, 2026)
 
 Claude Code's security model has four layers:
 
@@ -110,6 +110,40 @@ Or press `Shift+Tab` to cycle between Normal, Auto-Accept, and Plan modes.
   "defaultPermissionMode": "acceptEdits"
 }
 ```
+
+### Permission Modes — Detailed Reference
+
+| Mode | File writes | Shell commands | Dangerous ops | Best for |
+|------|------------|----------------|--------------|---------|
+| `default` | Requires approval | Requires approval | Blocked | Interactive development |
+| `acceptEdits` | Auto-approved | Requires approval | Blocked | Rapid iteration |
+| `autoAccept` | Auto-approved | Auto-approved | Requires approval | Trusted automation |
+| `bypassPermissions` | All auto-approved | All auto-approved | All auto-approved | Sandboxed CI only |
+| `plan` | Never executed | Never executed | Never executed | Planning/review only |
+
+**Set via:**
+
+```bash
+claude --permission-mode acceptEdits    # CLI flag (per session)
+CLAUDE_CODE_PERMISSION_MODE=acceptEdits  # Environment variable
+```
+
+```json
+// .claude/settings.json
+{
+  "permissionMode": "acceptEdits"
+}
+```
+
+### When to Use bypassPermissions
+
+`bypassPermissions` mode skips ALL permission checks. Only use it when:
+- Running in a fully sandboxed environment (e.g., Docker container, GitHub Actions sandbox)
+- The environment is ephemeral (destroyed after job)
+- Claude can't affect systems beyond the sandbox
+- You have reviewed the task and trust the automation
+
+**Never** use `bypassPermissions` in your local development environment.
 
 ---
 
@@ -404,6 +438,38 @@ For organisations, IT administrators can configure Claude Code policies that ove
 | Linux | `/etc/claude-code/managed-settings.json` |
 | Windows | `C:\Program Files\ClaudeCode\managed-settings.json` |
 | MDM/GPO | `HKEY_LOCAL_MACHINE\Software\Anthropic\ClaudeCode` (Windows Registry) |
+
+### Enterprise Managed Settings
+
+Enterprise admins can push settings that override all user configurations:
+
+**File locations (by delivery method):**
+
+| Method | Location | Notes |
+|--------|---------|-------|
+| File-based | `~/.claude/managed-settings.json` | Highest precedence |
+| MDM (macOS) | Delivered by Jamf/Intune | Via plist |
+| Windows Group Policy | `HKCU\Software\Anthropic\ClaudeCode` | Registry-based |
+| Server-managed | Pushed by server | Network-based |
+
+**Example managed-settings.json:**
+
+```json
+{
+  "permissions": {
+    "deny": ["Bash(rm *)", "Bash(curl * | bash)"],
+    "allow": ["Bash(git *)", "Bash(npm *)", "Read", "Edit", "Write"]
+  },
+  "permissionMode": "acceptEdits",
+  "maxBudgetUsd": 10.00,
+  "disableUpdates": true,
+  "disableTelemetry": false,
+  "allowedMcpServers": ["github", "postgres"],
+  "blockedCommands": ["/doctor --fix", "/permissions"]
+}
+```
+
+These settings **cannot be overridden** by users, project config, or CLI flags.
 
 ### 4.2 Enterprise settings hierarchy
 

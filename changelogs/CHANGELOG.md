@@ -4,6 +4,36 @@
 
 ---
 
+## [2026-05-19] — Claude Code Section Comprehensive Refresh (feature/rag-hub)
+
+### Summary
+Comprehensive refresh of all 35 files in `src/content/docs/claude-code/` and the site homepage. All `lastUpdated` dates updated to 2026-05-19. All 14 interactive MDX diagram pages enriched with written reference sections. Major guide files updated with new sections covering all features through v2.1.126.
+
+### Key Additions
+
+- **14 MDX diagram files**: All enriched with written reference tables, ASCII diagrams, and code examples below the interactive component
+- **claude-code/index.md**: Added Feature Map (6-domain ASCII overview) and Quick Setup (5-minute bash workflow)
+- **hooks-deep-dive.md**: Complete 30+ event table, security gates pattern, hook environment variables reference
+- **mcp-servers-guide.md**: Low-level TypeScript and Python server examples, MCP Resources implementation, security best practices
+- **agent-teams-guide.md**: Orchestration patterns (Map-Reduce, Pipeline, Specialist), orchestrator vs subagent capability table
+- **permissions-security.md**: Permission modes detailed reference with per-operation breakdown, enterprise managed settings
+- **cicd-integration.md**: GitLab CI and Azure DevOps integration examples, CI cost optimization table
+- **output-styles-guide.md**: Complete frontmatter schema, team deployment workflow, scope table
+- **quick-start.md**: Advanced usage tips (worktrees, custom commands, CI/CD)
+- **models-pricing.md**: Model selection decision tree, cost optimization patterns table
+- **sdk-guide.md**: Error handling patterns (Python + TypeScript), error types reference
+- **worktrees-guide.md**: Parallel PR review pattern with SDK automation
+- **claude-training.md**: Module count updated (8 → 9 in intro text)
+- **claude-code-reference.md**: Monitor tool section, complete environment variables reference
+- **validation-report.md**: Section 15 added — 33 new claims validated; total raised to 331
+- **compass-research-notes.md**: Frontmatter fully populated (was missing description, order, label, lastUpdated)
+- **Homepage (index.mdx)**: Claude Code card description significantly expanded
+
+### Files Updated
+All 35 files in `src/content/docs/claude-code/` — lastUpdated: 2026-05-19
+
+---
+
 ## [2026-05-09] — Claude Code Section Major Update (feature/rag-hub)
 
 ### Summary

@@ -7,12 +7,12 @@ description: >
 sidebar:
   order: 8
   label: CI/CD Integration
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # CI/CD Integration — GitHub Actions & Automation
 
-> **Version:** v2.1.126 (May 17, 2026) · `anthropics/claude-code-action@v1`
+> **Version:** v2.1.126 (May 19, 2026) · `anthropics/claude-code-action@v1`
 
 Claude Code integrates natively with CI/CD pipelines through its non-interactive mode, the official GitHub Action, and a comprehensive set of automation flags. This guide covers everything from basic automated code review to advanced multi-agent CI pipelines.
 
@@ -445,6 +445,49 @@ claude-review:
     - merge_requests
   variables:
     ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+```
+
+### GitLab CI Integration
+
+```yaml
+# .gitlab-ci.yml
+claude-code-review:
+  stage: review
+  image: node:22-slim
+  before_script:
+    - npm install -g @anthropic-ai/claude-code
+  script:
+    - claude -p "Review this MR for bugs, security issues, and style problems.
+        Output findings as a structured report." \
+        --permission-mode default \
+        --max-turns 15 \
+        --bare \
+        --output-format json > review-output.json
+    - cat review-output.json
+  artifacts:
+    paths:
+      - review-output.json
+    expire_in: 7 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY    # Set in GitLab CI/CD variables
+
+# With Bedrock (no API key needed)
+claude-code-bedrock:
+  stage: review
+  image: public.ecr.aws/amazonlinux/amazonlinux:2023
+  script:
+    - pip install @anthropic-ai/claude-code
+    - claude -p "Analyse for security vulnerabilities" \
+        --permission-mode autoAccept \
+        --bare
+  variables:
+    CLAUDE_CODE_USE_BEDROCK: "1"
+    AWS_DEFAULT_REGION: "us-east-1"
+  id_tokens:
+    AWS_OIDC_TOKEN:
+      aud: sts.amazonaws.com
 ```
 
 ### Full GitLab CI Multi-Stage Pipeline
@@ -963,6 +1006,18 @@ claude --print "..." --bare
 
 `--bare` skips non-essential startup operations (animation, tips, update checks) — **14% faster** in CI.
 
+### Cost Optimization in CI
+
+| Technique | Savings | Implementation |
+|-----------|---------|---------------|
+| Use `--bare` mode | 14% faster/cheaper | Always add `--bare` to CI commands |
+| Use Haiku for simple tasks | 80% cheaper | `--model haiku claude ...` |
+| Set `--max-budget-usd` | Prevent runaway costs | `--max-budget-usd 0.50` for PR reviews |
+| Set `--max-turns` | Prevent long loops | `--max-turns 10` for most CI tasks |
+| Cache prompt context | 70-75% token savings | Same API key, same CLAUDE.md = cache hits |
+| Use `--output-format json` | Structured parsing | Avoid post-processing text output |
+| Run only on changed files | Scope reduction | `git diff --name-only HEAD~1 \| claude -p "review: $(cat -)"` |
+
 ---
 
 ## 8. OpenTelemetry / Observability
@@ -1088,6 +1143,49 @@ jobs:
 ---
 
 ## 11. Azure DevOps Integration
+
+### Azure DevOps Integration
+
+```yaml
+# azure-pipelines.yml
+trigger:
+  - main
+  - feature/*
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '22.x'
+    displayName: 'Install Node.js'
+
+  - script: npm install -g @anthropic-ai/claude-code
+    displayName: 'Install Claude Code'
+
+  - script: |
+      claude -p "$(reviewPrompt)" \
+        --permission-mode autoAccept \
+        --max-turns 20 \
+        --bare \
+        --output-format json
+    displayName: 'Run Claude Code Review'
+    env:
+      ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)  # From Azure Key Vault / pipeline variable
+      reviewPrompt: "Review this PR for correctness, security issues, and test coverage"
+
+  # With Azure AI (Vertex equivalent)
+  - script: |
+      claude -p "$(reviewPrompt)" --permission-mode autoAccept
+    env:
+      CLAUDE_CODE_USE_VERTEX: "1"
+      GOOGLE_CLOUD_PROJECT: $(GCP_PROJECT_ID)
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/sa-key.json
+    displayName: 'Run with Vertex AI'
+```
+
+### Full Azure DevOps Multi-Stage Pipeline
 
 ```yaml
 # azure-pipelines.yml

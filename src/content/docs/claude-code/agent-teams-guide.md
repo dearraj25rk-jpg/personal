@@ -8,12 +8,12 @@ description: >
 sidebar:
   order: 7
   label: Agent Teams
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Agent Teams & Subagents — Complete Guide
 
-> **Version:** v2.1.126 (May 17, 2026) · Agent Teams: Research Preview (enable via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`)
+> **Version:** v2.1.126 (May 19, 2026) · Agent Teams: Research Preview (enable via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`)
 
 Claude Code supports two levels of multi-agent operation:
 
@@ -451,6 +451,47 @@ write, edit, or delete any file. Your output is analysis and recommendations onl
 
 Restricting tools to `Read`, `Glob`, `Grep` makes this agent safe to run with `--permission-mode bypassPermissions` without risk of unintended changes.
 
+### Orchestration Patterns
+
+#### Pattern 1: Map-Reduce
+
+Spawn N agents in parallel for independent sub-tasks, then aggregate:
+
+```bash
+# Orchestrator prompt
+"I need to analyse 10 microservices for security vulnerabilities.
+Spawn one subagent per service using the Task tool.
+Each agent should: read the service code, identify issues, write findings to /tmp/findings-<service>.md
+After all agents complete, aggregate all findings into /tmp/security-report.md"
+```
+
+#### Pattern 2: Pipeline
+
+Chain agents where output of one feeds the next:
+
+```
+Agent 1 (Researcher) → writes research.md
+Agent 2 (Architect)  → reads research.md, writes design.md
+Agent 3 (Implementer)→ reads design.md, implements code
+Agent 4 (Reviewer)   → reads code, writes review.md
+```
+
+#### Pattern 3: Specialist Delegation
+
+Orchestrator delegates by domain expertise:
+
+```yaml
+# .claude/agents/frontend-agent.md
+---
+name: frontend-agent
+description: Specialist for React/TypeScript/CSS work
+tools: [Read, Write, Edit, Bash]
+allowedPaths: [src/components/**, src/styles/**, src/pages/**]
+---
+You are a frontend specialist. Focus only on React components, 
+TypeScript interfaces, and CSS styling. Never touch backend code.
+```
+
 ---
 
 ## 4. Orchestration Best Practices
@@ -562,6 +603,21 @@ Is the research preview stability acceptable for production?
     └─ YES → Agent Team (more powerful but experimental)
 ```
 
+### Capability Comparison: Orchestrator vs Subagent
+
+| Capability | Orchestrator | Subagent |
+|-----------|-------------|---------|
+| Read files | Yes | Yes (if allowed by `allowedPaths`) |
+| Write files | Yes | Yes (if allowed by `allowedPaths`) |
+| Spawn further subagents | Yes (nested) | Yes (nested up to depth limit) |
+| Access MCP servers | Yes | Yes (inherits from orchestrator) |
+| Access hooks | Yes | Yes (fires orchestrator's hooks) |
+| Own MEMORY.md | Yes | Yes (isolated) |
+| Share memory with orchestrator | No | No (isolated by design) |
+| Access internet | Yes | Yes (if WebFetch/WebSearch allowed) |
+| Max context window | 200K/1M | 200K/1M (own context) |
+| Max turns | Unlimited | Configured by `maxTurns` in YAML |
+
 ---
 
 ## 6. Agent Team Limitations (Research Preview)
@@ -577,6 +633,19 @@ These are known limitations as of v2.1.126:
 | No built-in load balancing | Orchestrator must manually distribute tasks |
 | Mailbox cleanup | `TeamDelete` must be called to remove team files |
 | Max 10 members | Practical limit (not hard-coded but performance degrades) |
+
+### Known Limitations (Research Preview — v2.1.126)
+
+| Limitation | Status | Workaround |
+|-----------|--------|-----------|
+| Agent Teams is experimental | Research Preview | Enable with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` |
+| Message ordering not guaranteed | Known issue | Use sequence numbers in messages |
+| Max team size | 8 agents | Split large teams into hierarchical groups |
+| No built-in deadlock detection | Known issue | Set per-agent `maxTurns` to prevent infinite loops |
+| Shared filesystem requires coordination | By design | Use file locking or mailbox protocol |
+| Team state not persisted across sessions | Known issue | Write state to team.json manually |
+| No native broadcasting | Known issue | Loop through agent mailboxes manually |
+| Debugging agent interactions | Hard | Enable `CLAUDE_CODE_AGENT_TEAMS_DEBUG=1` for verbose logs |
 
 ---
 

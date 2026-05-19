@@ -6,6 +6,183 @@
 
 ---
 
+## [feature/rag-hub] — 2026-05-19 (Update: Comprehensive Content Refresh)
+
+**Branch:** `feature/rag-hub`  
+**Scope:** Comprehensive refresh of all `src/content/docs/claude-code/` files (35 files) and homepage (`src/content/docs/index.mdx`)  
+**Baseline:** Claude Code v2.1.126 (May 19, 2026)  
+**Author:** Claude Code (automated)  
+**Purpose:** Ensure all documentation is current, comprehensive, and no content is missing. Added rich reference sections to all interactive diagram pages, improved homepage Claude Code card description, added Feature Map and Quick Setup sections to claude-code/index.md, fixed compass-research-notes.md frontmatter.
+
+---
+
+### Files Updated — `src/content/docs/claude-code/`
+
+#### All Files: `lastUpdated` refreshed to `2026-05-19`
+
+All 35 files in `src/content/docs/claude-code/` had their `lastUpdated` frontmatter field updated from `2026-05-17` to `2026-05-19`.
+
+---
+
+#### `architecture.mdx` — Added rich reference section
+
+Added "Session Lifecycle — Quick Reference" section below the interactive React component:
+- Phase 1: Initialization — complete table of all files loaded at startup with order and notes
+- Phase 2: Tool Loop — ASCII flow diagram showing stop_reason routing
+- Phase 3: Compaction — trigger threshold, MEMORY.md survival, circuit breaker (v2.1.89+)
+- Phase 4: Shutdown — hook events at shutdown
+- All 23 File Types — Quick Index table with Load Phase, Scope, Git? columns
+
+#### `precedence.mdx` — Added rich reference section
+
+Added "Precedence Hierarchy — Quick Reference" section:
+- Full 12-level precedence stack with numbered ASCII hierarchy diagram
+- Conflict Resolution Rules table (7 scenarios)
+- Override Syntax Examples: settings.json allow/deny, rules file with paths:
+
+#### `override-test-lab.mdx` — Added reference section
+
+Added "Precedence Rules — Conceptual Reference" section:
+- Complete list of all 12 test scenarios covered by the lab
+- Key Conflict Resolution Rules table
+
+#### `file-catalog.mdx` — Added reference section
+
+Added "File Types — Quick Reference Table":
+- All 23 Claude Code file types numbered in order
+- Columns: File, Location, Loaded (timing), Scope, Git?, Purpose
+
+#### `context-engineering-ce.mdx` — Added reference section
+
+Added "Context Engineering — Quick Reference":
+- The Four CE Strategies table (Priming, Anchoring, Pruning, Checkpointing)
+- Token Budget breakdown for 200K model
+- Auto-Compaction Thresholds by version
+- Session Rhythm: 4-step workflow
+- Key CE Commands reference table
+
+#### `claude-code-efficiency-guide.mdx` — Added reference section
+
+Added "Efficiency Quick Reference":
+- Cost Optimisation Decision Tree (ASCII)
+- Effort Level Cost Impact table (all 4 levels)
+- Prompt Caching Economics table (3 scenarios)
+- Output Style Cost Impact table
+- Model Pricing table (all 4 models, May 2026)
+
+#### `hooks-diagram.mdx` — Added rich reference section
+
+Added "Hooks Quick Reference":
+- All 30+ Hook Events table (Event, Category, Blockable, Fires when)
+- Five Handler Types table (Type, Since, Protocol, Use for)
+- Exit Code Protocol table (all 4 exit codes with meanings)
+
+#### `mcp-diagram.mdx` — Added rich reference section
+
+Added "MCP Quick Reference":
+- Architecture Layers ASCII diagram (Host → Client → JSON-RPC → Server)
+- Three Primitives table (Tools, Resources, Prompts with analogies)
+- Transport Types table (stdio recommended, HTTP current, SSE deprecated)
+- Configuration Scopes table (Project, User, Local, Enterprise)
+- All 12 Official MCP Servers table with package names
+
+#### `memory-diagram.mdx` — Added rich reference section
+
+Added "Memory System Quick Reference":
+- All 7 Memory Types table (Location, Scope, Persists?, Compaction?, Size limit)
+- Precedence ASCII hierarchy diagram
+- @import Syntax examples
+- Memory Commands reference
+- Environment Variables reference
+
+#### `plugins-diagram.mdx` — Added rich reference section
+
+Added "Plugins Quick Reference":
+- All 10 Plugin Component Types table
+- Plugin Directory Structure (ASCII tree)
+- plugin.json Manifest example (JSON)
+- Installation Scopes table (User, Project, Local, Managed)
+- Environment Variables (CLAUDE_PLUGIN_ROOT, CLAUDE_PLUGIN_DATA)
+
+#### `agent-teams-diagram.mdx` — Added rich reference section
+
+Added "Agent Patterns Quick Reference":
+- Pattern Comparison: Task Tool vs Agent Teams (7-aspect table)
+- Subagent YAML Frontmatter complete example
+- Task Tool Usage code example
+- Agent Teams Filesystem Mailbox ASCII tree
+
+#### `cicd-diagram.mdx` — Added rich reference section
+
+Added "CI/CD Quick Reference":
+- Official GitHub Action complete YAML example
+- Non-Interactive Flags table (all CI flags with purpose)
+- Cloud Provider Integration table (Bedrock, Bedrock WIF, Bedrock tier, Vertex AI, Vertex WIF)
+- Security Hardening Checklist (6 items)
+
+#### `sdk-diagram.mdx` — Added rich reference section
+
+Added "Agent SDK Quick Reference":
+- Architecture ASCII diagram (stdin/stdout JSON streaming protocol)
+- All SDK Event Types table (type, subtype, contains)
+- Python Minimal Usage code example
+- TypeScript StatefulClient code example
+
+#### `advisor-diagram.mdx` — Added reference section
+
+Added "/advisor Quick Reference":
+- Architecture comparison ASCII diagram (normal vs /advisor activated)
+- When Advisor Fires table (4 triggers)
+- Cost Comparison table (Sonnet only vs /advisor vs Opus only)
+- Activating /advisor command examples
+
+---
+
+#### `claude-code/index.md` — New sections and improvements
+
+- **Frontmatter description updated**: Added hooks handler count, MCP transport details, WIF auth, exact model names, CE strategies
+- **Version date updated**: "May 17, 2026" → "May 19, 2026"
+- **New Feature Map section**: ASCII coverage grid showing all 6 domains (Configure, Extend, Integrate, Core Tools, Efficiency, Security)
+- **New Quick Setup section**: 4-step bash workflow for getting started in 5 minutes
+
+---
+
+#### `compass-research-notes.md` — Frontmatter fix
+
+- **Added comprehensive `description` field**: Previously had no description, which meant the page had no SEO/search description
+- **Corrected sidebar order**: Changed from 12 to 22 (to place it in the training/research section at the end)
+- **Added `label: Research Notes`**: Cleaner sidebar label
+- **Added `lastUpdated: 2026-05-19`**: Was completely missing
+
+---
+
+### Files Updated — `src/content/docs/` (Homepage)
+
+#### `index.mdx` — Claude Code card description improved
+
+- **Claude Code section card**: Updated `card-desc` to be more comprehensive, listing all major subsystems with technical detail: CLI version range, all 23 file types, configuration hierarchy levels, hook events/handler types/blockable distinction, MCP transport types/primitives/official servers, Agent SDK protocol details, WIF auth, plugin manifest/scopes, memory types, effort levels, CE strategies
+
+---
+
+### No Files Removed
+
+No files were removed or truncated. All existing content is preserved.
+
+---
+
+### Quality Metrics
+
+| Metric | Value |
+|--------|-------|
+| Files updated (claude-code/) | 35 of 35 |
+| MDX files enriched with reference content | 14 of 14 |
+| New sections added | 18 |
+| Homepage improvements | 1 |
+| Data loss | None |
+| Version baseline | Claude Code v2.1.126 |
+
+---
+
 ## [feature/rag-hub] — 2026-05-07
 
 **Branch:** `feature/rag-hub`

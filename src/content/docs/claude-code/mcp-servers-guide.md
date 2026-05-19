@@ -8,12 +8,12 @@ description: >
 sidebar:
   order: 6
   label: MCP Servers
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # MCP Servers — Architecture, Configuration & Development
 
-> **Version:** MCP Spec 1.1 · Claude Code v2.1.126 (May 17, 2026)
+> **Version:** MCP Spec 1.1 · Claude Code v2.1.126 (May 19, 2026)
 
 The **Model Context Protocol (MCP)** is an open standard that allows AI systems like Claude Code to connect to external data sources, tools, and services. MCP servers extend Claude Code's capabilities beyond what its built-in tools provide — connecting it to databases, APIs, file systems, cloud services, development tools, and any custom backend.
 
@@ -819,6 +819,140 @@ public class DatabaseTools
 
 > **Why `CreateEmptyApplicationBuilder`?** The standard `WebApplication.CreateBuilder` writes startup banners and diagnostics to stdout. MCP uses stdout for the JSON-RPC protocol — any non-JSON output breaks the connection. `CreateEmptyApplicationBuilder` suppresses all banner/diagnostic output.
 
+### 6.4 Building a Custom MCP Server — TypeScript (Low-Level API)
+
+The examples above use `McpServer` (the high-level SDK). If you need finer control, or are integrating with an existing framework, you can use the low-level `Server` class directly:
+
+```typescript
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+
+const server = new Server(
+  { name: "my-custom-server", version: "1.0.0" },
+  { capabilities: { tools: {} } }
+);
+
+// Define available tools
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: "get_weather",
+      description: "Get current weather for a location",
+      inputSchema: {
+        type: "object",
+        properties: {
+          location: { type: "string", description: "City name or coordinates" },
+        },
+        required: ["location"],
+      },
+    },
+  ],
+}));
+
+// Handle tool calls
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name === "get_weather") {
+    const location = request.params.arguments?.location as string;
+    // Your actual implementation here
+    const weather = await fetchWeather(location);
+    return {
+      content: [{ type: "text", text: `Weather in ${location}: ${weather}` }],
+    };
+  }
+  throw new Error(`Unknown tool: ${request.params.name}`);
+});
+
+// Start server
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+### 6.5 Building a Custom MCP Server — Python (Low-Level API)
+
+```python
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp import types
+
+server = Server("my-custom-server")
+
+@server.list_tools()
+async def list_tools() -> list[types.Tool]:
+    return [
+        types.Tool(
+            name="query_database",
+            description="Execute a SQL query against the project database",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "SQL SELECT query"},
+                    "limit": {"type": "integer", "default": 100},
+                },
+                "required": ["query"],
+            },
+        )
+    ]
+
+@server.call_tool()
+async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
+    if name == "query_database":
+        query = arguments["query"]
+        limit = arguments.get("limit", 100)
+        # Validate it's a SELECT query
+        if not query.strip().upper().startswith("SELECT"):
+            raise ValueError("Only SELECT queries are allowed")
+        results = await db.execute(f"{query} LIMIT {limit}")
+        return [types.TextContent(type="text", text=str(results))]
+    raise ValueError(f"Unknown tool: {name}")
+
+async def main():
+    async with stdio_server() as streams:
+        await server.run(*streams, server.create_initialization_options())
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
+```
+
+### 6.6 Implementing MCP Resources
+
+Resources let Claude read data from your server without you explicitly calling a tool:
+
+```typescript
+import { ReadResourceRequestSchema, ListResourcesRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+
+// List available resources
+server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+  resources: [
+    {
+      uri: "project://schema",
+      name: "Database Schema",
+      description: "Current database schema",
+      mimeType: "text/plain",
+    },
+    {
+      uri: "project://config",
+      name: "Project Config",
+      mimeType: "application/json",
+    },
+  ],
+}));
+
+// Handle resource reads
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const uri = request.params.uri;
+  if (uri === "project://schema") {
+    const schema = await db.getSchema();
+    return { contents: [{ uri, mimeType: "text/plain", text: schema }] };
+  }
+  throw new Error(`Resource not found: ${uri}`);
+});
+```
+
 ---
 
 ## 7. Official MCP Servers
@@ -893,6 +1027,33 @@ npx @modelcontextprotocol/server-google-maps
 ---
 
 ## 8. Security Considerations
+
+### MCP Security Best Practices
+
+| Risk | Mitigation |
+|------|-----------|
+| Tool injection via server output | Validate all tool output before passing to Claude |
+| Overprivileged tools | Scope tools to minimum required permissions |
+| Secret exposure | Never include secrets in tool descriptions/schemas |
+| SQL injection via MCP tools | Always parameterize queries; validate input |
+| Server impersonation | Pin server versions; verify checksums |
+| Prompt injection via resources | Sanitize resource content before returning |
+
+```json
+// Restrict which MCP tools Claude can use
+{
+  "permissions": {
+    "allow": [
+      "mcp:filesystem:read_file",
+      "mcp:filesystem:list_directory"
+    ],
+    "deny": [
+      "mcp:filesystem:write_file",
+      "mcp:filesystem:delete_file"
+    ]
+  }
+}
+```
 
 ### MCP Prompt Injection
 

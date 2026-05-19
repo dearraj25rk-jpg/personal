@@ -4,7 +4,7 @@ title: Context Engineering for Claude Code
 description: Comprehensive interactive guide to context engineering in Claude Code — CE strategies, token simulator, session management, commands, and a full CE checklist. Covers all four CE primitives and real-world implementation patterns.
 sidebar:
   order: 16
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import ContextEngineeringCE from '../../../components/interactive/ContextEngineeringCE.jsx';
@@ -12,3 +12,56 @@ import ContextEngineeringCE from '../../../components/interactive/ContextEnginee
 <div class="interactive-tool">
   <ContextEngineeringCE client:only="react" />
 </div>
+
+## Context Engineering — Quick Reference
+
+### The Four CE Strategies
+
+| Strategy | When to use | How |
+|----------|------------|-----|
+| **Priming** | Start of task | Load relevant CLAUDE.md sections, rules, prior art |
+| **Anchoring** | Throughout task | `/compact "keep: auth module, database schema"` |
+| **Pruning** | Context fills up | `/clear` + re-prime with essentials |
+| **Checkpointing** | Long tasks | `/compact` at natural milestones |
+
+### Token Budget (200K model)
+
+```
+Total:          200,000 tokens
+├── System prompt:   ~2,000 tokens
+├── CLAUDE.md files: ~5,000 tokens (varies)
+├── Rules loaded:    ~1,000 tokens
+├── Skills active:   ~500 tokens
+├── Tools schema:    ~3,000 tokens
+└── Available:       ~188,500 tokens for conversation
+```
+
+### Auto-Compaction Thresholds
+
+| Version | Threshold | Behaviour |
+|---------|----------|----------|
+| Pre-v2.1.89 | ~85% used | Auto-compact |
+| v2.1.89+ | ~85% + circuit breaker | Prevent thrash loop |
+
+### Session Rhythm
+
+```
+1. START:    Load context → /memory show → set task scope
+2. WORK:     /todos to track → /compact at milestones
+3. FINISH:   /rewind if needed → /rename session for retrieval
+4. RESUME:   /resume → pick session → continue
+```
+
+### Key CE Commands
+
+| Command | What it does |
+|---------|-------------|
+| `/compact [instructions]` | Summarise conversation, keep essentials |
+| `/context` | Show token usage grid |
+| `/usage` | Show cost + token breakdown |
+| `/memory` | Edit persistent MEMORY.md |
+| `/clear` | Reset conversation (keep config) |
+| `/rewind` | Roll back code + conversation |
+| `/todos` | Track task state across /compact |
+
+→ Full reference: [Context, Cost & Token Efficiency](./claude-code-efficiency-reference)

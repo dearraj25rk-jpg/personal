@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 11
   label: Worktrees & Parallel Dev
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Git Worktrees — Parallel Development with Claude Code
@@ -184,6 +184,62 @@ claude -C .worktrees/pr-125 --print "Review this PR for security, quality, and t
 ```
 
 This runs all three reviews in parallel. Each review sees only its branch's code.
+
+### Parallel PR Review Pattern
+
+Review multiple PRs simultaneously using worktrees:
+
+```bash
+# Create worktrees for each PR
+git fetch origin pull/123/head:pr-123
+git fetch origin pull/124/head:pr-124
+
+# Open Claude Code in each worktree
+cd /path/to/repo
+claude /branch pr-review-123 --from origin/pull/123/head
+
+# In a second terminal
+claude /branch pr-review-124 --from origin/pull/124/head
+```
+
+Or use the SDK to automate parallel reviews:
+
+```python
+import asyncio
+import anthropic
+
+async def review_pr(pr_number: int, worktree_path: str):
+    client = anthropic.AsyncAnthropic()
+    async with client.beta.claude_code.sessions.stream(
+        cwd=worktree_path,
+        max_turns=5,
+        initial_message=f"Review PR #{pr_number}: check for bugs, security issues, and style",
+    ) as stream:
+        async for event in stream:
+            if event.type == "result" and event.subtype == "success":
+                return event
+
+async def main():
+    # Run 3 PR reviews in parallel
+    results = await asyncio.gather(
+        review_pr(123, "/tmp/worktrees/pr-123"),
+        review_pr(124, "/tmp/worktrees/pr-124"),
+        review_pr(125, "/tmp/worktrees/pr-125"),
+    )
+    for i, result in enumerate(results):
+        print(f"PR {123+i}: ${result.total_cost_usd:.4f}")
+
+asyncio.run(main())
+```
+
+### Coordination Patterns
+
+| Pattern | How | When to use |
+|---------|-----|------------|
+| Shared CLAUDE.md | Root project CLAUDE.md applies to all worktrees | Shared conventions |
+| Isolated local config | Each worktree has own CLAUDE.local.md | Per-branch overrides |
+| Shared memory | MEMORY.md is per-project, shared across worktrees | Consistent project state |
+| Isolated MCP servers | Each Claude Code session has own connections | No coordination needed |
 
 ### Pattern 3: Team Coordination Patterns Using Worktrees
 

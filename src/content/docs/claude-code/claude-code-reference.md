@@ -20,10 +20,10 @@ head:
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
-> **Document scope:** All officially documented Claude Code features from February 2025 through **v2.1.126 (May 17, 2026)**. Sources: `code.claude.com/docs`, `github.com/anthropics/claude-code` (CHANGELOG.md), official Anthropic news posts, and the Agent SDK repos. Every version number cited maps to a real entry in the public CHANGELOG. Where official documentation is sparse, that is explicitly flagged.
+> **Document scope:** All officially documented Claude Code features from February 2025 through **v2.1.126 (May 19, 2026)**. Sources: `code.claude.com/docs`, `github.com/anthropics/claude-code` (CHANGELOG.md), official Anthropic news posts, and the Agent SDK repos. Every version number cited maps to a real entry in the public CHANGELOG. Where official documentation is sparse, that is explicitly flagged.
 
 ---
 
@@ -513,6 +513,33 @@ Bash read-only commands (`ls`, `cat`, `head`, `tail`, `grep`, `find`, `wc`, `dif
 
 MCP result size: the default truncation can be bypassed per-server via `_meta["anthropic/maxResultSizeChars"]` up to **500,000 characters** (v2.1.91/v2.1.119). `TaskOutput` is deprecated — use `Read` on the subagent's output file path instead.
 
+### Monitor Tool (v2.1.98+)
+
+The `Monitor` tool streams output from a background process line-by-line:
+
+```bash
+# Start a long-running process and monitor its output
+Monitor(command="npm run build:watch", timeout=300)
+# Streams each output line as it appears
+```
+
+**Use cases:**
+- Watch test runner output in real-time
+- Monitor build pipeline progress
+- Stream server logs during debugging
+- Watch file watcher events
+
+```python
+# SDK usage
+result = await session.call_tool("Monitor", {
+    "command": "npm test --watch",
+    "timeout": 120,
+    "pattern": "FAIL|PASS|ERROR"   # optional: only stream matching lines
+})
+```
+
+Monitor is triggered when plugin `monitors/` directory entries are defined (v2.1.105+). It captures structured events from running background scripts and streams each output line as a notification to the agent.
+
 ---
 
 ## 5. Slash Commands Reference
@@ -902,6 +929,32 @@ The complete set exceeds 175 variables. The most important ones are grouped belo
 
 **Tracing:**
 `TRACEPARENT`, `TRACESTATE` (SDK/headless reads from env for distributed tracing, v2.1.110; also injected into Bash subprocesses when OTEL is on, v2.1.97).
+
+### Complete Environment Variables Reference
+
+The table below consolidates the most commonly needed variables. The full set exceeds 175; see §7.3 above for a comprehensive prose listing.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `ANTHROPIC_API_KEY` | API authentication | None (required without Bedrock/Vertex) |
+| `CLAUDE_CODE_USE_BEDROCK` | Use AWS Bedrock instead of API | `0` |
+| `CLAUDE_CODE_USE_VERTEX` | Use GCP Vertex AI instead of API | `0` |
+| `CLAUDE_CODE_BEDROCK_SERVICE_TIER` | Bedrock throughput tier (`default`/`flex`/`priority`) | `default` |
+| `CLAUDE_CODE_MODEL` | Override default model | `claude-sonnet-4-6` |
+| `CLAUDE_CODE_EFFORT` | Override effort level | `normal` |
+| `CLAUDE_CODE_PERMISSION_MODE` | Set permission mode | `default` |
+| `CLAUDE_CODE_MAX_TOKENS` | Override max output tokens | Model default |
+| `CLAUDE_CODE_MEMORY_PATH` | Override MEMORY.md location | `~/.claude/projects/<hash>/memory/MEMORY.md` |
+| `CLAUDE_PLUGIN_ROOT` | Override plugin installation root | `~/.claude/plugins/` |
+| `CLAUDE_PLUGIN_DATA` | Override plugin data storage | `~/.claude/plugin-data/` |
+| `DISABLE_UPDATES` | Prevent auto-updates (v2.1.118+) | `0` |
+| `DISABLE_TELEMETRY` | Disable usage telemetry | `0` |
+| `DISABLE_MEMORY` | Disable auto-memory MEMORY.md | `0` |
+| `CLAUDE_CODE_AGENT_TEAMS_DEBUG` | Enable agent teams verbose logging | `0` |
+| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | Enable Agent Teams feature | `0` |
+| `AWS_DEFAULT_REGION` | AWS region for Bedrock | `us-east-1` |
+| `GOOGLE_CLOUD_PROJECT` | GCP project for Vertex AI | None |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service account key | None |
 
 ---
 

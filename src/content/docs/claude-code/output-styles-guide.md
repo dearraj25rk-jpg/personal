@@ -9,12 +9,12 @@ description: >
 sidebar:
   order: 14
   label: Output Styles
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Output Styles — Complete Reference
 
-> **Version:** v2.1.126 (May 17, 2026) · Output styles introduced in v2.0.0.
+> **Version:** v2.1.126 (May 19, 2026) · Output styles introduced in v2.0.0.
 
 Output styles are the **most invasive configuration lever** in Claude Code. They directly replace the software-engineering-specific portion of Claude's system prompt, changing not just what Claude says but how it reasons, structures its responses, and behaves during coding sessions.
 
@@ -311,6 +311,42 @@ Format: Use headers to separate Design Decision, Implementation, and Trade-offs 
 | `name` | string | Yes | Display name shown in `/config` menu |
 | `description` | string | Yes | One-line description shown in menu and settings |
 | `keep-coding-instructions` | boolean | No | Default `false` — see [Section 4](#4-keep-coding-instructions-behavior) |
+
+### Custom Style Frontmatter Reference
+
+```markdown
+---
+name: technical-review              # Required: unique style identifier
+description: >                      # Required: shown in /config menu
+  Structured technical review format with severity ratings
+  and actionable recommendations. Best for code review tasks.
+keep_coding_instructions: true      # Optional: preserve existing session instructions
+model_preference: claude-opus-4-7   # Optional: prefer specific model for this style
+effort_preference: high             # Optional: effort level hint
+---
+
+# Technical Review Style
+
+When activated, respond in this format for all code review requests:
+
+## Review Summary
+**Severity level:** [Critical | High | Medium | Low | Info]
+**Files reviewed:** [list]
+
+## Findings
+
+### [Issue Title] — [Severity]
+**File:** `path/to/file.ts:42`  
+**Impact:** [What breaks if not fixed]  
+**Fix:** [Specific code change]
+
+## Test Coverage
+[Assessment of test gaps]
+
+## Recommendations
+1. [Priority fix]
+2. [Secondary fix]
+```
 
 ### Storage Locations
 
@@ -1219,6 +1255,38 @@ What is your primary goal for this session?
 ## 15. Team Output Style Distribution
 
 When a project commits `.claude/settings.json` with an `outputStyle`, every team member gets that style. This section covers how to design a team style strategy.
+
+### Deploying Styles to Your Team
+
+Share output styles via git by committing to `.claude/output-styles/`:
+
+```bash
+# Add a team output style
+mkdir -p .claude/output-styles
+cat > .claude/output-styles/pr-review.md << 'EOF'
+---
+name: pr-review
+description: Standard PR review format for our team
+---
+# PR Review Format
+Review using our team standard: [Summary] → [Issues by severity] → [Approval verdict]
+EOF
+
+# Commit to git
+git add .claude/output-styles/pr-review.md
+git commit -m "add: team pr-review output style"
+```
+
+Team members activate it with `/config` → select "pr-review" style.
+
+### Output Style Scope
+
+| Style location | Who can use it | Overridable? |
+|----------------|---------------|-------------|
+| `.claude/output-styles/` | All project contributors | Yes (user local style wins) |
+| `~/.claude/output-styles/` | You, all projects | Yes (local wins) |
+| Plugin output styles | Plugin users | Depends on plugin scope |
+| Enterprise managed styles | All org users | No (enterprise wins) |
 
 ### Option A: Project Style for All (Opinionated)
 

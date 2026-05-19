@@ -10,7 +10,7 @@ description: >
   and complete environment variable reference. Claude Code v2.1.126 · anthropics/claude-code-action@v1.
 sidebar:
   order: 22
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 import CICDDiagram from '../../../components/interactive/CICDDiagram.jsx';
@@ -18,3 +18,63 @@ import CICDDiagram from '../../../components/interactive/CICDDiagram.jsx';
 <div class="interactive-tool">
   <CICDDiagram client:only="react" />
 </div>
+
+## CI/CD Quick Reference
+
+### Official GitHub Action
+
+```yaml
+# .github/workflows/claude.yml
+name: Claude Code Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "Review this PR for bugs, security issues, and style"
+          max_turns: "10"
+          permission_mode: "default"
+```
+
+### Non-Interactive Flags
+
+| Flag | Purpose |
+|------|---------|
+| `--print` / `-p` | Non-interactive output to stdout |
+| `--max-turns N` | Limit agentic loop iterations |
+| `--max-budget-usd N` | Hard cost ceiling |
+| `--permission-mode` | `default`/`acceptEdits`/`autoAccept`/`bypassPermissions` |
+| `--bare` | CI-optimised: 14% faster, skips non-essential steps (v2.1.92+) |
+| `--no-color` | Disable ANSI colour codes |
+| `--output-format json` | Machine-readable JSON output |
+
+### Cloud Provider Integration
+
+| Provider | Auth method | Variable |
+|----------|------------|---------|
+| AWS Bedrock | IAM role / OIDC | `CLAUDE_CODE_USE_BEDROCK=1` |
+| Bedrock + WIF | OIDC federation | `AWS_WEB_IDENTITY_TOKEN_FILE` |
+| Bedrock service tier | Tier selection (v2.1.122+) | `CLAUDE_CODE_BEDROCK_SERVICE_TIER=priority` |
+| GCP Vertex AI | Service account / WIF | `CLAUDE_CODE_USE_VERTEX=1` |
+| Vertex + WIF | Workload Identity (v2.1.121+) | `GOOGLE_APPLICATION_CREDENTIALS` |
+
+### Security Hardening Checklist
+
+- [ ] Store API keys in CI secrets (never hardcode)
+- [ ] Use `bypassPermissions` only in sandboxed CI environment
+- [ ] Set `--max-budget-usd` to cap runaway costs
+- [ ] Audit hooks log all tool calls
+- [ ] Pin `anthropics/claude-code-action@v1` (use SHA pin in production)
+- [ ] Restrict `allowedTools` to what CI needs
+
+→ Full reference: [CI/CD Integration Guide](./cicd-integration)

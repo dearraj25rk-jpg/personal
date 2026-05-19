@@ -7,12 +7,12 @@ description: >
 sidebar:
   order: 2
   label: Quick Start
-lastUpdated: 2026-05-17
+lastUpdated: 2026-05-19
 ---
 
 # Quick Start — Claude Code for New Users
 
-> **Version:** v2.1.126 (May 17, 2026) · **Audience:** developers new to Claude Code · **Time to complete:** 20–30 minutes
+> **Version:** v2.1.126 (May 19, 2026) · **Audience:** developers new to Claude Code · **Time to complete:** 20–30 minutes
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It understands your entire codebase, reads and writes files, runs shell commands, executes tests, manages Git, and works in a continuous loop until your task is done — all from natural-language instructions.
 
@@ -244,6 +244,8 @@ The agentic loop is the core execution model of Claude Code. Understanding it he
 | `@` | Trigger file path autocomplete |
 
 Run `/terminal-setup` once to enable `Shift+Enter` for multiline (requires iTerm2/supported terminal).
+
+Run `/keybindings` to view and customise all keyboard shortcuts for your current terminal profile.
 
 ---
 
@@ -786,3 +788,48 @@ claude --version       # confirm version
 | Context full warnings | Run `/compact` then continue |
 | MCP server fails to connect | Run `/mcp` to see status and error logs |
 | Hook not firing | Hooks snapshot at session start — run `/hooks reload` or restart |
+
+---
+
+## Advanced Usage Tips
+
+### Parallel Development with Worktrees
+
+Run multiple Claude Code sessions on different branches simultaneously:
+
+```bash
+# Create a worktree branch
+claude /branch feature/auth-refactor
+
+# Claude creates the worktree and opens a new session
+# Your original session continues on main
+```
+
+→ [Full Worktrees Guide](./worktrees-guide)
+
+### Custom Project Commands
+
+Create team-shared slash commands in `.claude/commands/`:
+
+```bash
+# .claude/commands/review-pr.md
+---
+description: Review the current PR for security issues
+---
+Review the git diff for security vulnerabilities, logic errors, and API surface changes.
+Focus on: input validation, SQL injection, secret exposure, authentication bypasses.
+```
+
+Run it with: `/review-pr`
+
+### Using Claude in CI/CD
+
+```bash
+# Non-interactive mode for automation
+claude -p "Run tests and fix any failures" \
+  --max-turns 10 \
+  --permission-mode bypassPermissions \
+  --bare
+```
+
+→ [Full CI/CD Integration Guide](./cicd-integration)
