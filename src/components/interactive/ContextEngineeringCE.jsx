@@ -979,6 +979,8 @@ const CHECKLIST = [
     {text:"If Claude forgets decisions after compaction: check if they were committed to CLAUDE.md or NOTES.md",tag:"Debug"},
     {text:"If costs are 10-20× higher than expected: check if you've hit a caching bug (compare with March 2026 incident); check if model was switched mid-session",tag:"Debug"},
     {text:"If auto-compaction fires unexpectedly early (at 76K on 1M window): known Opus 1M issue — use manual /compact or cap context lower",tag:"Debug"},
+    {text:"If tool schema is unexpectedly large: check if ToolSearch deferred loading is active — /context shows 'deferred tools N' if working correctly",tag:"ToolSearch"},
+    {text:"If /advisor is giving generic advice: the context window passed to the advisor may be truncated — compact before invoking /advisor for best results",tag:"Advisor"},
   ]},
 ]
 const S7 = () => {
