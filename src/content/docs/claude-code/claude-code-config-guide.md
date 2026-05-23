@@ -6,7 +6,7 @@ sidebar:
 
 # CLAUDE.md vs Skills vs Rules — Complete Architecture & Best Practices Guide
 
-> **Last updated: May 19, 2026 — reflects Claude Code v2.1.126+**
+> **Last updated: May 23, 2026 — reflects Claude Code v2.1.126+**
 > **Document scope:** Complete configuration reference for CLAUDE.md, Rules, Skills, Commands, Output Styles, Subagents, Plugins, Hooks, MCP, and enterprise settings through v2.1.126 (May 2026).
 
 ## 1. The Core Problem These Three Files Solve

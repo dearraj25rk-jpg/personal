@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 5
   label: Hooks System
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-23
 ---
 
 # Hooks System — Complete Reference
@@ -1356,6 +1356,766 @@ sys.exit(0)
     }
   ]
 }
+```
+
+---
+
+## 13. Hook Payload Reference
+
+Every hook receives a complete JSON payload on stdin before any environment variables are evaluated. Understanding the exact schema lets you write robust hooks that handle all edge cases.
+
+### Complete Payload Schema
+
+```typescript
+// Full TypeScript-style schema for all hook payloads
+interface BaseHookPayload {
+  // Always present on every hook invocation
+  event_name: string;          // "PreToolUse", "PostToolUse", "Stop", "SessionStart", etc.
+  session_id: string;          // e.g. "sess_01XYZabc..." — unique per session
+  project_dir: string;         // Absolute path: "/home/user/my-project"
+  model: string;               // e.g. "claude-opus-4-7"
+  transcript: TranscriptMessage[];  // Recent conversation (truncated at ~50 messages)
+}
+
+interface TranscriptMessage {
+  role: "user" | "assistant";
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+    | { type: "tool_result"; tool_use_id: string; content: string; is_error: boolean }
+  >;
+}
+```
+
+### PreBash Payload (complete schema)
+
+Fires before any `Bash` tool execution. This is one of the most commonly hooked events.
+
+```json
+{
+  "event_name": "PreBash",
+  "session_id": "sess_01XYZabc",
+  "project_dir": "/home/user/my-project",
+  "model": "claude-opus-4-7",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "npm run test -- --coverage",
+    "description": "Run tests with coverage report",
+    "timeout": 120
+  },
+  "transcript": [
+    {
+      "role": "user",
+      "content": [{ "type": "text", "text": "Run the full test suite and show coverage" }]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "text", "text": "I'll run the test suite now." },
+        {
+          "type": "tool_use",
+          "id": "toolu_01abc",
+          "name": "Bash",
+          "input": { "command": "npm run test -- --coverage" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Key fields for `PreBash`:
+- `tool_input.command` — the exact shell command string Claude wants to run
+- `tool_input.description` — Claude's natural-language description of why it's running this command (optional, may be absent)
+- `tool_input.timeout` — timeout in seconds Claude specified (optional)
+
+Exit 2 with a message blocks the command. The message text is shown to Claude as the refusal reason and Claude can modify the command and try again.
+
+### PreFileWrite Payload (complete schema)
+
+Fires before `Write` or `Edit` or `MultiEdit`. The payload differs slightly by tool:
+
+```json
+// For Write tool (creates or overwrites a file)
+{
+  "event_name": "PreFileWrite",
+  "session_id": "sess_01XYZabc",
+  "project_dir": "/home/user/my-project",
+  "model": "claude-opus-4-7",
+  "tool_name": "Write",
+  "tool_input": {
+    "path": "/home/user/my-project/src/auth/token.ts",
+    "content": "export const TOKEN_SECRET = process.env.JWT_SECRET;\n..."
+  },
+  "transcript": [...]
+}
+
+// For Edit tool (replaces a specific string in an existing file)
+{
+  "event_name": "PreFileWrite",
+  "tool_name": "Edit",
+  "tool_input": {
+    "path": "/home/user/my-project/src/db.py",
+    "old_string": "password = 'hardcoded123'",
+    "new_string": "password = os.environ['DB_PASSWORD']"
+  },
+  "transcript": [...]
+}
+
+// For MultiEdit tool (multiple replacements in one file)
+{
+  "event_name": "PreFileWrite",
+  "tool_name": "MultiEdit",
+  "tool_input": {
+    "path": "/home/user/my-project/src/config.py",
+    "edits": [
+      { "old_string": "DEBUG = True", "new_string": "DEBUG = False" },
+      { "old_string": "SECRET = '123'", "new_string": "SECRET = os.getenv('SECRET')" }
+    ]
+  },
+  "transcript": [...]
+}
+```
+
+### PreToolUse Payload (complete schema)
+
+`PreToolUse` is the generic hook that fires for any tool, including MCP tools. It subsumes `PreBash` and `PreFileWrite` for the purposes of tool gating.
+
+```json
+// When Claude calls an MCP tool
+{
+  "event_name": "PreToolUse",
+  "session_id": "sess_01XYZabc",
+  "project_dir": "/home/user/my-project",
+  "model": "claude-opus-4-7",
+  "tool_name": "mcp__github__create_pull_request",
+  "tool_input": {
+    "owner": "myorg",
+    "repo": "myrepo",
+    "title": "Add OAuth2 support",
+    "body": "This PR adds OAuth2 authentication...",
+    "head": "feature/oauth2",
+    "base": "main"
+  },
+  "transcript": [...]
+}
+
+// When Claude calls the Task tool (spawns a subagent)
+{
+  "event_name": "PreToolUse",
+  "tool_name": "Task",
+  "tool_input": {
+    "description": "Security audit of the authentication module",
+    "prompt": "You are a security expert. Read all files in src/auth/ and identify..."
+  },
+  "transcript": [...]
+}
+```
+
+The `tool_name` field for MCP tools always follows the pattern `mcp__{server-name}__{tool-name}` with double underscores. Use this in your matchers:
+
+```json
+{
+  "PreToolUse": [
+    {
+      "matcher": "mcp__github__create_.*|mcp__github__merge_.*|mcp__github__push_.*",
+      "hooks": [{ "type": "command", "command": "bash ~/.claude/hooks/github-gate.sh" }]
+    }
+  ]
+}
+```
+
+### Stop Payload (complete schema)
+
+The `Stop` hook fires when Claude finishes a response. If it exits 2, Claude is forced to continue.
+
+```json
+{
+  "event_name": "Stop",
+  "session_id": "sess_01XYZabc",
+  "project_dir": "/home/user/my-project",
+  "model": "claude-opus-4-7",
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 45231,
+    "output_tokens": 2847,
+    "cache_read_input_tokens": 38000,
+    "cache_write_input_tokens": 0
+  },
+  "total_cost_usd": 0.0823,
+  "num_turns": 12,
+  "transcript": [...]
+}
+```
+
+Key fields for `Stop`:
+- `stop_reason`: `"end_turn"` (normal completion), `"max_turns"` (hit turn limit), or `"budget_exceeded"`
+- `usage.input_tokens` / `usage.output_tokens` — cumulative token usage for the session
+- `total_cost_usd` — total spend so far
+- `num_turns` — how many turns have occurred
+
+A `Stop` hook can use these fields to make smart decisions — for example, only run tests if at least 5 turns occurred (to avoid running tests when Claude makes trivial changes).
+
+### UserPromptSubmit Payload (complete schema)
+
+```json
+{
+  "event_name": "UserPromptSubmit",
+  "session_id": "sess_01XYZabc",
+  "project_dir": "/home/user/my-project",
+  "model": "claude-opus-4-7",
+  "prompt": "Deploy the authentication service to production",
+  "transcript": [...]
+}
+```
+
+The `prompt` field is the raw text of what the user typed. Use this for:
+- Blocking high-risk prompts ("deploy to production" without approval)
+- Injecting relevant context based on keywords
+- Routing to different specialist agents based on intent
+
+### PostToolUse Payload (complete schema)
+
+`PostToolUse` adds `tool_output` and `tool_exit_code` to the base payload:
+
+```json
+{
+  "event_name": "PostToolUse",
+  "session_id": "sess_01XYZabc",
+  "project_dir": "/home/user/my-project",
+  "model": "claude-opus-4-7",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "npm test"
+  },
+  "tool_output": "PASS src/auth.test.ts\nPASS src/db.test.ts\n\nTest Suites: 2 passed, 2 total\nTests: 47 passed, 47 total",
+  "tool_exit_code": 0,
+  "tool_duration_ms": 8432,
+  "transcript": [...]
+}
+```
+
+Note: `tool_output` is truncated at approximately 10 KB. If the tool output is larger, you'll receive the first ~10 KB followed by `[truncated]`.
+
+---
+
+## 14. Exit Code Decision Flow
+
+Understanding exactly which exit code to use in which situation is critical. The wrong exit code can silently allow dangerous operations or noisily block safe ones.
+
+```
+  HOOK EXIT CODE DECISION FLOW
+  ══════════════════════════════════════════════════════════════════
+
+  Hook script finishes
+          │
+          ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │  What do you want to happen?                                 │
+  └───────────────────────────┬─────────────────────────────────┘
+                              │
+           ┌──────────────────┼──────────────────────┐
+           │                  │                       │
+           ▼                  ▼                       ▼
+   "Block this tool      "Warn Claude but         "Everything is
+    / prompt / stop"      let it proceed"           fine, continue"
+           │                  │                       │
+           ▼                  ▼                       ▼
+        exit 2            exit 1 (or any          exit 0
+                          non-zero ≠ 2)
+           │                  │                       │
+           ▼                  ▼                       ▼
+   Tool does NOT         Tool proceeds           Tool proceeds
+   execute. Claude       normally. stdout        normally.
+   sees your stdout      injected as context     stdout injected
+   message as a          warning.                as context.
+   refusal reason.
+           │
+           ▼
+   ┌────────────────────────────────────────────────────────────┐
+   │  WHAT HAPPENS AFTER AN exit 2?                             │
+   │                                                            │
+   │  Event: PreToolUse / PreBash / PreFileWrite                │
+   │  → Tool is NOT executed                                    │
+   │  → Your stdout message is shown to Claude as the reason    │
+   │  → Claude may: retry with different args, apologise,       │
+   │    ask the user what to do, or try an alternative approach │
+   │                                                            │
+   │  Event: PostToolUse                                        │
+   │  → Tool result is REJECTED                                 │
+   │  → Claude must retry the tool call or give up              │
+   │                                                            │
+   │  Event: Stop                                               │
+   │  → Claude is FORCED to continue the session               │
+   │  → Equivalent to user typing "continue"                    │
+   │  → Use for: test gates, verification requirements          │
+   │                                                            │
+   │  Event: UserPromptSubmit                                   │
+   │  → User's message is NOT sent to Claude                    │
+   │  → User sees your stdout message as an error               │
+   │  → User must rephrase or take a different action           │
+   │                                                            │
+   │  Event: SubagentStop                                       │
+   │  → Subagent's result is REJECTED                           │
+   │  → Orchestrator is notified of rejection                   │
+   └────────────────────────────────────────────────────────────┘
+
+  STDERR vs STDOUT ROUTING:
+  ──────────────────────────────────────────────────────────────
+  stdout → Claude's context / user-facing message
+  stderr → Claude Code terminal log (developer debugging only)
+
+  Rule: Only print to stdout what you want Claude or the user to see.
+        Print all debug/diagnostic info to stderr.
+```
+
+### Exit code quick reference
+
+| Exit Code | Name | Claude sees stdout? | Tool executes? | When to use |
+|-----------|------|---------------------|----------------|-------------|
+| `0` | Success | Yes (if non-empty) | Yes | Hook ran cleanly, no issues |
+| `1` (or any non-2) | Warning | Yes | Yes | Non-critical concern; inject advisory context |
+| `2` | Block | Yes (as refusal reason) | **No** | Dangerous/policy-violating operation detected |
+
+### Common exit code mistakes
+
+```python
+# MISTAKE: Using exit 1 intending to block
+if is_dangerous(command):
+    print("This command is dangerous!")
+    sys.exit(1)    # ← WRONG: exit 1 does NOT block — the tool still runs!
+
+# CORRECT: Use exit 2 to block
+if is_dangerous(command):
+    print("BLOCKED: This command is dangerous and has been prevented.")
+    sys.exit(2)    # ← CORRECT: exit 2 blocks the tool
+
+# MISTAKE: Using exit 2 for informational messages
+# (your message becomes a refusal reason, confusing Claude)
+if found_warning:
+    print(f"Warning: {warning_message}")
+    sys.exit(2)    # ← WRONG: this blocks the tool, user wanted just a warning
+
+# CORRECT: Use exit 1 for non-blocking warnings
+if found_warning:
+    print(f"Warning: {warning_message}")
+    sys.exit(1)    # ← CORRECT: injects message but allows tool to proceed
+```
+
+---
+
+## 15. Production Hook Patterns
+
+These are complete, tested patterns for common production scenarios.
+
+### Pattern A: Security Gate with Multi-Layer Validation
+
+A comprehensive security gate that combines regex checks, environment detection, and Haiku-powered semantic analysis:
+
+```python
+#!/usr/bin/env python3
+"""
+~/.claude/hooks/production-security-gate.py
+
+Multi-layer security gate for PreToolUse:Bash events.
+Layer 1: Catastrophic command regex (fast, deterministic)
+Layer 2: Environment context (blocks writes in production)
+Layer 3: Haiku semantic check for ambiguous commands (accurate, cheap)
+
+Usage: configure as PreToolUse hook with matcher "Bash"
+Exit 2 = block command and show reason to Claude
+Exit 0 = allow command
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+# ─── Load payload ──────────────────────────────────────────────────────────────
+try:
+    payload = json.load(sys.stdin)
+except Exception as e:
+    print(f"Hook parse error: {e}", file=sys.stderr)
+    sys.exit(0)  # Don't block on hook failures
+
+command = payload.get("tool_input", {}).get("command", "")
+project_dir = payload.get("project_dir", "")
+session_id = payload.get("session_id", "unknown")
+
+# ─── LAYER 1: Catastrophic patterns (instant block) ───────────────────────────
+CATASTROPHIC = [
+    (r"rm\s+-rf\s+/(?:\s|$)", "recursive delete from filesystem root"),
+    (r"rm\s+-rf\s+~(?:\s|$)", "recursive delete of home directory"),
+    (r"dd\s+if=.+\s+of=/dev/[sh]d", "raw disk write (data destruction)"),
+    (r"mkfs\s*\.", "filesystem format (data destruction)"),
+    (r":\(\)\{:\|:&\};:", "fork bomb (system crash)"),
+    (r">\s*/dev/sda", "raw disk overwrite"),
+    (r"chmod\s+-R\s+777\s+/", "world-writable root filesystem"),
+    (r"fdisk\s+/dev/", "interactive partition table editor"),
+    (r"shred\s+/dev/", "shred disk device"),
+]
+
+for pattern, description in CATASTROPHIC:
+    if re.search(pattern, command):
+        # Log the blocked attempt for audit
+        log_entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "layer": "catastrophic",
+            "session_id": session_id,
+            "command": command[:500],
+            "reason": description,
+        }
+        log_dir = os.path.expanduser("~/.claude/security-audit")
+        os.makedirs(log_dir, exist_ok=True)
+        with open(f"{log_dir}/blocked.jsonl", "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+
+        print(
+            f"SECURITY GATE [CATASTROPHIC BLOCK]: {description}\n"
+            f"Command: {command[:200]}\n"
+            "This command has been blocked and logged. "
+            "If this was intentional, please perform the operation manually."
+        )
+        sys.exit(2)
+
+# ─── LAYER 2: Production environment guard ────────────────────────────────────
+env = os.environ.get("ENVIRONMENT", os.environ.get("ENV", "")).lower()
+is_production = env in ("production", "prod", "prd", "live")
+
+if is_production:
+    # In production: block write operations, deployments, database modifications
+    PROD_BLOCKED = [
+        (r"\bdrop\s+table\b", "DROP TABLE in production database"),
+        (r"\btruncate\s+table\b", "TRUNCATE TABLE in production database"),
+        (r"\bdelete\s+from\b(?!\s+\w+\s+where\b)", "unguarded DELETE in production"),
+        (r"kubectl\s+delete\b", "kubectl delete in production cluster"),
+        (r"terraform\s+destroy\b", "terraform destroy in production"),
+    ]
+    for pattern, description in PROD_BLOCKED:
+        if re.search(pattern, command, re.IGNORECASE):
+            print(
+                f"SECURITY GATE [PRODUCTION BLOCK]: {description}\n"
+                "Write/destructive operations are blocked in the production environment.\n"
+                "Please perform this operation via the approved change management process."
+            )
+            sys.exit(2)
+
+# ─── LAYER 3: Secret exfiltration detection ───────────────────────────────────
+# Block commands that might send environment variables to external URLs
+EXFIL_PATTERNS = [
+    r'curl\s+.*\s+-d\s+["\']?\$\{?[A-Z_]{4,}\}?',
+    r'curl\s+.*[?&][a-z_]+=\$\{?[A-Z_]{4,}\}?',
+    r'wget\s+.*--post-data[=\s]+["\']?\$\{?[A-Z_]{4,}\}?',
+]
+for pattern in EXFIL_PATTERNS:
+    if re.search(pattern, command):
+        print(
+            "SECURITY GATE [EXFILTRATION RISK]: Command appears to send environment "
+            "variable values to an external URL. This could expose secrets.\n"
+            "If intentional, ensure no secret variables are being included."
+        )
+        sys.exit(2)
+
+# ─── All checks passed ────────────────────────────────────────────────────────
+sys.exit(0)
+```
+
+Settings configuration:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/production-security-gate.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Pattern B: Cost Tracking with Budget Alerts
+
+Track spend per session and alert via Slack when thresholds are crossed:
+
+```python
+#!/usr/bin/env python3
+"""
+~/.claude/hooks/cost-tracker.py
+
+Tracks per-session costs from Stop hook payloads.
+Writes to a daily JSONL log and sends Slack alerts at configurable thresholds.
+
+Configure as a Stop hook.
+"""
+import json
+import os
+import sys
+import urllib.request
+from datetime import datetime, timezone, date
+from pathlib import Path
+
+# Load payload from stdin
+try:
+    payload = json.load(sys.stdin)
+except Exception as e:
+    print(f"Cost tracker parse error: {e}", file=sys.stderr)
+    sys.exit(0)
+
+# ─── Extract metrics ──────────────────────────────────────────────────────────
+session_id = payload.get("session_id", "unknown")
+total_cost = payload.get("total_cost_usd", 0.0)
+num_turns = payload.get("num_turns", 0)
+usage = payload.get("usage", {})
+project_dir = payload.get("project_dir", "unknown")
+stop_reason = payload.get("stop_reason", "end_turn")
+
+# ─── Write to daily cost log ──────────────────────────────────────────────────
+log_dir = Path.home() / ".claude" / "cost-logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+log_file = log_dir / f"{date.today().isoformat()}.jsonl"
+
+entry = {
+    "ts": datetime.now(timezone.utc).isoformat(),
+    "session_id": session_id,
+    "project": os.path.basename(project_dir),
+    "cost_usd": round(total_cost, 6),
+    "turns": num_turns,
+    "stop_reason": stop_reason,
+    "input_tokens": usage.get("input_tokens", 0),
+    "output_tokens": usage.get("output_tokens", 0),
+    "cache_read_tokens": usage.get("cache_read_input_tokens", 0),
+}
+
+with open(log_file, "a") as f:
+    f.write(json.dumps(entry) + "\n")
+
+# ─── Calculate today's total spend ───────────────────────────────────────────
+today_total = 0.0
+try:
+    with open(log_file) as f:
+        for line in f:
+            try:
+                today_total += json.loads(line).get("cost_usd", 0.0)
+            except Exception:
+                pass
+except FileNotFoundError:
+    today_total = total_cost
+
+# ─── Send Slack alert at thresholds ──────────────────────────────────────────
+ALERT_THRESHOLDS_USD = [5.0, 10.0, 25.0, 50.0]
+SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK_URL", "")
+
+if SLACK_WEBHOOK:
+    for threshold in ALERT_THRESHOLDS_USD:
+        # Alert when daily spend crosses a threshold (only once per threshold)
+        prev_total = today_total - total_cost
+        if prev_total < threshold <= today_total:
+            message = {
+                "text": (
+                    f":money_with_wings: *Claude Code Cost Alert* — "
+                    f"Daily spend crossed ${threshold:.0f}\n"
+                    f"Today's total: *${today_total:.2f}*\n"
+                    f"Latest session: `{session_id[:16]}` — "
+                    f"${total_cost:.4f}, {num_turns} turns, "
+                    f"project: `{os.path.basename(project_dir)}`"
+                )
+            }
+            try:
+                req = urllib.request.Request(
+                    SLACK_WEBHOOK,
+                    data=json.dumps(message).encode(),
+                    headers={"Content-Type": "application/json"},
+                )
+                urllib.request.urlopen(req, timeout=5)
+            except Exception as e:
+                print(f"Slack alert failed: {e}", file=sys.stderr)
+
+# Print daily summary to stdout (injected as context after Stop)
+# Only print if the session had meaningful cost (> 1 cent)
+if total_cost > 0.01:
+    print(
+        f"[Cost Tracker] Session complete: ${total_cost:.4f} | "
+        f"Today's total: ${today_total:.2f} | "
+        f"Turns: {num_turns}"
+    )
+
+sys.exit(0)
+```
+
+### Pattern C: SOC 2-Compliant Audit Logging
+
+Immutable, tamper-evident audit log suitable for compliance requirements:
+
+```python
+#!/usr/bin/env python3
+"""
+~/.claude/hooks/soc2-audit-log.py
+
+SOC 2 Type II compliant audit logging for Claude Code tool executions.
+Features:
+  - Immutable per-entry files (one JSON file per tool call)
+  - SHA-256 hash chain for tamper detection
+  - Structured fields for SIEM ingestion
+  - User and project attribution
+
+Configure as both PreToolUse and PostToolUse hook (matcher: ".*")
+"""
+import hashlib
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ─── Load and validate payload ────────────────────────────────────────────────
+try:
+    payload = json.load(sys.stdin)
+except Exception as e:
+    sys.exit(0)  # Never block on audit log failures
+
+# ─── Build audit record ───────────────────────────────────────────────────────
+ts = datetime.now(timezone.utc).isoformat()
+event_name = payload.get("event_name", os.environ.get("CLAUDE_HOOK_EVENT", "unknown"))
+
+record = {
+    # Identity
+    "ts": ts,
+    "schema_version": "1.0",
+
+    # Who
+    "user": os.environ.get("USER", os.environ.get("USERNAME", "unknown")),
+    "hostname": os.uname().nodename,
+    "session_id": payload.get("session_id", "unknown"),
+
+    # What
+    "event": event_name,
+    "tool": payload.get("tool_name", ""),
+    "tool_input": payload.get("tool_input", {}),
+    "tool_output_preview": str(payload.get("tool_output", ""))[:500],
+    "tool_exit_code": payload.get("tool_exit_code"),
+
+    # Where
+    "project_dir": payload.get("project_dir", ""),
+    "model": payload.get("model", ""),
+
+    # Context
+    "prompt_preview": "",  # populated below
+}
+
+# Extract the most recent user message for context
+transcript = payload.get("transcript", [])
+for msg in reversed(transcript):
+    if msg.get("role") == "user":
+        content = msg.get("content", [])
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                record["prompt_preview"] = block["text"][:200]
+                break
+        break
+
+# ─── Compute hash chain ───────────────────────────────────────────────────────
+# Read previous hash (if exists) to chain entries
+log_dir = Path(os.environ.get("AUDIT_LOG_DIR", Path.home() / ".claude" / "audit"))
+log_dir.mkdir(parents=True, exist_ok=True)
+chain_file = log_dir / "chain.txt"
+
+prev_hash = "GENESIS"
+if chain_file.exists():
+    try:
+        prev_hash = chain_file.read_text().strip()
+    except Exception:
+        pass
+
+record["prev_hash"] = prev_hash
+entry_json = json.dumps(record, sort_keys=True)
+entry_hash = hashlib.sha256(entry_json.encode()).hexdigest()
+record["entry_hash"] = entry_hash
+
+# Write hash chain file (updated atomically)
+chain_file.write_text(entry_hash)
+
+# ─── Write immutable audit entry ──────────────────────────────────────────────
+# One file per event — immutable (write-once)
+safe_ts = ts.replace(":", "-").replace(".", "-")
+filename = f"{safe_ts}_{session_id[:8]}_{event_name}_{entry_hash[:8]}.json"
+entry_path = log_dir / filename
+
+with open(entry_path, "w") as f:
+    json.dump(record, f, indent=2)
+
+# Set read-only permissions (prevents casual modification)
+os.chmod(entry_path, 0o444)
+
+sys.exit(0)
+```
+
+Configure both Pre and Post hooks for complete coverage:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": ".*",
+      "hooks": [{ "type": "command", "command": "python3 ~/.claude/hooks/soc2-audit-log.py", "timeout": 3 }]
+    }],
+    "PostToolUse": [{
+      "matcher": ".*",
+      "hooks": [{ "type": "command", "command": "python3 ~/.claude/hooks/soc2-audit-log.py", "timeout": 3 }]
+    }],
+    "Stop": [{
+      "hooks": [{ "type": "command", "command": "python3 ~/.claude/hooks/cost-tracker.py", "timeout": 10 }]
+    }]
+  }
+}
+```
+
+To verify the hash chain integrity later:
+
+```python
+#!/usr/bin/env python3
+"""Verify SOC 2 audit log hash chain integrity."""
+import hashlib
+import json
+from pathlib import Path
+
+log_dir = Path.home() / ".claude" / "audit"
+entries = sorted(log_dir.glob("*.json"))
+
+prev_hash = "GENESIS"
+errors = 0
+
+for entry_path in entries:
+    with open(entry_path) as f:
+        record = json.load(f)
+
+    stored_hash = record.pop("entry_hash")
+    expected_hash = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+
+    if stored_hash != expected_hash:
+        print(f"TAMPERED: {entry_path.name}")
+        errors += 1
+
+    if record.get("prev_hash") != prev_hash:
+        print(f"CHAIN BROKEN at: {entry_path.name}")
+        errors += 1
+
+    prev_hash = stored_hash
+    record["entry_hash"] = stored_hash  # restore for next iteration
+
+if errors == 0:
+    print(f"VERIFIED: {len(entries)} audit entries, hash chain intact")
+else:
+    print(f"INTEGRITY FAILURE: {errors} errors found in {len(entries)} entries")
 ```
 
 ---

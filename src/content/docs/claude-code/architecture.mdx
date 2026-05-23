@@ -7,7 +7,7 @@ description: >
   shutdown. Shows file load order, scope boundaries, and precedence relationships. v2.1.126 (May 2026).
 sidebar:
   order: 11
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-23
 ---
 
 import ArchDiagram from '../../../components/interactive/ArchDiagram.jsx';
@@ -18,70 +18,315 @@ import ArchDiagram from '../../../components/interactive/ArchDiagram.jsx';
 
 ## Session Lifecycle — Quick Reference
 
-### Phase 1: Initialization
-| Step | What loads | Notes |
-|------|-----------|-------|
-| Enterprise settings | `~/.claude/managed-settings.json` | Cannot be overridden |
-| User settings | `~/.claude/settings.json` | Global preferences |
-| Project settings | `.claude/settings.json` | Commit to git |
-| Local settings | `.claude/settings.local.json` | Gitignore this |
-| Enterprise CLAUDE.md | Managed path | Always-on context |
-| User CLAUDE.md | `~/.claude/CLAUDE.md` | Cross-project context |
-| Project CLAUDE.md | `CLAUDE.md` (root) | Project context |
-| Sub-directory CLAUDE.md | Nested `CLAUDE.md` files | Path-specific context |
-| CLAUDE.local.md | `CLAUDE.local.md` | Personal overrides |
-| Rules | `.claude/rules/*.md` | Path-scoped |
-| MCP servers | `.mcp.json` | Tool extensions |
-| Hooks | `settings.json → hooks` | Automation triggers |
+### Phase 1: Initialization — Detailed Load Order with Timing
 
-### Phase 2: Tool Loop
+The initialization phase loads all configuration and context files before the first prompt is processed. Files load in strict priority order — later files can override earlier ones unless enterprise lock prevents it.
 
 ```
-Your prompt
-    ↓
-Claude API (reads context: CLAUDE.md + Rules + Memory + Skills)
-    ↓
-stop_reason == "tool_use"?
-    ├── YES → Execute tool → check hooks → append result → loop
-    └── NO  → Session complete
+TIME 0ms — Process start
+  │
+  ├─ [~5ms]   Enterprise managed settings loaded (MDM/managed path)
+  │              └─ ~/.claude/managed-settings.json  ← LOCKED, no override possible
+  │              └─ Windows: HKCU\SOFTWARE\Anthropic\Claude   (Windows Registry)
+  │              └─ macOS:   /Library/Managed Preferences/com.anthropic.claude.plist
+  │
+  ├─ [~8ms]   User settings loaded
+  │              └─ ~/.claude/settings.json
+  │              └─ Merged ON TOP of managed — managed keys are immutable
+  │
+  ├─ [~10ms]  Project settings loaded
+  │              └─ .claude/settings.json            ← commit to git
+  │              └─ Overrides user settings for same keys (closer scope wins)
+  │
+  ├─ [~11ms]  Local settings loaded
+  │              └─ .claude/settings.local.json      ← gitignore this!
+  │              └─ Highest precedence non-enterprise settings
+  │
+  ├─ [~12ms]  Keybindings loaded
+  │              └─ ~/.claude/keybindings.json
+  │              └─ Chord and modifier key bindings applied
+  │
+  ├─ [~15ms]  Enterprise CLAUDE.md loaded (if managed path set)
+  │              └─ Injected as first block in system prompt
+  │
+  ├─ [~18ms]  User CLAUDE.md loaded
+  │              └─ ~/.claude/CLAUDE.md              ← cross-project context
+  │              └─ Appended AFTER enterprise CLAUDE.md
+  │
+  ├─ [~20ms]  Project CLAUDE.md loaded
+  │              └─ CLAUDE.md (repo root)            ← main project context
+  │              └─ Appended AFTER user CLAUDE.md
+  │              └─ @import directives resolved recursively here
+  │
+  ├─ [~22ms]  Sub-directory CLAUDE.md files loaded
+  │              └─ Any CLAUDE.md in parent dirs of CWD (cumulative, depth-first)
+  │              └─ e.g. src/CLAUDE.md → src/api/CLAUDE.md (most specific last)
+  │
+  ├─ [~23ms]  CLAUDE.local.md loaded
+  │              └─ CLAUDE.local.md (repo root)      ← personal overrides
+  │              └─ Appended last in CLAUDE.md chain
+  │
+  ├─ [~25ms]  Path-scoped Rules indexed (NOT yet loaded into context)
+  │              └─ .claude/rules/*.md               ← deferred until file path matches
+  │              └─ File names sorted alphabetically before indexing
+  │              └─ paths: frontmatter field compiled to glob matchers
+  │
+  ├─ [~30ms]  Auto-Memory loaded
+  │              └─ ~/.claude/projects/<hash>/memory/MEMORY.md
+  │              └─ Hash = SHA256 of absolute project path
+  │              └─ Up to 200 lines / 25KB — truncated from bottom if over limit
+  │
+  ├─ [~35ms]  MCP server connections established
+  │              └─ .mcp.json → spawn stdio servers or connect HTTP servers
+  │              └─ Tool schemas from each server fetched and registered
+  │              └─ ~2,650 tokens consumed per connected server
+  │
+  ├─ [~50ms]  Hooks registered from settings.json
+  │              └─ PreToolUse, PostToolUse, PreBash etc. registered
+  │              └─ http handlers validated (URLs reachable?)
+  │
+  └─ [~55ms]  First prompt accepted — session ready
+                 └─ /context now shows live token budget breakdown
 ```
 
-### Phase 3: Compaction
-- Triggers at **~85% context used** (auto) or via `/compact`
-- Summary replaces conversation history, **MEMORY.md survives**
-- Circuit breaker: prevents thrash loops (v2.1.89+)
+### Token Load Order Diagram
+
+Understanding which files consume context window budget on startup is critical for designing efficient projects. Everything "at init" is a fixed cost before you type a single word.
+
+```
+Context window at session start (1,000,000 tokens, Sonnet 4.6)
+═══════════════════════════════════════════════════════════════
+ Category                            Tokens        % of 1M
+───────────────────────────────────────────────────────────────
+[███] System prompt                  ~3,100         0.31%
+[███████████████] Built-in tool schemas
+     (eager core: Read, Edit, Bash,
+      Write, Grep, Glob, Task…)      ~4,800         0.48%
+[█] Deferred tool stubs              ~80/tool       varies
+    (names only until first use)
+[██████████] MCP tool schemas        ~2,650/server  varies
+[███] Enterprise CLAUDE.md           variable        —
+[███] User CLAUDE.md                 variable       aim <2,000
+[████████] Project CLAUDE.md         variable       aim <4,000
+[████████] CLAUDE.local.md           variable        —
+[███] Auto-Memory MEMORY.md          up to 25KB      —
+───────────────────────────────────────────────────────────────
+[···] Rules files                    0 at start     (deferred)
+[···] Skills                         0 at start     (deferred)
+[···] Commands                       0 at start     (deferred)
+[···] Agents                         0 at start     (deferred)
+───────────────────────────────────────────────────────────────
+Compaction reserve (fires at 83.5%) ~165,000        16.5%
+Available for actual work           ~794,000        79.4%
+═══════════════════════════════════════════════════════════════
+```
+
+**Key insight:** Rules files do NOT consume context on startup — they load conditionally when Claude touches files matching their `paths:` globs. This is the primary reason to prefer rules over CLAUDE.md for domain-specific instructions. A project with 20 well-scoped rules files uses 0 tokens for 19 of them on any given file access.
+
+**Haiku 4.5 caveat:** With a 200K context window, the same overheads consume ~9.8% — significantly tighter. Keep CLAUDE.md under 100 lines when using Haiku.
+
+### Phase 2: Tool Loop — Detailed Flow
+
+```
+Your prompt arrives
+    │
+    ▼
+┌──────────────────────────────────────────────────────────┐
+│  PrePrompt hook fires (blockable)                         │
+│  → Can modify or reject the prompt before it goes to API │
+└──────────────────────┬───────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│  Claude API call                                          │
+│    • System prompt (built-in + all loaded CLAUDE.md)     │
+│    • Conversation history                                 │
+│    • Tool schemas (eager + any deferred already resolved) │
+│    • Your message                                         │
+└──────────────────────┬───────────────────────────────────┘
+                       │
+                       ▼
+             stop_reason == "tool_use"?
+                  │              │
+                 YES             NO
+                  │              │
+                  ▼              ▼
+         Execute tool       PostPrompt hook
+              │             → End of turn
+              │
+              ├─ PreToolUse hook fires (blockable, exit 2 = user sees error)
+              │    └─ e.g. block rm -rf, log all writes, require approval
+              │
+              ├─ Tool runs
+              │    ├─ Read / Glob / Grep — file system access
+              │    ├─ Edit / Write / MultiEdit — file mutations
+              │    ├─ Bash — shell execution
+              │    ├─ WebFetch / WebSearch — network access
+              │    ├─ Task — spawn subagent
+              │    ├─ ToolSearch — resolve deferred tool schema
+              │    └─ MCP tools — delegated to MCP server
+              │
+              ├─ PostToolUse hook fires (observe-only)
+              │    └─ e.g. log tool result, trigger CI, send Slack alert
+              │
+              ├─ Check: does touched file path match any rules/ glob?
+              │    └─ YES → inject matching rule into context window now
+              │    └─ Each matched rule: ~300–800 tokens, loaded once per session
+              │
+              └─ Append tool result → loop back to API call
+```
+
+### Phase 3: Compaction — Mechanics Deep Dive
+
+Compaction is the mechanism Claude Code uses to continue working when the context window approaches its limit. Understanding it prevents surprise costs and context loss.
+
+```
+Context usage meter
+═══════════════════════════════════════════════════════════════
+0%                    60%    70%    83.5%              100%
+│                      │      │      │                    │
+│  ← normal work →     │      │      │                    │
+│                      │      │      │                    │
+│                      │  ← RUN /compact HERE (cheapest)  │
+│                      │      │      │                    │
+│                       ← manual /compact still good      │
+│                              │      │                    │
+│                              │ ← AUTO fires at 83.5%    │
+│                              │      │                    │
+│                              │  100K–200K tokens spent  │
+│                              │  summarising history      │
+│                                     │ DANGER ZONE:       │
+│                                     │ Re-trigger risk    │
+═══════════════════════════════════════════════════════════════
+```
+
+**What compaction does, step by step:**
+1. Pauses the tool loop
+2. Sends the entire conversation history to Claude in a separate call
+3. Claude produces a dense summary (~1,000–3,000 tokens) of what happened
+4. Summary replaces the conversation history in the context window
+5. CLAUDE.md reloads from disk (fresh copy, not summarised)
+6. MEMORY.md reloads fully from disk (not summarised)
+7. Path-scoped rules re-index (reloaded on next file match)
+8. Active skills re-inject up to the skill cap
+9. Tool loop resumes with the new compressed context
+
+**Compaction survival matrix:**
+
+| Item | Survives compaction? | Notes |
+|------|---------------------|-------|
+| Project CLAUDE.md | Yes — reloaded from disk | Keep it authoritative |
+| User CLAUDE.md | Yes — reloaded from disk | — |
+| MEMORY.md | Yes — fully reloaded | Best place for durable facts |
+| Architectural decisions (in MEMORY.md) | Yes | Write them explicitly |
+| /todos list | Yes — re-read by Claude | Claude re-reads TODO.md |
+| Conversation history | No — summarised | Only gist survives |
+| Raw bash output | No | Gone after compaction |
+| Path-scoped rules | Re-indexed | Load on next file match |
+| Deferred tool schemas | Re-resolved | Load on next use |
+| Thinking token traces | No | Gone entirely |
+| Open file contents in context | No | Re-read if needed |
+
+- Triggers at **~83.5% context used** (auto) or via `/compact [instructions]`
+- Compaction itself costs **100–200K tokens** to execute (Sonnet 4.6 prices)
+- Circuit breaker (v2.1.89+) prevents re-triggering within 2 minutes
+- **Best practice:** Run `/compact` proactively at 70% to avoid the costlier auto-compaction
+- Pass instructions: `/compact Focus on the auth module changes` to guide summary
 
 ### Phase 4: Shutdown
-- `Stop` hook fires (blockable)
-- `PostSessionEnd` hook fires (observe-only)
-- Session saved for `/resume` retrieval
 
-### All 23 File Types — Quick Index
+```
+User closes session / Ctrl+C / natural completion
+    │
+    ├─ Stop hook fires (blockable — exit 2 to prevent shutdown with message)
+    │    └─ Use to: save state, run cleanup scripts, post to Slack
+    │
+    ├─ Cleanup
+    │    ├─ Temp files removed
+    │    ├─ MCP servers disconnected (SIGTERM, then SIGKILL after 5s)
+    │    └─ Background monitors stopped
+    │
+    ├─ PostSessionEnd hook fires (observe-only — async, Claude is gone)
+    │    └─ Use for: audit logging, cost reporting, metric collection
+    │
+    ├─ Session state serialised to disk for /resume
+    │    └─ ~/.claude/projects/<hash>/sessions/<session-id>.json
+    │
+    └─ Session available: /resume <session-id-or-name>
+         └─ /rename <name> before closing to make retrieval easier
+```
 
-| File | Load Phase | Scope | Git? |
-|------|-----------|-------|------|
-| Enterprise CLAUDE.md | Init | All projects | Managed |
-| User CLAUDE.md | Init | All projects | No |
-| Project CLAUDE.md | Init | Project | Yes |
-| CLAUDE.local.md | Init | Project | No |
-| `.claude/rules/*.md` | Init (path-conditional) | File-path scoped | Yes |
-| `.claude/skills/<n>/SKILL.md` | On `/skills` invocation | Session | Yes |
-| `.claude/agents/<n>.md` | On Task tool call | Subagent only | Yes |
-| `.claude/commands/<n>.md` | On `/command` | Per invocation | Yes |
-| `.claude/output-styles/<n>.md` | On `/config` select | Session | Yes |
-| `MEMORY.md` | Init (auto-memory) | Project | No |
-| Subagent MEMORY.md | Agent init | Agent scope | No |
-| `.mcp.json` | Init | Project | Yes |
-| `~/.claude/settings.json` | Init | Global | No |
-| `.claude/settings.json` | Init | Project | Yes |
-| `.claude/settings.local.json` | Init | Project | No |
-| Enterprise managed settings | Init | Org-wide | Managed |
-| Plugin components | On install | User/Project | Configurable |
-| CLI flags | Per invocation | Session | N/A |
-| Env vars | Per invocation | Session | N/A |
-| `~/.claude/keybindings.json` | Init | Global | No |
-| `~/.claude/themes/*.md` | On `/theme` | Session | No |
-| Windows registry (HKCU) | Init | User | N/A |
-| Managed MDM profile | Init | Device | Managed |
+### All 23 File Types — Complete Reference
+
+| # | File | Load Phase | Scope | Git? | Token cost at init | Conditional? | Max size |
+|---|------|-----------|-------|------|--------------------|-------------|---------|
+| 1 | Enterprise CLAUDE.md | Init | All sessions | Managed | variable | No | Unlimited |
+| 2 | User CLAUDE.md | Init | All projects | No | variable | No | ~50KB rec |
+| 3 | Project CLAUDE.md | Init | Project | Yes | variable | No | ~120 lines rec |
+| 4 | CLAUDE.local.md | Init | Project | No | variable | No | ~120 lines rec |
+| 5 | `.claude/rules/*.md` | On file match | File-path scoped | Yes | 0 at init | Yes — path match | Per-file |
+| 6 | `.claude/skills/<n>/SKILL.md` | On `/skill` invoke | Session | Yes | 0 at init | Yes — invocation | ~50KB |
+| 7 | `.claude/agents/<n>.md` | On Task tool call | Subagent only | Yes | 0 at init | Yes — Task tool | ~10KB |
+| 8 | `.claude/commands/<n>.md` | On `/command` | Per invocation | Yes | 0 at init | Yes — command | ~10KB |
+| 9 | `.claude/output-styles/<n>.md` | On `/config` select | Session | Yes | 0 at init | Yes — select | ~5KB |
+| 10 | `MEMORY.md` (auto-memory) | Init | Project | No | up to 25KB | No | 200 lines / 25KB |
+| 11 | Subagent MEMORY.md | Agent init | Subagent scope | No | up to 25KB | Yes — subagent | 200 lines / 25KB |
+| 12 | `.mcp.json` (project) | Init | Project | Yes | 0 (config only) | No | — |
+| 13 | `~/.claude/.mcp.json` (user) | Init | All projects | No | 0 (config only) | No | — |
+| 14 | `.claude/.mcp.json.local` | Init | Project local | No | 0 (config only) | No | — |
+| 15 | `~/.claude/settings.json` | Init | Global | No | 0 (not context) | No | — |
+| 16 | `.claude/settings.json` | Init | Project | Yes | 0 (not context) | No | — |
+| 17 | `.claude/settings.local.json` | Init | Project | No | 0 (not context) | No | — |
+| 18 | Enterprise managed settings | Init | Org-wide | Managed | 0 (not context) | No | — |
+| 19 | Plugin components | On install | User/Project | Config | variable | Yes — install | Per component |
+| 20 | `~/.claude/keybindings.json` | Init | Global | No | 0 (not context) | No | — |
+| 21 | `~/.claude/themes/*.md` | On `/theme` | Session | No | 0 at init | Yes — select | ~5KB |
+| 22 | Windows registry (HKCU) | Init | User | N/A | 0 (not context) | No | — |
+| 23 | Managed MDM profile | Init | Device | Managed | 0 (not context) | No | — |
+
+**Tip:** Files marked "Conditional" load zero tokens at session start. Use them aggressively to keep the base context window lean. A project with 15 well-scoped rules costs 0 tokens for whichever rules don't match the current file being edited.
+
+### Key Architecture Principles
+
+1. **Additive not overriding (CLAUDE.md):** Multiple CLAUDE.md files all load — they stack, not replace. The enterprise file loads first, user next, project next, subdirectory last. Think of it as concatenation in order of specificity.
+
+2. **Overriding (settings):** Settings files do override — local beats project beats user beats managed (except enterprise managed always wins for any key it sets). This is the opposite of CLAUDE.md behavior.
+
+3. **Zero-cost deferral:** Rules, skills, agents, commands, and output styles cost 0 tokens until triggered. Design your project to exploit this — move all domain-specific guidance into `.claude/rules/*.md` with appropriate `paths:` globs.
+
+4. **Compaction survivors:** MEMORY.md and CLAUDE.md survive compaction by reloading from disk. Use them for anything that must persist long sessions. Never rely on the conversation history alone for critical facts.
+
+5. **Hash-based project identity:** The project identity key (used for MEMORY.md path and session storage) is the SHA256 of the absolute path to the project root. Moving a project to a different path creates a new identity — run `/memory migrate` after relocating.
+
+6. **MCP token cost is per-server, not per-tool:** Each connected MCP server costs ~2,650 tokens regardless of how many tools it exposes. Connect only the servers you actually use in a session; use `.claude/.mcp.json.local` for server subsets.
+
+### Session Cost Estimation
+
+```
+Rough formula for a Sonnet 4.6 session:
+
+Base overhead (init) = 8,000 tokens
+  + CLAUDE.md total length (tokens)
+  + MCP servers × 2,650
+  + MEMORY.md length
+
+Per-turn cost ≈ prompt_tokens + (avg_tool_calls × 1,500) + output_tokens
+
+Total ≈ base + (turns × per_turn_cost)
+
+Example: 50-turn refactoring session
+  Base:       8,000
+  CLAUDE.md:  3,000
+  2 MCP:      5,300
+  Memory:     2,000
+  50 turns × (2,000 + 3 tools × 1,500 + 800):  ≈ 315,000
+  ─────────────────────────────────────────────────────────
+  Total tokens: ~333,300
+  Cost at Sonnet 4.6 ($3 in / $15 out):
+    Input:  ~280K × $3/M  = $0.84
+    Output:  ~53K × $15/M = $0.80
+    Total: ≈ $1.64
+  With 80% cache hit: ~$0.45
+```
 
 → Full details: [Every Markdown File — Complete Catalog](./file-catalog)

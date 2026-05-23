@@ -1,14 +1,14 @@
 ---
 title: "Claude Code: Context, Cost & Token Efficiency — Reference"
 description: "Complete reference for context management, prompt caching, token budgets, model selection, effort controls, hooks, environment variables, and the advisor tool in Claude Code v2.1.126+. Covers all five CCA-F exam domains."
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-23
 sidebar:
   order: 5
 ---
 
 # Claude Code: Context, Cost & Token Efficiency — Complete Reference
 
-> **Last updated:** May 19, 2026
+> **Last updated:** May 23, 2026
 
 ---
 
@@ -1750,4 +1750,332 @@ Scenario 3: CI/CD automated review pipeline
 
 ---
 
-*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Introducing Claude Opus 4.7](https://www.anthropic.com/news/claude-opus-4-7), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated May 19, 2026 (v2.1.126).*
+*Sources: [Claude Code Docs](https://code.claude.com/docs/en/), [Claude Code Hooks](https://code.claude.com/docs/en/hooks), [Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [Claude Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview), [Adaptive Thinking Docs](https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking), [Advisor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool), [Claude Code Changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md), [Introducing Claude Opus 4.7](https://www.anthropic.com/news/claude-opus-4-7), [Anthropic Scientific Computing Guide](https://www.anthropic.com/research/long-running-Claude), [Cache TTL Community Analysis](https://github.com/anthropics/claude-code/issues/46829), [ToolSearch Failure Issue](https://github.com/anthropics/claude-code/issues/30466), Claude Code Camp, community analysis. Updated May 23, 2026 (v2.1.126).*
+
+---
+
+## 20. Real-World Cost Scenarios
+
+These five worked examples show end-to-end cost calculations for representative developer workflows. Each includes total cost, cache savings, and the optimizations applied.
+
+### Scenario 1 — Daily Development Session (Sonnet, 2 Hours)
+
+**Setup:** One developer, active coding session, Sonnet 4.6, mixed work (features + debugging + code review). Good caching discipline maintained throughout.
+
+```
+Session parameters:
+  Model:         claude-sonnet-4-6
+  Duration:      2 hours active (not idle)
+  Turns:         45
+  Context setup: CLAUDE.md 2,000 tokens + rules 1,500 tokens + tool schemas 8,000 tokens
+                 Total stable prefix: 11,500 tokens
+  Conversation:  ~4,000 tokens added per turn (reads, edits, Bash output)
+
+Token accounting:
+  Stable prefix (turn 1, cache write):
+    11,500 × $3.75/MTok (1.25× write rate) = $0.043
+
+  Stable prefix (turns 2–45, cache reads):
+    11,500 × 44 turns × $0.30/MTok = $0.152
+
+  Conversation history (grows each turn, average 45K over session):
+    45 turns × 4,000 new input tokens = 180,000 total new input
+    180,000 × $3.00/MTok = $0.540
+
+  Output tokens (Claude's responses):
+    45 turns × 800 tokens = 36,000 output
+    36,000 × $15.00/MTok = $0.540
+
+  Total session cost:              $1.275
+
+Without caching (no prefix savings):
+  11,500 × 45 turns = 517,500 prefix tokens
+  517,500 × $3.00/MTok = $1.553 (prefix alone)
+  Total without caching:           $2.633
+
+Cache savings:                    $1.358 (52% reduction from caching)
+
+Optimizations applied:
+  ✓ Sonnet (not Opus): 40% cheaper than Opus input rates
+  ✓ Stable CLAUDE.md (no mid-session edits): full cache benefit
+  ✓ MAX_THINKING_TOKENS=10000: bounded thinking costs
+  ✓ Subagents on Haiku: any exploration tasks ~80% cheaper
+```
+
+**Key insight:** A well-optimized 2-hour Sonnet session costs about $1.30. The same session on Opus 4.7 at default xhigh effort would cost ~$8–15 due to higher per-token rates and extended thinking overhead.
+
+---
+
+### Scenario 2 — Code Review Pipeline (Haiku, Batch)
+
+**Setup:** CI/CD system reviewing 50 PRs per day. Each review reads the diff (~2K tokens), generates structured feedback (~1K output tokens). Runs with `--bare` mode and Haiku model.
+
+```
+Per-review parameters:
+  Model:         claude-haiku-4-5
+  Mode:          --bare (no hooks, MCP, CLAUDE.md, memory overhead)
+  Input:         8,000 tokens (system prompt 4K + diff 2K + context 2K)
+  Output:        1,200 tokens (structured review comment)
+  Cache:         System prompt cached across all reviews in batch
+
+Single review cost:
+  Input (system prompt, cache read after first):   4,000 × $0.10/MTok = $0.0004
+  Input (diff + context, always fresh):            4,000 × $1.00/MTok = $0.004
+  Output (review text):                            1,200 × $5.00/MTok = $0.006
+  Total per review:                               ~$0.0104
+
+50 reviews/day:
+  Daily cost:                    50 × $0.0104 = $0.52/day
+  Monthly cost (22 working days): $11.44/month
+
+Without --bare mode (with CLAUDE.md 3K, MCP tools 8K, etc.):
+  Input overhead per review: +11,000 tokens
+  Additional cost: 50 × 11,000 × $1.00/MTok = $0.55/day premium
+  Monthly overhead: +$12.10/month
+
+Cache savings (system prompt cached across 50 daily reviews):
+  Full system prompt without cache: 50 × 4,000 × $1.00/MTok = $0.20/day
+  With cache (one write, 49 reads): $0.004 + (49 × $0.0004) = $0.024/day
+  Cache savings: $0.176/day = $3.87/month on system prompt alone
+
+Optimizations applied:
+  ✓ Haiku (not Sonnet): 73% cheaper input, 67% cheaper output
+  ✓ --bare mode: eliminates unnecessary overhead tokens
+  ✓ Batch caching: 50 reviews share a single system prompt cache write
+  ✓ CLAUDE_CODE_SUBAGENT_MODEL=haiku: any spawned agents stay on Haiku
+```
+
+**Key insight:** 50 automated reviews/day costs under $12/month. Switching to Sonnet for "better quality" would cost ~$45/month—a 4× premium that rarely justifies the marginal quality improvement for routine PR descriptions.
+
+---
+
+### Scenario 3 — Architecture Planning Session (Opus, High Effort)
+
+**Setup:** A senior architect uses Opus 4.7 with xhigh effort for a 3-hour architecture design session. Designing a new microservices decomposition. Calls `/advisor` twice.
+
+```
+Session parameters:
+  Model:         claude-opus-4-7
+  Effort:        xhigh (adaptive, ~50K thinking tokens per complex turn)
+  Duration:      3 hours
+  Turns:         20 (slow, deliberate architectural turns)
+  Context:       Large — reading architecture docs, existing code, ADRs
+                 Average input per turn: 15,000 tokens (heavy file reads)
+
+Token accounting:
+  Input tokens (20 turns × 15,000 avg):     300,000 input
+    Cache reads (stable prefix ~20K, 19 turns): 19 × 20,000 × $0.50/MTok = $0.19
+    Fresh input (15,000 - 20,000 stable = variable conversation): 
+      300,000 - (20 × 20,000) = -100,000 → net ~200,000 fresh input tokens
+    Fresh input cost:                        200,000 × $5.00/MTok = $1.00
+
+  Output tokens:
+    Thinking (xhigh, ~40K per turn, 20 turns): 800,000 thinking tokens
+    800,000 × $25.00/MTok = $20.00 (thinking billed at output rates)
+    Response text (avg 3,000 per turn):        60,000 × $25.00/MTok = $1.50
+
+  /advisor calls (2 calls, ~150K context each, Opus-tier):
+    2 × 150,000 × $5.00/MTok = $1.50 input
+    2 × 2,000 × $25.00/MTok = $0.10 output
+
+  Total session cost:                        ~$24.29
+
+  Without opusplan (all Opus, no efficiency):  ~$24.29 (similar — all turns complex)
+  With opusplan (Sonnet for implementation turns): Would save ~40% on simpler turns
+  but this scenario IS all complex turns, so no savings from opusplan here.
+
+Optimizations applied:
+  ✓ /advisor at key decision points (2 calls) — prevented 2 major wrong approaches
+  ✓ Stable prefix cached: $0.19 saved on cache reads (vs $0.76 without caching)
+  ✓ Effort matches task: xhigh is appropriate for architecture sessions
+  
+Cost justification:
+  3-hour architecture session: ~$24
+  Equivalent senior architect contractor rate: $300–600 (3 hours at $100–200/hr)
+  Value ratio: Claude provides architectural reasoning at ~4–8% of contractor cost
+```
+
+**Key insight:** Opus xhigh sessions are genuinely expensive ($20+) but justified for irreversible architecture decisions. The `/advisor` calls added ~$3.20 but each prevented a wrong approach that would have cost 10+ implementation turns to undo ($50–100 in Claude costs plus developer time).
+
+---
+
+### Scenario 4 — Large Refactor (Sonnet, Multiple Compact Cycles)
+
+**Setup:** Migrating a 50,000-line codebase from REST to GraphQL. Two-day effort with multiple compact cycles. Uses subagents for parallel file processing.
+
+```
+Session parameters:
+  Model:         claude-sonnet-4-6
+  Duration:      2 days, ~6 hours active per day
+  Approach:      3 major compact cycles per day (every 2 hours)
+  Subagents:     Haiku for mechanical file transformations
+  Turns per cycle: ~40 turns before compact
+
+Per compact cycle (40 turns):
+  Stable prefix (CLAUDE.md 3K, rules 2K, tools 8K): 13,000 tokens
+    Cache write (first turn):   13,000 × $3.75/MTok = $0.049
+    Cache reads (39 turns):     13,000 × 39 × $0.30/MTok = $0.152
+  Conversation growth:          40 × 5,000 tokens = 200,000 input
+    200,000 × $3.00/MTok = $0.60
+  Output:                       40 × 1,500 = 60,000 tokens
+    60,000 × $15.00/MTok = $0.90
+  Subagents (Haiku, 10 per cycle, 5K input + 2K output each):
+    Input:  10 × 5,000 × $1.00/MTok = $0.05
+    Output: 10 × 2,000 × $5.00/MTok = $0.10
+  Compact operation cost:       ~2,000 input + 500 output
+    2,000 × $3.00/MTok + 500 × $15.00/MTok = $0.014
+  
+  Per cycle total:              ~$1.865
+
+Full 2-day engagement:
+  Cycles per day: 3
+  Days: 2
+  Total cycles: 6
+  Total cost: 6 × $1.865 = $11.19
+
+Savings from compact cycles (vs no compaction):
+  Without compaction, context would grow unboundedly:
+  Turn 120 (end of day 1 without compaction): 120 × 5,000 = 600,000 tokens/turn input
+    Turn 120 cost alone: 600,000 × $3.00/MTok = $1.80 just for that turn
+  With 3 compact cycles/day: max context resets to ~20K after each compact
+  Estimated saving: ~$30 over 2 days from controlled context size
+
+Subagent savings vs. all-Sonnet:
+  Haiku subagents: 10/cycle × 6 cycles × ($0.05+$0.10) = $9.00
+  Same work on Sonnet: 10/cycle × 6 cycles × ($0.165+$0.45) = $36.90
+  Subagent savings: $27.90
+```
+
+**Key insight:** For a 2-day large refactor, disciplined compact cycles + Haiku subagents keeps costs around $11 vs $50+ for a naive "single long session, all Sonnet" approach. The compact discipline alone saves ~$30; Haiku subagents save another ~$28.
+
+---
+
+### Scenario 5 — CI/CD Pipeline (Haiku, 100 Runs/Day)
+
+**Setup:** Automated pipeline running 100 times per day across all branches. Each run: linting analysis, changelog generation, and PR description drafting. Uses `--bare` mode.
+
+```
+Per-run parameters:
+  Model:         claude-haiku-4-5
+  Mode:          --bare, non-interactive (-p flag)
+  Tasks per run: lint summary (1K output) + changelog (500 output) + PR desc (800 output)
+  Input per run: system prompt 3K + git diff 3K + lint output 2K = 8,000 tokens
+  Output per run: 2,300 tokens total across 3 tasks
+
+Single run cost:
+  Input (system prompt cached across runs in same CI job):
+    Cache read:  3,000 × $0.10/MTok = $0.0003
+    Fresh input: 5,000 × $1.00/MTok = $0.005
+  Output:        2,300 × $5.00/MTok = $0.0115
+  Total per run:                     $0.0168
+
+100 runs/day:
+  Daily cost:    100 × $0.0168 = $1.68/day
+  Monthly cost:  $1.68 × 22   = $36.96/month
+
+Caching across batch (10 CI jobs, each running 10 pipeline instances):
+  Without cache: 100 × 3,000 × $1.00/MTok = $0.30/day on system prompt
+  With cache:    10 writes + 90 reads = 10×$0.0038 + 90×$0.0003 = $0.065/day
+  Cache savings: $0.235/day = $5.17/month
+
+On Sonnet instead of Haiku:
+  Input:  100 × 8,000 × $3.00/MTok = $2.40/day
+  Output: 100 × 2,300 × $15.00/MTok = $3.45/day
+  Total Sonnet: $5.85/day = $128.70/month
+  Haiku savings vs Sonnet: $4.17/day = $91.74/month
+
+Optimizations applied:
+  ✓ Haiku: 73% cheaper per input token vs Sonnet
+  ✓ --bare mode: no CLAUDE.md, MCP, hooks overhead (saves ~2,000 tokens/run = $0.20/day)
+  ✓ Batch caching: CI system prompt written once per job, read 9 more times
+  ✓ Non-interactive (-p): no interactive overhead, faster execution
+  ✓ Low effort: CI tasks are mechanical, no extended thinking needed
+```
+
+**Key insight:** 100 automated runs/day costs $37/month on Haiku. The same pipeline on Sonnet would cost $129/month. Using `--bare` and `-p` mode removes all interactive overhead. At this scale, model choice alone determines 70%+ of the cost.
+
+---
+
+## 21. Context Window Budget Worksheet
+
+Use this worksheet to plan your session's token budget before starting work. Fill in the actual sizes for your project; the template shows typical values.
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║             CONTEXT WINDOW BUDGET WORKSHEET (200K window)                    ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║  FIXED OVERHEAD (present every turn, cached after turn 1)                    ║
+║  ─────────────────────────────────────────────────────────────────────────   ║
+║  Built-in tool schemas:           ________ tokens  (typical: 8,000)          ║
+║  System prompt:                   ________ tokens  (typical: 4,000)          ║
+║  Enterprise CLAUDE.md:            ________ tokens  (enter 0 if not managed) ║
+║  User CLAUDE.md (~/.claude/):     ________ tokens  (typical: 500–2,000)     ║
+║  Project CLAUDE.md (./):          ________ tokens  (target: <3,000)         ║
+║  CLAUDE.local.md:                 ________ tokens  (typical: 0–500)         ║
+║  Rules files (.claude/rules/):    ________ tokens  (typical: 500–3,000)     ║
+║  Auto-memory (MEMORY.md):         ________ tokens  (max: ~1,500)            ║
+║  MCP server instructions:         ________ tokens  (×N servers, ~1K each)   ║
+║  ─────────────────────────────────────────────────────────────────────────   ║
+║  SUBTOTAL Fixed:                  ________ tokens                            ║
+║                                                                              ║
+║  RESERVED BUFFER (system overhead, tool result space)                        ║
+║  ─────────────────────────────────────────────────────────────────────────   ║
+║  System overhead:                 ________ tokens  (typical: 33,000–45,000) ║
+║  ─────────────────────────────────────────────────────────────────────────   ║
+║  SUBTOTAL Reserved:               ________ tokens                            ║
+║                                                                              ║
+║  AVAILABLE FOR CONVERSATION HISTORY                                          ║
+║  ─────────────────────────────────────────────────────────────────────────   ║
+║  200,000 - Fixed - Reserved     = ________ tokens available                 ║
+║                                                                              ║
+║  ESTIMATED TURNS BEFORE AUTO-COMPACT                                         ║
+║  ─────────────────────────────────────────────────────────────────────────   ║
+║  Available tokens:                ________ ÷ avg tokens/turn = ____ turns   ║
+║  Typical tokens per turn:                                                    ║
+║    Simple Q&A:            ~800    Multi-file read:      ~8,000              ║
+║    File read (1K lines):  ~2,000  Edit + test run:      ~4,000              ║
+║    Bash + output:         ~800    SubAgent result:       ~5,000              ║
+║                                                                              ║
+║  Auto-compact threshold:  83.5% = 167,000 tokens (of 200K)                  ║
+║  Manual compact target:   70%   = 140,000 tokens (for headroom)             ║
+║  ─────────────────────────────────────────────────────────────────────────   ║
+║                                                                              ║
+║  SAMPLE CALCULATION:                                                         ║
+║  Enterprise CLAUDE.md:        1,000 tokens                                   ║
+║  User CLAUDE.md:              1,500 tokens                                   ║
+║  Project CLAUDE.md:           2,500 tokens                                   ║
+║  Rules (5 files):             2,000 tokens                                   ║
+║  Tool schemas:                8,000 tokens                                   ║
+║  System prompt:               4,000 tokens                                   ║
+║  MEMORY.md:                     800 tokens                                   ║
+║  MCP (2 servers):             2,000 tokens                                   ║
+║  SUBTOTAL Fixed:             21,800 tokens                                   ║
+║  Reserved overhead:          38,000 tokens                                   ║
+║  Available for history:     140,200 tokens                                   ║
+║  At 4,000 tokens/turn:       ~35 turns before hitting 83.5% threshold       ║
+║  Compact at turn ~30 for comfortable headroom                                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+BUDGET OPTIMIZATION ACTIONS:
+  If Fixed Overhead > 20,000 tokens:
+    → Split CLAUDE.md into @imports and subtree files
+    → Disable unused MCP servers via /mcp
+    → Move verbose rules to path-scoped rules (load on demand)
+
+  If Reserved Overhead seems high:
+    → Use --bare mode to eliminate overhead in CI contexts
+    → Enable ToolSearch to defer MCP tool schemas
+
+  If Available History < 50,000 tokens:
+    → Your session will compact frequently (every 12–13 turns at 4K/turn)
+    → Consider trimming fixed overhead before starting long sessions
+    → Set CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=75 for earlier, gentler compaction
+
+  If Using Opus 4.7 (1M context window):
+    → Available for history: ~900,000+ tokens (fixed/reserved same)
+    → Turns before compact: 200+ (essentially never for normal sessions)
+    → Cost consideration: every turn still pays input rates on ALL history
+```
+
+**Cost of exceeding the budget:** When auto-compact triggers at 83.5%, you pay ~$0.01–0.05 for the compaction operation and lose conversation granularity. More importantly, the next several turns pay elevated input costs because the compact summary is dense. Proactive compaction at 70% is always cheaper than reactive compaction at 83.5%.

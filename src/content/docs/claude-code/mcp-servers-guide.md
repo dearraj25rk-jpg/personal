@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 6
   label: MCP Servers
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-23
 ---
 
 # MCP Servers — Architecture, Configuration & Development

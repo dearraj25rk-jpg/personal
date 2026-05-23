@@ -41,10 +41,10 @@ hero:
 </div>
 
 <div class="stats-bar">
-  <div class="stat-item"><div class="stat-value">22</div><div class="stat-label">RAG Guides</div></div>
+  <div class="stat-item"><div class="stat-value">27</div><div class="stat-label">RAG Guides</div></div>
   <div class="stat-item"><div class="stat-value">11</div><div class="stat-label">BERT Resources</div></div>
   <div class="stat-item"><div class="stat-value">3</div><div class="stat-label">LangChain Refs</div></div>
-  <div class="stat-item"><div class="stat-value">13</div><div class="stat-label">Cert Guides</div></div>
+  <div class="stat-item"><div class="stat-value">15</div><div class="stat-label">Cert Guides</div></div>
   <div class="stat-item"><div class="stat-value">35</div><div class="stat-label">Claude Code Docs</div></div>
   <div class="stat-item"><div class="stat-value">100+</div><div class="stat-label">Total Resources</div></div>
 </div>
@@ -55,35 +55,35 @@ hero:
   <a class="section-card" href="/ai-lab/rag/" style="--card-accent:#f78166;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></div>
     <div class="card-title">RAG Guides</div>
-    <div class="card-desc">Full RAG pipeline — chunking, embeddings, vector stores, hybrid retrieval, reranking, agentic RAG, multimodal, evaluation, and production deployment. Includes a vectorless track covering long-context, full-text search, and GraphRAG.</div>
-    <div class="card-count">17 reference docs · 5 interactive guides</div>
+    <div class="card-desc">End-to-end RAG system design — chunking strategies (fixed, semantic, proposition), dense and sparse embeddings, vector stores (FAISS, Pinecone, Weaviate, pgvector), hybrid BM25+dense retrieval, cross-encoder reranking, agentic RAG with tool-calling, multimodal document ingestion, RAGAS evaluation, and production deployment patterns. Includes a dedicated vectorless track covering long-context LLM retrieval, full-text search with BM25, and knowledge graph approaches (GraphRAG, RAPTOR).</div>
+    <div class="card-count">22 reference docs · 5 interactive guides</div>
   </a>
 
   <a class="section-card" href="/ai-lab/bert/" style="--card-accent:#79c0ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg></div>
     <div class="card-title">BERT Architectures</div>
-    <div class="card-desc">BERT internals from tokenization to fine-tuning — encoder stack, attention, MLM/NSP, variants (RoBERTa, DistilBERT, DeBERTa), SBERT embeddings, and BERT in RAG. Three interactive deep-dive diagrams.</div>
+    <div class="card-desc">Deep-dive into BERT internals — WordPiece tokenization (30K vocabulary, subword segmentation, [CLS]/[SEP] special tokens), 12-layer bidirectional encoder stack, scaled dot-product multi-head attention (12 heads, 768-dim), Masked Language Modelling and Next Sentence Prediction pretraining, positional + segment embeddings, and task-specific fine-tuning. Covers all major variants: RoBERTa (dynamic masking, no NSP), DistilBERT (knowledge distillation, 40% smaller), DeBERTa (disentangled attention), and SBERT for semantic similarity. Three interactive deep-dive diagrams.</div>
     <div class="card-count">8 reference docs · 3 interactive diagrams</div>
   </a>
 
   <a class="section-card" href="/ai-lab/langchain/" style="--card-accent:#7ee787;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
     <div class="card-title">LangChain Reference</div>
-    <div class="card-desc">LCEL chains, ReAct agents, memory patterns, RAG pipelines, LangGraph state machines, and production deployment. From core concepts to production-grade applications.</div>
+    <div class="card-desc">Authoritative LangChain and LangGraph reference — LangChain Expression Language (LCEL) chain composition with the pipe operator, ReAct agent loop with tool-calling, conversation memory patterns (BufferMemory, SummaryMemory, VectorStoreRetrieverMemory), retrieval-augmented generation pipelines with vectorstore retrievers, LangGraph stateful graph machines (nodes, edges, conditional branching, human-in-the-loop), streaming, callbacks, and production deployment with LangServe. Two visual architecture guides cover chain anatomy and agent tool loop.</div>
     <div class="card-count">1 comprehensive reference · 2 visual guides</div>
   </a>
 
   <a class="section-card" href="/ai-lab/claude-code/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
     <div class="card-title">Claude Code Docs</div>
-    <div class="card-desc">Complete Claude Code reference (v2.1.126) — configuration hierarchy, hooks, MCP servers, agent teams, CI/CD, permissions, plugins, memory, models &amp; pricing, and 14 interactive diagrams.</div>
+    <div class="card-desc">The most comprehensive independent Claude Code reference available — covering v2.1.126 (May 2026). All 23 file types with full attribute tables, the complete configuration hierarchy from Enterprise Managed down to Auto-Memory, the 30+ hooks system with all five handler types (command, prompt, agent, http, mcp_tool), MCP server architecture (stdio and HTTP transports, Tools/Resources/Prompts primitives), agent teams and subagent orchestration, CI/CD integration for GitHub Actions, GitLab, Azure DevOps, AWS Bedrock, and GCP Vertex AI with Workload Identity Federation, the Agent SDK for Python and TypeScript, worktrees for parallel development, all 10 plugin component types, 7 memory types, current model lineup and pricing, and 14 interactive diagrams covering every major subsystem.</div>
     <div class="card-count">21 reference docs · 14 interactive diagrams</div>
   </a>
 
   <a class="section-card" href="/ai-lab/cert/" style="--card-accent:#ffa657;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg></div>
     <div class="card-title">Cert Prep</div>
-    <div class="card-desc">CCA-F exam prep covering all 5 domains — visual guides, interactive quiz, gap-fill reference, and a 21-day study roadmap with 330+ verified claims.</div>
+    <div class="card-desc">Structured exam preparation for the Anthropic Certified Claude Associate — Foundation (CCA-F) certification, covering all five exam domains: Responsible AI and Safety, Core Claude Capabilities, Prompt Engineering, Claude in Applications, and Enterprise Deployment. Includes domain-by-domain visual guides, an interactive multiple-choice quiz with explanations, a gap-fill quick reference sheet, and a structured 21-day study roadmap. Every factual claim is verified — 330+ verified against official Anthropic documentation.</div>
     <div class="card-count">13 study guides · 2 interactive tools</div>
   </a>
 
@@ -95,101 +95,101 @@ hero:
   <a class="section-card" href="/ai-lab/claude-code/architecture/" style="--card-accent:#58a6ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg></div>
     <div class="card-title">Architecture Diagram</div>
-    <div class="card-desc">Full lifecycle visual flow: session init → tool loop → compaction → shutdown. All 23 Claude Code file types with load order and scope boundaries.</div>
+    <div class="card-desc">Full lifecycle visual flow: session init → tool loop → compaction → shutdown. All 23 Claude Code file types with precise load order, scope boundaries, and hook injection points annotated at each stage.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/precedence/" style="--card-accent:#58a6ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="3" x2="12" y2="21"/><path d="M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
     <div class="card-title">Precedence Diagram</div>
-    <div class="card-desc">Complete file hierarchy pyramid — all precedence layers from Enterprise Managed down to Auto-Memory, conflict resolution, and override mechanics.</div>
+    <div class="card-desc">Complete file hierarchy pyramid — all precedence layers from Enterprise Managed (MDM/server/file/registry) down through CLI flags, project settings, user settings, CLAUDE.md, path-scoped rules, skills, and Auto-Memory. Conflict resolution and override mechanics explained at each level.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/override-test-lab/" style="--card-accent:#58a6ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l1 8H8L9 3z"/><path d="M6.8 11s-.8 1.5-.8 3c0 3.3 2.7 6 6 6s6-2.7 6-6c0-1.5-.8-3-.8-3"/><line x1="8" y1="7" x2="16" y2="7"/></svg></div>
     <div class="card-title">Override Test Lab</div>
-    <div class="card-desc">12 hands-on interactive scenarios covering every Claude Code precedence rule — test CLAUDE.md hierarchy, path-scoped rules, skill invocation, memory scope.</div>
+    <div class="card-desc">12 hands-on interactive scenarios covering every Claude Code precedence rule — test CLAUDE.md hierarchy across project/user/enterprise scopes, path-scoped rule matching, skill invocation triggers, memory scope, and settings override behaviour. Each scenario shows expected vs actual resolution.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/file-catalog/" style="--card-accent:#58a6ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
     <div class="card-title">File Catalog</div>
-    <div class="card-desc">Browse and filter all 23 Claude Code file types — token cost, frontmatter schema, load timing, and usage examples for each.</div>
+    <div class="card-desc">Browse and filter all 23 Claude Code file types — token cost at each context budget, required and optional frontmatter schema fields, exact load timing within the session lifecycle, and annotated usage examples for each file type.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/context-engineering-ce/" style="--card-accent:#58a6ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
     <div class="card-title">Context Engineering</div>
-    <div class="card-desc">Four CE strategies, token window simulator, session rhythm, command reference, and full CE checklist. Covers all four CE primitives and real-world patterns.</div>
+    <div class="card-desc">All four CE strategies (CLAUDE.md design, rules scoping, memory management, compaction control), interactive token window simulator showing how context fills up, session rhythm patterns, complete slash command reference for context ops, and a printable CE checklist. Covers all four CE primitives with real-world patterns and cost implications.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/claude-code-efficiency-guide/" style="--card-accent:#58a6ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
     <div class="card-title">Efficiency Guide</div>
-    <div class="card-desc">Interactive token efficiency guide — caching ROI calculator, output style cost comparison, effort level selector, and per-task model decision matrix.</div>
+    <div class="card-desc">Interactive token efficiency guide — prompt caching ROI calculator (showing savings at 90%+ hit rates), output style cost comparison across Default/Explanatory/Learning modes, effort level selector with cost multipliers, and a per-task model decision matrix to match Haiku/Sonnet/Opus to the right job.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/hooks-diagram/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div>
     <div class="card-title">Hooks Flow Diagram</div>
-    <div class="card-desc">Interactive session lifecycle flow, all 30+ hook events with payload details, five handler types (command/prompt/agent/http/mcp_tool), and 6+ automation patterns.</div>
+    <div class="card-desc">Interactive session lifecycle flow showing all 30+ hook events with their exact JSON payload schemas, five handler types (command/prompt/agent/http/mcp_tool) with configuration examples, exit code semantics, event matcher syntax, and 6+ copy-paste automation patterns covering formatting enforcement, test gating, audit logging, and security gates.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/mcp-diagram/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" rx="3" ry="3"/><circle cx="5" cy="19" rx="3" ry="3"/><circle cx="19" cy="19" rx="3" ry="3"/><line x1="12" y1="8" x2="5.5" y2="16"/><line x1="12" y1="8" x2="18.5" y2="16"/></svg></div>
     <div class="card-title">MCP Architecture</div>
-    <div class="card-desc">Interactive 4-layer MCP guide — Host→Client→Server, three primitives (Tools/Resources/Prompts) with examples, transport types, config scopes, 12 official servers.</div>
+    <div class="card-desc">Interactive 4-layer MCP guide (Host → Client → Server → External Service), all three primitives (Tools for callable functions, Resources for data streams, Prompts for reusable templates) with real examples, both transport types (stdio for local, HTTP/SSE for remote), four configuration scopes (.mcp.json / settings / user / enterprise), and 12 Anthropic-official server configurations.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/memory-diagram/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="10" ry="4"/><path d="M2 12c0 2.21 4.48 4 10 4s10-1.79 10-4"/><path d="M2 12v4c0 2.21 4.48 4 10 4s10-1.79 10-4v-4"/></svg></div>
     <div class="card-title">Memory System Diagram</div>
-    <div class="card-desc">All 7 memory types, scope, load timing, compaction survival, 200-line/25KB size limits, @import syntax, and memory environment variables.</div>
+    <div class="card-desc">All 7 memory types mapped by scope and persistence (Enterprise > User > Project > Local > Rules > Skills > Auto-Memory), load timing in the session lifecycle, which memory types survive compaction, the 200-line / 25KB Auto-Memory limit, @import chain syntax for composable memory, and all relevant CLAUDE_MEMORY_* environment variables.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/plugins-diagram/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></svg></div>
     <div class="card-title">Plugins Architecture</div>
-    <div class="card-desc">All 10 plugin component types, CLAUDE_PLUGIN_ROOT vs CLAUDE_PLUGIN_DATA environment variables, installation scopes, plugin.json manifest, and userConfig patterns.</div>
+    <div class="card-desc">All 10 plugin component types (CLAUDE.md, Rules, Skills, Commands, Output Styles, Hooks, MCP Servers, Subagents, Memory, Settings), the distinction between CLAUDE_PLUGIN_ROOT (code) and CLAUDE_PLUGIN_DATA (runtime data) environment variables, installation scopes (user vs project), the full plugin.json manifest schema, and userConfig pattern for user-facing configuration.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/agent-teams-diagram/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
     <div class="card-title">Agent Teams Diagram</div>
-    <div class="card-desc">Task tool vs Agent Teams comparison, subagent YAML frontmatter reference, filesystem mailbox layout, message types, task state machine, and decision guide.</div>
+    <div class="card-desc">Task tool vs Agent Teams side-by-side comparison with decision guide, complete subagent YAML frontmatter reference (name, description, tools, model, effort, memory), filesystem mailbox layout for inter-agent messaging, all message types and state machine transitions, and orchestration patterns for parallel vs serial workloads.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/cicd-diagram/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg></div>
     <div class="card-title">CI/CD Pipeline Diagram</div>
-    <div class="card-desc">Full pipeline flow from Git event to output, GitHub Actions workflows, Bedrock/Vertex AI auth (including WIF), security hardening, and cost optimization.</div>
+    <div class="card-desc">Full pipeline flow from Git push event to deployment output, annotated GitHub Actions workflow YAML (anthropics/claude-code-action@v1), GitLab CI and Azure DevOps equivalents, AWS Bedrock and GCP Vertex AI auth patterns including Workload Identity Federation (no service account keys), security hardening checklist, and cost optimisation strategies for CI workloads.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/sdk-diagram/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
     <div class="card-title">Agent SDK Diagram</div>
-    <div class="card-desc">Subprocess architecture, all SDK streaming event types with field reference, Python/TypeScript StatefulClient patterns, and parallel workload management.</div>
+    <div class="card-desc">Subprocess architecture showing the Claude Code binary as a managed child process, all SDK streaming event types (text, tool_use, tool_result, system, error) with full field reference, Python and TypeScript StatefulClient multi-turn session patterns, parallel workload management with session pooling, and OAuth authentication flow.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/advisor-diagram/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
     <div class="card-title">/advisor Diagram</div>
-    <div class="card-desc">Dual-model /advisor flow — Sonnet executor + Opus advisor, trigger conditions, context transfer, and cost comparison vs full-Opus session.</div>
+    <div class="card-desc">Dual-model /advisor flow — Sonnet 4.6 executor handling tool calls while Opus 4.7 advisor reviews intermediate steps, trigger conditions for when the advisor activates, context transfer mechanism between the two models, and a detailed cost comparison vs a full-Opus session showing when the economics favour each approach.</div>
   </a>
   <a class="section-card" href="/ai-lab/bert/bert-full-diagram.html" style="--card-accent:#79c0ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></div>
     <div class="card-title">BERT Full Diagram</div>
-    <div class="card-desc">End-to-end interactive walkthrough: input embeddings, 12-layer encoder stack, multi-head attention heads, and token flow through BERT.</div>
+    <div class="card-desc">End-to-end interactive walkthrough of a complete BERT forward pass: raw text input → WordPiece tokenization → token + position + segment embeddings → all 12 encoder layers → task-specific output head. Hover over any component to see shapes and parameter counts.</div>
   </a>
   <a class="section-card" href="/ai-lab/bert/bert-tokenizer-deep-dive.html" style="--card-accent:#79c0ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg></div>
     <div class="card-title">BERT Tokenizer</div>
-    <div class="card-desc">WordPiece tokenization deep dive: subword segmentation, unknown word handling, 30K vocabulary, and [CLS]/[SEP] special tokens.</div>
+    <div class="card-desc">WordPiece tokenization deep dive: greedy longest-match subword segmentation algorithm, unknown word handling via [UNK], the 30,522-token vocabulary, [CLS] and [SEP] special tokens and their roles in classification vs sentence-pair tasks, and interactive examples showing how out-of-vocabulary words are decomposed.</div>
   </a>
   <a class="section-card" href="/ai-lab/bert/bert-encoder-deep-dive.html" style="--card-accent:#79c0ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="5" rx="1"/><rect x="3" y="10" width="18" height="5" rx="1"/><rect x="3" y="17" width="18" height="4" rx="1"/></svg></div>
     <div class="card-title">BERT Encoder Block</div>
-    <div class="card-desc">Single encoder block breakdown: 12-head attention mechanism, feed-forward network, residual connections, and layer normalization.</div>
+    <div class="card-desc">Single encoder block breakdown: 12-head scaled dot-product attention (Q/K/V projections, softmax scaling by √d_k), position-wise feed-forward network (768 → 3072 → 768 with GELU activation), residual skip connections, and layer normalization — showing exactly how representations are refined across all 12 layers.</div>
   </a>
   <a class="section-card" href="/ai-lab/cert/cert-quiz-all-domains.html" style="--card-accent:#ffa657;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
     <div class="card-title">Cert Quiz</div>
-    <div class="card-desc">Interactive multiple-choice quiz covering all 5 CCA-F exam domains — track your score, identify knowledge gaps, and read explanations for each answer.</div>
+    <div class="card-desc">Interactive multiple-choice quiz covering all 5 CCA-F exam domains — track your score per-domain, identify knowledge gaps with wrong-answer analytics, read detailed explanations for each answer with references to official Anthropic documentation, and re-take incorrect questions until confident.</div>
   </a>
   <a class="section-card" href="/ai-lab/rag/rag-academy/" style="--card-accent:#f78166;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
     <div class="card-title">RAG Academy</div>
-    <div class="card-desc">End-to-end interactive course on RAG system design — chunking strategies, embedding, vector search, reranking, generation, evaluation, and production deployment.</div>
+    <div class="card-desc">End-to-end interactive course on production RAG system design — from document ingestion and chunking strategy selection through embedding model choice, vector store indexing, hybrid retrieval tuning, cross-encoder reranking, generation with citations, RAGAS-based evaluation, and production deployment with monitoring and drift detection.</div>
   </a>
   <a class="section-card" href="/ai-lab/langchain/langchain_mastery_general.html" style="--card-accent:#7ee787;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
     <div class="card-title">LangChain Mastery</div>
-    <div class="card-desc">Visual guide to LangChain architecture, LCEL chains, ReAct agents, memory patterns, RAG pipelines, LangGraph, and production deployment patterns.</div>
+    <div class="card-desc">Visual guide to the full LangChain architecture: LCEL pipe-operator chain composition, ReAct agent tool loop with structured output parsing, conversation memory patterns, RAG retrieval pipelines with vectorstore integrations, LangGraph stateful graph construction with conditional edges, streaming, and production deployment patterns with LangServe.</div>
   </a>
 </div>

@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 2
   label: Quick Start
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-23
 ---
 
 # Quick Start — Claude Code for New Users

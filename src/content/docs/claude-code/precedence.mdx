@@ -7,7 +7,7 @@ description: >
   mechanics, and scope boundaries. v2.1.126 (May 2026).
 sidebar:
   order: 12
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-23
 ---
 
 import PrecedenceDiagram from '../../../components/interactive/PrecedenceDiagram.jsx';
@@ -21,51 +21,220 @@ import PrecedenceDiagram from '../../../components/interactive/PrecedenceDiagram
 ### Full Precedence Stack (Highest → Lowest)
 
 ```
-1. Enterprise Managed Settings     ← Cannot be overridden by anything
-       ↓
-2. CLI flags / environment vars    ← Per-invocation overrides
-       ↓
-3. .claude/settings.local.json     ← Local project (gitignore)
-       ↓
-4. .claude/settings.json           ← Project settings (commit to git)
-       ↓
-5. ~/.claude/settings.json         ← User global settings
-       ↓
-6. ~/.claude/CLAUDE.md             ← User context (all projects)
-       ↓
-7. CLAUDE.md (project root)        ← Project context
-       ↓
-8. Subdirectory CLAUDE.md files    ← Path-specific context (cumulative)
-       ↓
-9. CLAUDE.local.md                 ← Personal overrides
-       ↓
-10. .claude/rules/*.md             ← Path-scoped rules (conditional)
-       ↓
-11. Skills / Output Styles         ← On-demand (session scope)
-       ↓
-12. Auto-Memory (MEMORY.md)        ← Per-project durable memory
+                   ┌──────────────────────────────────┐
+                   │  HIGHEST PRECEDENCE               │
+                   └──────────────────────────────────┘
+                             │
+        ╔════════════════════▼═══════════════════════╗
+        ║  1. Enterprise Managed Settings             ║  LOCKED — unoverrideable
+        ║     ~/.claude/managed-settings.json         ║
+        ║     MDM profile / Windows Registry          ║
+        ╠═════════════════════════════════════════════╣
+        ║  2. CLI flags / environment variables       ║  Per-invocation only
+        ║     --permission-mode, --model, --max-turns ║
+        ║     ANTHROPIC_MODEL, CLAUDE_CODE_MAX_OUTPUT ║
+        ╠═════════════════════════════════════════════╣
+        ║  3. .claude/settings.local.json             ║  Local project (gitignore!)
+        ║     Personal model, token limits, perms     ║
+        ╠═════════════════════════════════════════════╣
+        ║  4. .claude/settings.json                   ║  Project settings (commit)
+        ║     Team permissions, model for CI          ║
+        ╠═════════════════════════════════════════════╣
+        ║  5. ~/.claude/settings.json                 ║  User global settings
+        ║     Default model, output format, effort    ║
+        ╠═════════════════════════════════════════════╣
+        ║  6. ~/.claude/CLAUDE.md                     ║  User context (all projects)
+        ║     Personal style, global conventions      ║
+        ╠═════════════════════════════════════════════╣
+        ║  7. CLAUDE.md (project root)                ║  Primary project context
+        ║     Architecture, stack, coding standards   ║
+        ╠═════════════════════════════════════════════╣
+        ║  8. Subdirectory CLAUDE.md files            ║  Cumulative, depth-first
+        ║     src/CLAUDE.md, src/api/CLAUDE.md, etc.  ║
+        ╠═════════════════════════════════════════════╣
+        ║  9. CLAUDE.local.md                         ║  Personal project overrides
+        ║     Local dev env specifics, personal notes ║
+        ╠═════════════════════════════════════════════╣
+        ║  10. .claude/rules/*.md                     ║  Path-scoped, conditional
+        ║      Loaded only when file path matches      ║
+        ╠═════════════════════════════════════════════╣
+        ║  11. Skills / Output Styles                 ║  On-demand, session scope
+        ║      Injected only when /invoked             ║
+        ╠═════════════════════════════════════════════╣
+        ║  12. Auto-Memory (MEMORY.md)                ║  Per-project durable memory
+        ║      ~/.claude/projects/<hash>/memory/       ║
+        ╚═════════════════════════════════════════════╝
+                             │
+                   ┌─────────▼────────────┐
+                   │  LOWEST PRECEDENCE   │
+                   └──────────────────────┘
+```
+
+### The Two Distinct Precedence Systems
+
+Claude Code has **two fundamentally different** precedence systems that work in opposite ways. Confusing them is the most common misconfiguration mistake.
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  SYSTEM 1: SETTINGS FILES (permissions, model, options)      ║
+║                                                              ║
+║  Enterprise > CLI flags > local > project > user             ║
+║                                                              ║
+║  Rule: Higher layer WINS — lower layer key is DISCARDED      ║
+║                                                              ║
+║  Example: if enterprise sets model=opus-4-7                  ║
+║           and project sets model=sonnet-4-6                  ║
+║           → opus-4-7 is used. Project setting ignored.       ║
+╠══════════════════════════════════════════════════════════════╣
+║  SYSTEM 2: CONTEXT FILES (CLAUDE.md, Rules, Memory)          ║
+║                                                              ║
+║  Enterprise → user → project → subdirs → local → rules      ║
+║                                                              ║
+║  Rule: ALL layers LOAD and APPEND (concatenation)            ║
+║        Later-loaded files appear AFTER earlier in context    ║
+║        More specific = later = more visible to model         ║
+║                                                              ║
+║  Example: if user CLAUDE.md says "use TypeScript strict"     ║
+║           and project CLAUDE.md says "use Express for APIs"  ║
+║           → Claude sees BOTH instructions simultaneously     ║
+╚══════════════════════════════════════════════════════════════╝
 ```
 
 ### Conflict Resolution Rules
 
-| Conflict type | Resolution |
-|--------------|-----------|
-| Same setting in enterprise vs user | Enterprise wins (always) |
-| Same setting in project vs user settings | Project settings win |
-| Same setting in local vs project settings | Local settings win |
-| Multiple CLAUDE.md files (different paths) | All load; deeper path appended last |
-| Same key in two rules files | Last-loaded alphabetically wins |
-| Rules `paths:` overlap | Both rules load for overlapping files |
-| Skills loaded simultaneously | Each skill is isolated, no conflict |
+| Conflict type | Resolution | Why |
+|--------------|-----------|-----|
+| Enterprise vs user setting | Enterprise always wins | Managed policy cannot be bypassed |
+| Enterprise vs CLI flag | Enterprise always wins | CLI flags cannot override MDM |
+| Enterprise vs project setting | Enterprise always wins | Same reason |
+| CLI flag vs local settings | CLI flag wins | Flags are per-invocation override |
+| Local settings vs project settings | Local settings win | `.local.json` is highest non-enterprise |
+| Project settings vs user settings | Project settings win | Closer scope wins |
+| User settings (key not set in project) | User setting applies | Inheritance fills gaps |
+| Multiple CLAUDE.md (different paths) | All load; deeper path appended last | Additive, not replacing |
+| Two CLAUDE.md at same level | Not possible — one file per directory | N/A |
+| Same key in two rules files | Last-loaded alphabetically wins | Files sorted before loading |
+| Rules `paths:` overlap | Both rules load for overlapping files | Additive |
+| Skills loaded simultaneously | Each skill is isolated, no conflict | Separate injection points |
+| CLAUDE.md vs CLAUDE.local.md | Both load; .local.md appended after | Additive — .local adds, not replaces |
+| @import in CLAUDE.md | Imported file content inlined at that point | Single unified document |
+
+### What Happens When Files Conflict — Concrete Examples
+
+**Example 1: Settings conflict (local vs project)**
+
+```json
+// .claude/settings.json (project — committed to git)
+{
+  "permissions": {
+    "allow": ["Bash(npm *)", "Read", "Edit"],
+    "deny": ["Bash(rm -rf *)"]
+  },
+  "model": "claude-sonnet-4-6",
+  "maxOutputTokens": 8192
+}
+
+// .claude/settings.local.json (local — gitignored)
+{
+  "model": "claude-opus-4-7",
+  "permissions": {
+    "allow": ["Bash(npm *)", "Bash(npx *)"]
+  }
+}
+```
+
+**Result:**
+- `model`: `claude-opus-4-7` (local wins — it overrides the project key)
+- `allow`: `["Bash(npm *)", "Bash(npx *)"]` (local's allow list replaces project's allow list for that key)
+- `deny`: `["Bash(rm -rf *)"]` (project deny still applies — local didn't specify deny)
+- `maxOutputTokens`: `8192` (project value — local didn't set it, so project applies)
+
+**Example 2: CLAUDE.md stacking (additive)**
+
+```
+~/.claude/CLAUDE.md:
+  "Always use TypeScript strict mode. Prefer functional patterns."
+
+CLAUDE.md (project root):
+  "This is a Node.js 20 Express REST API.
+   Use Prisma for database access. Return RFC 7807 errors."
+
+src/CLAUDE.md:
+  "All source files use ESM import syntax. No require()."
+
+src/api/CLAUDE.md:
+  "All API routes must validate input with Zod before processing."
+
+CLAUDE.local.md (root):
+  "My local DB is at localhost:5433, not the default 5432."
+```
+
+**Result:** Claude sees ALL FIVE instructions concatenated in that order. The Zod requirement is the most specific and appears last — most visible to the model. No conflict occurs — they accumulate. The local DB note is personal and stays out of git.
+
+**Example 3: Rules path-scoping (conditional)**
+
+```yaml
+# .claude/rules/frontend.md — paths: [src/**/*.tsx, src/**/*.css]
+# .claude/rules/backend.md  — paths: [src/api/**, tests/api/**]
+# .claude/rules/database.md — paths: [src/db/**, migrations/**]
+```
+
+```
+File Claude reads:           Rules that load:
+─────────────────────────────────────────────────────
+src/components/Button.tsx    frontend.md only
+src/api/routes.ts            backend.md only
+src/api/UserCard.tsx         backend.md + frontend.md
+migrations/001_init.sql      database.md only
+tests/api/auth.test.ts       backend.md only
+README.md                    (none — no rule matches)
+```
+
+Token cost: Reading `README.md` loads zero rule tokens. Reading `src/api/UserCard.tsx` loads ~1,200 tokens (both rules). Carefully designed path globs keep costs minimal.
+
+**Example 4: Enterprise lock (cannot override)**
+
+```json
+// ~/.claude/managed-settings.json (enterprise-managed)
+{
+  "allowedTools": ["Read", "Edit", "Bash(git *)"],
+  "model": "claude-sonnet-4-6",
+  "enterpriseLock": true
+}
+```
+
+```json
+// .claude/settings.local.json (developer's local file)
+{
+  "allowedTools": ["Read", "Edit", "Bash", "WebFetch"],
+  "model": "claude-opus-4-7"
+}
+```
+
+**Result:** Enterprise settings are immutable. Despite local settings, Claude still uses `sonnet-4-6` and cannot run `WebFetch` or unrestricted `Bash`. The `enterpriseLock: true` flag causes local overrides to be silently ignored for locked keys.
 
 ### Override Syntax Examples
 
 ```json
-// .claude/settings.json — allow specific tool
+// .claude/settings.json — permission examples
 {
   "permissions": {
-    "allow": ["Bash(git *)", "Read", "Edit"],
-    "deny": ["Bash(rm -rf *)"]
+    "allow": [
+      "Bash(git *)",              // Any git subcommand
+      "Bash(npm run *)",          // npm run scripts only (not npm install)
+      "Bash(npm install)",        // Exact command — no args variation
+      "Read",                     // All file reads
+      "Edit",                     // All file edits
+      "Bash(docker ps)",          // Exact docker command
+      "Bash(pytest src/**)",      // Glob in command args
+      "Bash(curl -s https://api.example.com/*)"  // URL pattern
+    ],
+    "deny": [
+      "Bash(rm -rf *)",           // Protect against recursive deletes
+      "Bash(git push --force*)",  // Block force pushes
+      "Bash(sudo *)",             // No privilege escalation
+      "WebFetch(http://*)"        // HTTPS only (deny plain HTTP)
+    ]
   }
 }
 ```
@@ -76,9 +245,93 @@ import PrecedenceDiagram from '../../../components/interactive/PrecedenceDiagram
 paths:
   - src/api/**
   - tests/api/**
+  - docs/api/**
+priority: high
 ---
 # API Development Rules
-Always validate input with Zod. Never expose raw DB errors.
+Always validate input with Zod before any business logic.
+Never expose raw DB errors in API responses — use RFC 7807 Problem Details.
+Use snake_case for JSON field names in all API responses.
+Authentication middleware must run before route handlers.
+All routes must have OpenAPI JSDoc annotations.
+```
+
+```markdown
+<!-- .claude/rules/migrations.md -->
+---
+paths:
+  - migrations/**
+  - src/db/schema/**
+priority: critical
+---
+# Database Migration Rules
+NEVER modify existing migration files — create new ones only.
+All migrations must be reversible (include down() function).
+Run `npm run db:validate` after creating any migration.
+Foreign key constraints must be explicitly named.
+```
+
+### Common Mistakes Table
+
+| Mistake | Symptom | Fix |
+|---------|---------|-----|
+| Committing `.claude/settings.local.json` | Personal API keys or model choices shared with team; CI fails on your model pick | Add to `.gitignore`: `.claude/settings.local.json` and `.claude/*.local.json` |
+| Putting everything in root CLAUDE.md | Huge CLAUDE.md (500+ lines); all tokens loaded for every file; slow; expensive | Split into `.claude/rules/*.md` with `paths:` frontmatter — zero cost until needed |
+| Using `CLAUDE.local.md` thinking it overrides | Both CLAUDE.md and CLAUDE.local.md apply; "override" instructions are additive, not replacing | Understand `.local.md` appends — it doesn't replace. Use settings files for actual overrides. |
+| Expecting subdirectory CLAUDE.md to isolate | All parent CLAUDE.md files still load for every file in that subdirectory | Use subagents with `allowedPaths` for true isolation of a subtree |
+| Setting `model` in project settings expecting precedence over enterprise | Enterprise always wins — project setting silently ignored | Check: `cat ~/.claude/managed-settings.json`; if it locks model, you can't override |
+| Relying on rule file load order by filename | Natural sort: `backend.md` loads before `frontend.md` alphabetically, but order only matters for same-key conflicts | Name files with numeric prefix: `01-core.md`, `02-api.md`, `03-frontend.md` |
+| Expecting `/compact` to reload settings | Settings are NOT reloaded after compaction — only CLAUDE.md and MEMORY.md reload | Restart session to pick up settings changes |
+| Using `deny` expecting it to supersede `allow` | Deny and allow are evaluated: deny wins for the same pattern, but an `allow` for a broader pattern can supersede a `deny` on a narrower one | Be explicit: deny broad, allow narrow; test with `/permissions check Bash(cmd)` |
+| @import in CLAUDE.local.md | Imported content is gitignored along with the file — fine | Works correctly, but remember imported path must be accessible on each developer's machine |
+| Setting `maxTurns` thinking it controls cost | `maxTurns` limits agentic loop iterations, not total tokens or cost per turn | Use `--max-budget-usd` for hard cost ceiling |
+
+### Scope Boundary Diagram
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  DEVICE SCOPE                                                 │
+│  (MDM Profile, Windows Registry HKCU)                        │
+│  Applies to: all users on this machine                        │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  ORG SCOPE                                             │  │
+│  │  (Enterprise managed-settings.json, Enterprise CLAUDE) │  │
+│  │  Applies to: all users in the organization             │  │
+│  │                                                        │  │
+│  │  ┌──────────────────────────────────────────────────┐  │  │
+│  │  │  USER SCOPE                                      │  │  │
+│  │  │  (~/.claude/settings.json, ~/.claude/CLAUDE.md)  │  │  │
+│  │  │  (~/.claude/keybindings.json, themes, plugins)   │  │  │
+│  │  │  Applies to: you, across all projects            │  │  │
+│  │  │                                                  │  │  │
+│  │  │  ┌────────────────────────────────────────────┐  │  │  │
+│  │  │  │  PROJECT SCOPE                             │  │  │  │
+│  │  │  │  (.claude/settings.json, CLAUDE.md,        │  │  │  │
+│  │  │  │   .claude/rules/, .mcp.json, agents/)      │  │  │  │
+│  │  │  │  Applies to: all team members on project   │  │  │  │
+│  │  │  │                                            │  │  │  │
+│  │  │  │  ┌──────────────────────────────────────┐  │  │  │  │
+│  │  │  │  │  LOCAL SCOPE                         │  │  │  │  │
+│  │  │  │  │  (.claude/settings.local.json,       │  │  │  │  │
+│  │  │  │  │   CLAUDE.local.md,                   │  │  │  │  │
+│  │  │  │  │   .claude/.mcp.json.local)            │  │  │  │  │
+│  │  │  │  │  Applies to: you, this project only   │  │  │  │  │
+│  │  │  │  └──────────────────────────────────────┘  │  │  │  │
+│  │  │  └────────────────────────────────────────────┘  │  │  │
+│  │  └──────────────────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Gitignore guidance for each scope:**
+```
+# .gitignore — add these for proper scope separation
+.claude/settings.local.json
+CLAUDE.local.md
+.claude/.mcp.json.local
+.claude/plugins/*.local/
+*.claude.local
 ```
 
 → Full reference: [Configuration Guide — CLAUDE.md vs Skills vs Rules](./claude-code-config-guide)

@@ -6,7 +6,7 @@ sidebar:
 
 # Every Markdown File Claude Code Recognizes — Complete Catalog
 
-> **Last updated: May 19, 2026 — reflects Claude Code v2.1.126+**
+> **Last updated: May 23, 2026 — reflects Claude Code v2.1.126+**
 > All information sourced from official `code.claude.com` documentation.
 
 ---
