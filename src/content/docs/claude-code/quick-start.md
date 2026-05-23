@@ -833,3 +833,340 @@ claude -p "Run tests and fix any failures" \
 ```
 
 → [Full CI/CD Integration Guide](./cicd-integration)
+
+---
+
+## 15. Mastering the Agentic Loop
+
+The agentic loop is not a black box — it is a precisely defined execution model with well-known entry and exit points. Understanding it deeply will help you write better prompts, diagnose unexpected behaviour, control cost, and design reliable automations.
+
+### What actually happens in one turn
+
+When you press Enter on a prompt, the following sequence occurs:
+
+1. **UserPromptSubmit hooks fire.** Any hooks registered on this event run first. They can inject additional context into the prompt (via stdout) or abort the entire turn (exit code 2). This is where prompt logging, team policy checks, and context injection happen.
+
+2. **The full conversation is sent to the model.** Claude receives your complete message history, the system prompt (which includes your CLAUDE.md, loaded rules, and skills), and all available tool schemas. This is an HTTP call to the Anthropic API (or Bedrock/Vertex if configured).
+
+3. **The model responds.** The response includes text and/or one or more `tool_use` blocks. The `stop_reason` field tells Claude Code how to proceed.
+
+4. **If `stop_reason == "tool_use"`:**, PreToolUse hooks fire for each tool call. A hook can block the call (exit 2), modify its input (via stdout JSON), or let it proceed (exit 0). The tool executes. PostToolUse hooks fire with the result. The result is appended to the conversation and the loop restarts from step 2.
+
+5. **If `stop_reason == "end_turn"`:**, Stop hooks fire. A hook that exits 2 forces Claude to continue — this is how you implement automated test-and-fix cycles. If all Stop hooks exit 0, the loop ends and control returns to you.
+
+### The key mental model: Claude never reads your intent
+
+Claude does not have a goal it is "working toward" between turns. Each API call is independent — Claude sees the full conversation context and generates the single best next action. The illusion of continuous intent comes from the loop structure, not from any persistent model state. This means:
+
+- **Long tasks need explicit milestones.** If you ask Claude to "refactor the authentication module", it will attempt this in one continuous loop. If context runs out mid-task, Claude may produce incomplete work. Better: ask Claude to first write a plan to a file, then execute it step by step, committing after each step.
+- **Interrupting mid-task is safe.** `Ctrl+C` aborts the current tool call but does not corrupt the conversation. Files already written are kept. You can resume with a correction.
+- **Every loop iteration costs money.** A 30-turn session that reads 40 files costs roughly $0.80–$2.00 depending on model and file sizes. The `/context` command shows you exactly where tokens are going.
+
+### Working with the loop effectively
+
+**Provide a clear exit condition.** Vague tasks like "improve the tests" leave Claude deciding when to stop. Specific tasks like "ensure all tests in `tests/auth/` pass with zero failures" give Claude a deterministic termination check.
+
+**Use Plan Mode for uncertain tasks.** Before allowing any writes, enter `/plan` mode to let Claude describe its full approach. You can then accept, redirect, or abort before a single file changes. This saves the cost of unwinding a wrong approach.
+
+**Use Stop hooks for automated verification.** A Stop hook that runs your test suite and exits 2 if tests fail will cause Claude to automatically fix the failure and try again — no human needed. This is the core of CI-quality autonomous loops.
+
+**Monitor token consumption.** Run `/context` to see a breakdown of where tokens are used. The system prompt (CLAUDE.md + rules + tool schemas) typically costs 2,000–15,000 tokens every turn. Long conversation histories compound this. Use `/compact` before the context window reaches 70% full to prevent quality degradation.
+
+**Set `--max-turns` for safety.** In any automated context, always set `--max-turns` to a reasonable limit (10–30 for most tasks). Without it, a confused model or a faulty Stop hook can cause an infinite loop that exhausts your budget.
+
+### Agentic loop decision guide
+
+```
+Task is well-defined and bounded?
+├── YES ──► Run in Normal mode; use Auto-Accept if you trust the task scope
+└── NO  ──► Use /plan first, then approve and execute
+
+Task modifies many files?
+├── YES ──► Ask Claude to commit after each logical step
+│           (this also creates rewind points)
+└── NO  ──► Single-shot is fine
+
+Task is in CI/CD?
+├── YES ──► --permission-mode bypassPermissions + --max-turns + --max-budget-usd
+│           + Stop hook that runs tests
+└── NO  ──► Interactive mode with /plan + periodic /context checks
+
+Context window above 60%?
+├── YES ──► /compact before continuing
+└── NO  ──► Proceed normally
+```
+
+---
+
+## 16. CLAUDE.md Quick Templates
+
+Use these templates as starting points. Every template is intentionally concise — CLAUDE.md is loaded on every session start, so every line costs tokens on every run. The goal is maximum signal per token.
+
+### Template 1: Minimal (20–40 lines)
+
+Suitable for: small projects, solo developers, quick experiments.
+
+```markdown
+# Project Name
+
+Brief description (2 sentences max). Stack: [language], [framework], [database].
+
+## Commands
+```bash
+[build command]
+[test command]
+[lint command]
+```
+
+## Critical Rules
+- [Most important rule — e.g., "never use SELECT *"]
+- [Second most important rule]
+- [Third most important rule]
+
+## Do Not Touch
+- [file or directory Claude should never modify]
+```
+
+Keep it under 40 lines. Add new rules only when you observe Claude making the same mistake twice.
+
+### Template 2: Standard (60–120 lines)
+
+Suitable for: team projects, production codebases, multi-service repositories.
+
+```markdown
+# [Project Name]
+
+## Overview
+[2–3 sentence description]. Stack: [full tech stack with versions].
+Deployment: [where it runs — e.g., "Azure AKS, PostgreSQL 15, Redis 7"].
+
+## Repository Layout
+- `src/` — application source
+  - `api/` — HTTP handlers
+  - `domain/` — business logic (no infrastructure deps)
+  - `infra/` — database, cache, external services
+- `tests/` — all tests; mirrors `src/` structure
+- `scripts/` — operational scripts (not part of the app)
+
+## Development Commands
+```bash
+make dev          # start full local stack (requires Docker)
+make test         # run all tests
+make test-unit    # unit tests only (fast)
+make lint         # run linter + type checker
+make migrate      # apply pending database migrations
+make seed         # seed database with test data
+```
+
+## Architecture Decisions
+- Domain layer has ZERO infrastructure dependencies (enforced by linting)
+- All API responses use `Result<T, E>` wrapper — see `src/api/types.ts`
+- Errors are never swallowed — always propagate with context
+- Database: never use raw queries; always use the repository pattern in `src/infra/db/`
+
+## Conventions
+- Branch names: `feat/`, `fix/`, `refactor/`, `docs/`
+- Commits: conventional commits (`feat:`, `fix:`, etc.)
+- Tests: every public function needs a unit test; every endpoint needs an integration test
+- Environment variables: defined in `.env.example`; never hardcoded
+
+## Critical "Never Do"
+- Never modify `migrations/` manually — use `make migration name=...`
+- Never commit `.env` files — they are gitignored
+- Never bypass the `Result<T, E>` wrapper with direct `throw`
+- Never use `any` type in TypeScript
+
+## External Dependencies
+- Stripe API (payments): docs at [internal wiki link]
+- SendGrid (email): rate limit is 100/min
+- Postgres connection pool: max 20 connections — don't create additional pools
+```
+
+### Template 3: Enterprise (150–200 lines)
+
+Suitable for: large teams, regulated environments, multi-codebase monorepos. Place at `~/.claude/CLAUDE.md` as a global base, then use project-level CLAUDE.md files for overrides.
+
+```markdown
+# [Organisation] — Claude Code Enterprise Configuration
+
+## Governance
+This CLAUDE.md encodes our engineering standards. Every Claude Code session
+for org members MUST comply with these rules.
+
+**Security clearance required for:** production credentials, customer PII,
+anything in `infra/prod/`. If you don't have access, Claude will not either.
+
+## Code Quality Invariants
+- All changes must pass: `make lint && make typecheck && make test`
+- Security scan on every edit: PostToolUse hook runs `semgrep --config auto`
+- No secrets in code — detector runs on every commit (PreToolUse hook)
+- Dependency updates require approval from `@platform-team`
+
+## Repository Map
+[List of repos and their purposes]
+
+## Required Patterns
+- Logging: structured JSON via `src/observability/logger.ts` — never `console.log`
+- Error handling: `AppError` class with `code`, `message`, `context` fields
+- API clients: generated from OpenAPI specs — never hand-write client code
+- Feature flags: LaunchDarkly — never use env vars for feature toggles
+
+## Forbidden Operations (enforced by hooks)
+- `Bash(rm -rf*)` — DENIED
+- `Bash(git push --force*)` — DENIED (force push to main)
+- `Bash(kubectl delete*)` — DENIED without explicit approval
+- `Bash(DROP TABLE*)` — DENIED
+- Writing to `infra/prod/` — DENIED without an active change ticket
+
+## Team Contacts
+- Platform questions: #platform-eng Slack
+- Security issues: security@[domain] (never commit to handle in-session)
+- DB migrations: DBA approval required — file ticket first
+
+## Session Startup Checklist
+Claude will verify at session start:
+1. Are we on a feature branch? (not main/master)
+2. Is the local stack running? (docker-compose ps)
+3. Are there uncommitted changes from a previous session? (git status)
+
+## Cost Governance
+- Default model: claude-sonnet-4-6
+- Upgrade to Opus only with `/model claude-opus-4-7` for architecture decisions
+- Max budget per session: $5 (enforced via --max-budget-usd in CI)
+- Weekly team spend reviewed in #ai-costs channel
+```
+
+---
+
+## 17. First Week Workflow
+
+The first week with Claude Code is about building the right habits and mental models. Follow this day-by-day guide to go from installation to confident daily use.
+
+### Day 1: Installation and First Contact
+
+**Morning (30 minutes):**
+1. Install Claude Code (`claude --version` to verify)
+2. Authenticate (`claude` — browser OAuth flow)
+3. Navigate to a small, familiar project
+4. Run: `> Summarise this codebase in three paragraphs`
+5. Run: `> List all TODO comments`
+6. Observe the agentic loop in action — watch which files Claude reads
+
+**Goal:** Understand that Claude reads your actual files, not just your description.
+
+**Evening (20 minutes):**
+- Run `/init` to auto-generate a CLAUDE.md
+- Review the generated file — edit it to remove anything generic, add anything project-specific
+- Run `/context` to see how many tokens your CLAUDE.md uses
+
+### Day 2: Learn the Keyboard Shortcuts
+
+**Practice the three most important shortcuts:**
+- `Shift+Tab` — cycle through modes (try each mode, observe the prompt indicator)
+- `Esc×2` — open the rewind menu (make a small change, then rewind it)
+- `Ctrl+B` — background a long Bash command (start a build, press Ctrl+B, ask a question)
+
+**Practice prompt patterns:**
+```
+> Explain what the [function] does in [file]           # understanding
+> Fix [specific bug] in [specific file]                # targeted edit
+> /plan                                                # plan before big change
+> Add [feature] following the pattern in [reference]  # pattern-guided addition
+```
+
+**Goal:** No more than 2 wrong prompts in a row before rewinding and restarting.
+
+### Day 3: Context Management
+
+**Morning:** Watch `/context` throughout a work session. Note when it crosses 30%, 50%, 70%.
+
+**Practice:**
+- Run `/compact` when context is at 50% and compare before/after
+- Use `/compact Focus on the [task you're working on]` to preserve specific context
+- Name sessions with `/rename [descriptive-name]` and retrieve them with `/resume`
+
+**Goal:** Never hit 80%+ context without having compacted first.
+
+### Day 4: Build Your CLAUDE.md Iteratively
+
+**Whenever Claude makes a mistake today:**
+1. Note what it got wrong (wrong command, wrong convention, missed constraint)
+2. Add a rule to your CLAUDE.md covering it
+3. Run `/clear` and retry the task
+
+By end of day, your CLAUDE.md should have 5–10 rules derived from actual failures.
+
+**Goal:** Claude should make zero repeated mistakes by end of day.
+
+### Day 5: Your First Multi-Step Task
+
+Choose a task that involves 3+ files and 2+ steps (e.g., "add a new API endpoint with tests"):
+
+```
+> /plan
+> Add a DELETE /users/:id endpoint that soft-deletes users.
+  Follow the pattern in src/api/users/create.ts.
+  Include a unit test and an integration test.
+```
+
+Review the plan. Approve it. Watch Claude execute. Interrupt with `Ctrl+C` if anything goes wrong.
+
+**Goal:** Complete a multi-step task without starting over.
+
+### Day 6: Explore Agent Features
+
+**Try subagents:**
+```
+> Analyse the three API modules (users, orders, products) in parallel.
+  For each, identify: test coverage %, any missing error handling, 
+  and any performance anti-patterns.
+```
+
+**Try hooks** (PostToolUse auto-lint):
+
+Add to `.claude/settings.json`:
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Edit|Write|MultiEdit",
+      "hooks": [{ "type": "command", "command": "npm run lint --fix 2>&1 | head -20" }]
+    }]
+  }
+}
+```
+
+**Goal:** Experience parallel subagents and automatic hooks.
+
+### Day 7: Review and Calibrate
+
+**Morning audit:**
+- Review your CLAUDE.md — is everything still accurate?
+- Check your `/stats` or session history — how much did you spend this week?
+- Identify the 3 prompts that worked best and the 3 that cost the most retries
+
+**Establish a personal workflow:**
+- Which tasks do you always use `/plan` for?
+- Which do you always run in Auto-Accept mode?
+- What goes in your CLAUDE.md vs your rules files vs slash commands?
+
+**Goal:** Articulate your personal Claude Code workflow to a colleague.
+
+---
+
+## 18. Common New User Mistakes — Quick Reference Table
+
+| Mistake | Symptom | Quick Fix |
+|---------|---------|-----------|
+| **Context-free prompt** | Claude reads many files but produces generic output | Add: file path, function name, specific error message, expected behavior |
+| **Skipping /plan for large tasks** | Claude executes immediately and goes in wrong direction | Always use `/plan` before tasks touching 5+ files |
+| **Letting context fill to 90%+** | Output quality degrades; Claude starts forgetting earlier decisions | Run `/compact [focus instruction]` at 60–70% |
+| **Stale CLAUDE.md** | Claude repeats the same mistake your CLAUDE.md should prevent | Update CLAUDE.md immediately after each observed mistake |
+| **Using Bash for file reads** | Slower, permission-prompt-heavy sessions | Use `Read`, `Edit`, `Grep`, `Glob` instead of `cat`, `sed`, `grep`, `find` |
+| **No permission limits in prod dirs** | Risk of accidental deletion or push in auto-accept mode | Add deny rules: `Bash(rm -rf*)`, `Bash(git push --force*)` |
+| **Wrong model for the task** | Overspend (Opus on trivial tasks) or poor output (Haiku on complex tasks) | Haiku for bulk/simple; Sonnet for standard work; Opus for architecture |
+| **Not rewinding after wrong turn** | Claude compounds mistakes across 10+ turns | Press `Esc×2` immediately and restate with a tighter prompt |
+| **Trusting "Done!" without verification** | Undetected test failures or silent errors | Always follow up: `> Run the tests and show me the output` |
+| **Giant single prompts** | Claude misses constraints in a long list | Break into: (1) plan, (2) execute step A, (3) verify, (4) execute step B |
+| **Auto-Accept in an unfamiliar codebase** | Unexpected file changes in areas you didn't expect | Stay in Normal mode until you understand the codebase |
+| **No session naming** | Can't find yesterday's session | Use `/rename` immediately when starting a significant session |

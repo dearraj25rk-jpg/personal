@@ -7,7 +7,7 @@ description: >
   v2.1.126 (May 2026).
 sidebar:
   order: 14
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-23
 ---
 
 import FileCatalog from '../../../components/interactive/FileCatalog.jsx';
@@ -18,30 +18,176 @@ import FileCatalog from '../../../components/interactive/FileCatalog.jsx';
 
 ## File Types — Quick Reference Table
 
-| # | File | Location | Loaded | Scope | Git? | Purpose |
-|---|------|---------|--------|-------|------|---------|
-| 1 | Enterprise CLAUDE.md | Managed | Always | All sessions | Managed | Org-wide instructions |
-| 2 | User CLAUDE.md | `~/.claude/CLAUDE.md` | Always | All projects | No | Personal cross-project context |
-| 3 | Project CLAUDE.md | `CLAUDE.md` | Always | Project | Yes | Project context |
-| 4 | CLAUDE.local.md | `CLAUDE.local.md` | Always | Project | No | Personal project context |
-| 5 | Rules | `.claude/rules/*.md` | Conditional | Path-scoped | Yes | Path-specific instructions |
-| 6 | Skills | `.claude/skills/<n>/SKILL.md` | On invocation | Session | Yes | Reusable capabilities |
-| 7 | Subagents | `.claude/agents/<n>.md` | On Task tool | Subagent | Yes | Agent definitions |
-| 8 | Commands | `.claude/commands/<n>.md` | On `/cmd` | Per call | Yes | Custom slash commands |
-| 9 | Output Styles | `.claude/output-styles/<n>.md` | On select | Session | Yes | Response formats |
-| 10 | Auto-Memory | `~/.claude/projects/<h>/memory/MEMORY.md` | Always | Project | No | Durable auto-memory |
-| 11 | Subagent Memory | Per-agent path | Agent init | Agent | No | Agent memory |
-| 12 | MCP Config | `.mcp.json` | Init | Project | Yes | MCP server definitions |
-| 13 | User Settings | `~/.claude/settings.json` | Init | Global | No | Global preferences |
-| 14 | Project Settings | `.claude/settings.json` | Init | Project | Yes | Project preferences |
-| 15 | Local Settings | `.claude/settings.local.json` | Init | Project | No | Local overrides |
-| 16 | Managed Settings | Managed path | Init | Org | Managed | Enterprise policy |
-| 17 | Plugins | `~/.claude/plugins/<n>/` | Install | User/Project | Config | Extensions |
-| 18 | Themes | `~/.claude/themes/*.md` | On `/theme` | Session | No | Color themes |
-| 19 | Keybindings | `~/.claude/keybindings.json` | Init | Global | No | Key shortcuts |
-| 20 | Windows Registry | HKCU | Init | User | N/A | Windows settings |
-| 21 | MDM Profile | System | Init | Device | N/A | Enterprise MDM |
-| 22 | Hooks config | `settings.json → hooks` | Init | Project/User | Depends | Automation |
-| 23 | MCP Local | `.claude/.mcp.json.local` | Init | Project local | No | Local MCP override |
+### All 23 Types with Token Cost and "When to Use"
+
+| # | File | Location | Loaded | Scope | Git? | Token cost (init) | When to use |
+|---|------|---------|--------|-------|------|-------------------|-------------|
+| 1 | Enterprise CLAUDE.md | Managed path | Always | All sessions | Managed | variable | Org-wide coding standards, security policies |
+| 2 | User CLAUDE.md | `~/.claude/CLAUDE.md` | Always | All projects | No | variable | Personal style preferences that cross all projects |
+| 3 | Project CLAUDE.md | `CLAUDE.md` (root) | Always | Project | Yes | variable | Project architecture, stack, team standards |
+| 4 | CLAUDE.local.md | `CLAUDE.local.md` (root) | Always | Project | No | variable | Local dev environment specifics (ports, paths) |
+| 5 | Rules | `.claude/rules/*.md` | On path match | Path-scoped | Yes | **0 at init** | Domain-specific rules per file type (frontend, API, DB) |
+| 6 | Skills | `.claude/skills/<n>/SKILL.md` | On `/skill` invocation | Session | Yes | **0 at init** | Reusable multi-step procedures (PR review, deploy, audit) |
+| 7 | Subagents | `.claude/agents/<n>.md` | On Task tool call | Subagent only | Yes | **0 at init** | Defining specialist agents for parallel work |
+| 8 | Commands | `.claude/commands/<n>.md` | On `/cmd` | Per invocation | Yes | **0 at init** | Custom slash commands for repeated workflows |
+| 9 | Output Styles | `.claude/output-styles/<n>.md` | On `/config` select | Session | Yes | **0 at init** | Changing response verbosity or format |
+| 10 | Auto-Memory | `~/.claude/projects/<hash>/memory/MEMORY.md` | Always | Project | No | up to 25KB | Durable facts that must survive compaction |
+| 11 | Subagent Memory | Per-agent path | Agent init | Agent | No | up to 25KB | Per-agent state across its task |
+| 12 | MCP Config (project) | `.mcp.json` | Init | Project | Yes | ~2,650/server | Connecting MCP servers for the whole team |
+| 13 | MCP Config (user) | `~/.claude/.mcp.json` | Init | All projects | No | ~2,650/server | Personal MCP servers across all projects |
+| 14 | MCP Config (local) | `.claude/.mcp.json.local` | Init | Project local | No | ~2,650/server | Personal MCP overrides for this project |
+| 15 | User Settings | `~/.claude/settings.json` | Init | Global | No | 0 (not context) | Default model, effort, output format for you |
+| 16 | Project Settings | `.claude/settings.json` | Init | Project | Yes | 0 (not context) | Team permissions, CI model, allowed tools |
+| 17 | Local Settings | `.claude/settings.local.json` | Init | Project | No | 0 (not context) | Personal model override, extra permissions |
+| 18 | Managed Settings | Managed path | Init | Org | Managed | 0 (not context) | Enterprise policy enforcement |
+| 19 | Plugins | `~/.claude/plugins/<n>/` | On install | User/Project | Config | variable | Distributing bundled capabilities |
+| 20 | Themes | `~/.claude/themes/*.md` | On `/theme` select | Session | No | **0 at init** | Customising Claude's visual response style |
+| 21 | Keybindings | `~/.claude/keybindings.json` | Init | Global | No | 0 (not context) | Remapping keyboard shortcuts |
+| 22 | Windows Registry | `HKCU\SOFTWARE\Anthropic\Claude` | Init | User | N/A | 0 (not context) | Windows-specific settings storage |
+| 23 | MDM Profile | System managed | Init | Device | N/A | 0 (not context) | macOS/iOS enterprise MDM policy |
+
+### Token Cost Deep Dive
+
+Understanding token costs helps you design efficient projects. The key insight: files loaded conditionally cost **zero** until triggered.
+
+```
+Init cost categories:
+═══════════════════════════════════════════════════════════════
+
+ALWAYS-LOADED (pay every session):
+  Enterprise CLAUDE.md   variable  — keep under 2,000 tokens
+  User CLAUDE.md         variable  — keep under 2,000 tokens
+  Project CLAUDE.md      variable  — keep under 4,000 tokens
+  CLAUDE.local.md        variable  — keep under 2,000 tokens
+  Auto-Memory MEMORY.md  up to 25KB (~6,250 tokens max)
+
+MCP (pay per connected server, every session):
+  Each MCP server        ~2,650 tokens fixed overhead
+  5 servers = ~13,250 tokens fixed cost
+
+NOT IN CONTEXT (0 tokens in context window):
+  settings.json files    0 — parsed as config, not context
+  keybindings.json       0 — UI config only
+  MDM/registry/managed   0 — system config only
+
+DEFERRED (0 until triggered):
+  Rules (.claude/rules/) 0 → ~300-800 on first matching file read
+  Skills                 0 → ~500-2,000 on /invocation
+  Commands               0 → ~200-500 on /cmd
+  Agents (subagent defs) 0 → loaded into subagent context, not parent
+  Output styles          0 → ~200-500 on /config select
+  Themes                 0 → applied visually, not in context
+═══════════════════════════════════════════════════════════════
+```
+
+### Frontmatter Schema by File Type
+
+```markdown
+<!-- Rules file (.claude/rules/example.md) -->
+---
+paths:
+  - src/api/**/*.ts
+  - tests/api/**
+priority: normal      # low | normal | high | critical
+description: "Brief description for /rules list command"
+---
+Rule content here...
+
+
+<!-- Skill file (.claude/skills/my-skill/SKILL.md) -->
+---
+name: my-skill
+description: "One-line description shown in /skills list"
+tools:
+  - Read
+  - Edit
+  - Bash
+maxTurns: 30
+temperature: 0.2
+---
+Skill instructions here...
+
+
+<!-- Subagent file (.claude/agents/my-agent.md) -->
+---
+name: my-agent
+description: "Shown in /agents list"
+model: claude-sonnet-4-6
+tools:
+  - Read
+  - Grep
+  - Bash
+allowedPaths:
+  - src/**
+  - tests/**
+maxTurns: 20
+memory: isolated      # isolated | shared | none
+temperature: 0.3
+---
+Agent system prompt here...
+
+
+<!-- Command file (.claude/commands/my-cmd.md) -->
+---
+name: my-cmd
+description: "Shown in /help and command picker"
+args:
+  - name: target
+    description: "File or directory to process"
+    required: true
+---
+Command template: Process {{target}} by doing...
+```
+
+### Decision Guide: Which File Type to Use?
+
+```
+I need to give Claude permanent instructions that apply everywhere
+  └─ User CLAUDE.md (~/.claude/CLAUDE.md)
+
+I need to give Claude project context for my whole team
+  └─ Project CLAUDE.md (CLAUDE.md in root) — commit to git
+
+I need personal project context that shouldn't be in git
+  └─ CLAUDE.local.md — add to .gitignore
+
+I need instructions that only apply to specific file types or directories
+  └─ .claude/rules/*.md with paths: frontmatter — MOST EFFICIENT
+
+I need a repeatable multi-step capability (like "review PR" or "deploy")
+  └─ .claude/skills/<name>/SKILL.md
+
+I need to spawn a specialist agent for parallel/isolated work
+  └─ .claude/agents/<name>.md
+
+I need a quick shortcut command (/deploy, /review, /test)
+  └─ .claude/commands/<name>.md
+
+I need facts to persist across sessions and survive compaction
+  └─ MEMORY.md (auto-managed via /memory add)
+
+I need to connect an external tool/database/API to Claude
+  └─ .mcp.json + MCP server implementation
+
+I need to control what Claude is allowed to do (permissions/model)
+  └─ .claude/settings.json (team) or .claude/settings.local.json (personal)
+
+I need to bundle multiple components for distribution
+  └─ Plugin with plugin.json manifest
+```
+
+### File Size Recommendations
+
+| File | Hard limit | Recommended max | Why |
+|------|-----------|----------------|-----|
+| Enterprise CLAUDE.md | Unlimited | 2,000 tokens (~150 lines) | Every session pays this cost |
+| User CLAUDE.md | Unlimited | 2,000 tokens (~150 lines) | Every session pays this cost |
+| Project CLAUDE.md | Unlimited | 4,000 tokens (~300 lines) | Every session pays this; keep lean |
+| CLAUDE.local.md | Unlimited | 2,000 tokens (~150 lines) | Every session pays this |
+| Auto-Memory MEMORY.md | 200 lines / 25KB | 100 lines | Survives compaction; high-value facts only |
+| Individual rules file | Unlimited | 500 tokens (~40 lines) | Loaded per-file-touch; targeted |
+| Skills SKILL.md | Unlimited | 2,000 tokens (~150 lines) | Loaded on invoke; can be richer |
+| Subagent .md | Unlimited | 1,500 tokens (~100 lines) | Subagent context only |
+| Commands .md | Unlimited | 500 tokens (~40 lines) | Per invocation |
 
 → Full reference: [Every Markdown File — Complete Catalog](./claude-code-all-markdown-files-catalog)
