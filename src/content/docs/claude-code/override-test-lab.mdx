@@ -7,7 +7,7 @@ description: >
   and enterprise override behaviour. v2.1.126 (May 2026).
 sidebar:
   order: 13
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-23
 ---
 
 import OverrideTestLab from '../../../components/interactive/OverrideTestLab.jsx';
@@ -18,30 +18,296 @@ import OverrideTestLab from '../../../components/interactive/OverrideTestLab.jsx
 
 ## Precedence Rules — Conceptual Reference
 
-### The 12 Test Scenarios Covered
+### The 12 Test Scenarios — Expanded Descriptions and Expected Outcomes
 
-1. **Enterprise override** — Managed settings block all user overrides
-2. **User CLAUDE.md inheritance** — Global context flows into project
-3. **Project CLAUDE.md** — Project context merges with user context
-4. **CLAUDE.local.md** — Personal overrides win within same project
-5. **Rules path scoping** — `.claude/rules/frontend.md` loads only for `src/**/*.tsx`
-6. **Rules YAML list syntax** — `paths: [src/api/**, tests/**]`
-7. **Skill invocation** — Skills load only when invoked via slash command
-8. **Skill tool restrictions** — `tools:` field limits what skill can access
-9. **Memory scope** — MEMORY.md is project-scoped, not shared across projects
-10. **Subagent memory isolation** — Subagent gets own MEMORY.md
-11. **Settings inheritance** — `.claude/settings.local.json` overrides `.claude/settings.json`
-12. **CLI flag priority** — `--permission-mode bypassPermissions` beats all settings
+Each scenario below describes the exact file configuration being tested, what behaviour it verifies, and what outcome you should observe. Use these as a mental model checklist when designing your own Claude Code configuration.
+
+---
+
+**Scenario 1 — Enterprise Override**
+
+*What is tested:* Managed settings lock specific keys so that no local, project, or CLI override can change them.
+
+*Configuration:*
+```json
+// ~/.claude/managed-settings.json
+{ "model": "claude-sonnet-4-6", "enterpriseLock": true }
+
+// .claude/settings.local.json
+{ "model": "claude-opus-4-7" }
+```
+
+*Expected outcome:* Claude uses `claude-sonnet-4-6` regardless of the local override. The enterprise key is immutable. Attempting `--model claude-opus-4-7` on the CLI also has no effect when that key is locked.
+
+*Diagnostic command:* `/config show` → look for `[LOCKED]` annotation next to the `model` field.
+
+---
+
+**Scenario 2 — User CLAUDE.md Inheritance**
+
+*What is tested:* Personal global context in `~/.claude/CLAUDE.md` flows into every project without any project-level configuration.
+
+*Configuration:*
+```markdown
+<!-- ~/.claude/CLAUDE.md -->
+I prefer concise code. Always use TypeScript strict mode.
+Prefer named exports over default exports.
+```
+
+*Expected outcome:* In a fresh project with no project-level CLAUDE.md, Claude still follows the TypeScript strict mode and named-export preferences. These are "always on" for all your projects.
+
+*Key nuance:* User CLAUDE.md loads before project CLAUDE.md — if they have conflicting instructions, project CLAUDE.md wins (it appears later in the concatenated context, which the model weights more heavily).
+
+---
+
+**Scenario 3 — Project CLAUDE.md Merges with User**
+
+*What is tested:* Project and user CLAUDE.md both apply simultaneously — they stack, not compete.
+
+*Configuration:*
+```markdown
+<!-- ~/.claude/CLAUDE.md -->
+Always use TypeScript strict mode.
+
+<!-- CLAUDE.md (project root) -->
+This is a Node.js 20 REST API using Express and Prisma.
+Use snake_case for all JSON field names.
+```
+
+*Expected outcome:* Claude follows ALL instructions from both files simultaneously. The model sees them concatenated: TypeScript strict mode AND Express/Prisma context AND snake_case JSON. No conflict — both apply.
+
+*Common mistake:* Developers expect project CLAUDE.md to "replace" user CLAUDE.md. It does not. Both always load.
+
+---
+
+**Scenario 4 — CLAUDE.local.md Personal Overrides**
+
+*What is tested:* `CLAUDE.local.md` is appended after all other CLAUDE.md files and can provide personal context without affecting teammates.
+
+*Configuration:*
+```markdown
+<!-- CLAUDE.md (project root — committed) -->
+Primary database port: 5432
+
+<!-- CLAUDE.local.md (gitignored) -->
+My local dev database is at port 5433 (Docker port mapping conflict).
+Do not use the default connection string — use DATABASE_URL from my .env.local
+```
+
+*Expected outcome:* Claude uses port 5433 for local dev suggestions (CLAUDE.local.md wins by appearing last). Teammates without CLAUDE.local.md see only the 5432 context. No git pollution.
+
+---
+
+**Scenario 5 — Rules Path Scoping (Single Rule)**
+
+*What is tested:* A rule with `paths: [src/**/*.tsx]` loads only when Claude reads/writes `.tsx` files.
+
+*Configuration:*
+```markdown
+<!-- .claude/rules/frontend.md -->
+---
+paths:
+  - src/**/*.tsx
+  - src/**/*.css
+---
+All React components must use Tailwind CSS classes.
+Prefer controlled components over uncontrolled.
+Use React.memo() for list items.
+```
+
+*Expected outcome:* When Claude reads `src/components/Button.tsx`, the frontend rule loads (costs ~400 tokens). When Claude reads `src/server/index.ts`, the rule does NOT load (0 tokens). When Claude reads `src/components/button.css`, the rule loads (CSS is in the paths list).
+
+*Token impact:* For a session touching only backend `.ts` files, this rule costs zero tokens all session.
+
+---
+
+**Scenario 6 — Rules YAML List Syntax**
+
+*What is tested:* Rules can specify multiple path patterns in a YAML list, and the rule loads if ANY pattern matches.
+
+*Configuration:*
+```yaml
+# .claude/rules/api-standards.md
+---
+paths:
+  - src/api/**
+  - src/routes/**
+  - tests/api/**
+  - docs/api/**
+priority: high
+---
+```
+
+*Expected outcome:* The rule loads when Claude touches any file under `src/api/`, `src/routes/`, `tests/api/`, or `docs/api/`. A file matching multiple patterns still loads the rule only once. The `priority: high` annotation is metadata only — it does not change load order (that is alphabetical by filename).
+
+---
+
+**Scenario 7 — Skill Invocation (Zero-Cost Until Called)**
+
+*What is tested:* Skills cost 0 tokens at session start and only load when explicitly invoked.
+
+*Configuration:*
+```markdown
+<!-- .claude/skills/pr-review/SKILL.md -->
+---
+name: pr-review
+description: Performs thorough pull request review
+tools:
+  - Read
+  - Bash
+  - WebFetch
+---
+When reviewing a PR: check for security issues first, then correctness,
+then performance. Output findings as GitHub review comments format.
+```
+
+*Expected outcome:* At session start, 0 tokens consumed for this skill. Running `/pr-review` injects the SKILL.md content (~500 tokens) and activates the restricted tool set. Running `/pr-review` again in the same session does not double-load.
+
+*Verify:* `/context` before and after `/pr-review` invocation — token count increases by ~skill size.
+
+---
+
+**Scenario 8 — Skill Tool Restrictions**
+
+*What is tested:* A skill's `tools:` field restricts what Claude can use during skill execution, providing safety boundaries.
+
+*Configuration:*
+```markdown
+<!-- .claude/skills/read-only-audit/SKILL.md -->
+---
+name: read-only-audit
+tools:
+  - Read
+  - Grep
+  - Glob
+  # Note: Bash, Edit, Write are intentionally omitted
+---
+Perform a security audit of the codebase. Read all source files.
+Report findings only. Do not modify anything.
+```
+
+*Expected outcome:* While this skill is active, Claude cannot use `Bash`, `Edit`, or `Write` even if the user asks it to. This creates an enforced read-only mode. Attempting a write produces a permission error. Skills can thus create safe "audit mode" sessions.
+
+---
+
+**Scenario 9 — Memory Scope (Project-Specific)**
+
+*What is tested:* MEMORY.md is scoped per-project by hashing the absolute project path — it does not bleed between projects.
+
+*How it works:*
+```
+Project A: /home/user/project-a  →  hash: a1b2c3...  →  ~/.claude/projects/a1b2c3.../memory/MEMORY.md
+Project B: /home/user/project-b  →  hash: d4e5f6...  →  ~/.claude/projects/d4e5f6.../memory/MEMORY.md
+```
+
+*Expected outcome:* Facts added via `/memory add "use Prisma ORM"` in Project A do NOT appear in Project B sessions. Each project has a completely independent MEMORY.md. Moving a project to a different absolute path creates a new hash identity (run `/memory migrate` afterward).
+
+*Verify:* `/memory show` in two different projects — they show different content.
+
+---
+
+**Scenario 10 — Subagent Memory Isolation**
+
+*What is tested:* When Claude spawns a subagent via the Task tool, the subagent gets its own isolated MEMORY.md and does NOT inherit the parent's.
+
+*Configuration:*
+```python
+# Claude uses Task tool with memory isolation
+Task(
+  description="Security audit of auth module",
+  prompt="Review src/auth/ for security issues. Report only.",
+  tools=["Read", "Grep"],
+  memory="isolated"   # subagent YAML field
+)
+```
+
+*Expected outcome:* The subagent cannot read or write the parent session's MEMORY.md. Any facts the subagent stores are discarded when the task completes (unless `memory: shared` is specified). This prevents cross-contamination of agent memory in parallel workloads.
+
+---
+
+**Scenario 11 — Settings Inheritance (Local over Project)**
+
+*What is tested:* `.claude/settings.local.json` overrides `.claude/settings.json` for any key it specifies, while inheriting unspecified keys from project settings.
+
+*Configuration:*
+```json
+// .claude/settings.json (committed — team defaults)
+{
+  "model": "claude-sonnet-4-6",
+  "permissions": { "allow": ["Bash(npm *)", "Read", "Edit"] },
+  "maxOutputTokens": 4096
+}
+
+// .claude/settings.local.json (gitignored — personal)
+{
+  "model": "claude-opus-4-7"
+}
+```
+
+*Expected outcome:* You use Opus 4.7 (local overrides model key). Your teammates use Sonnet 4.6 (they have no local file, so project setting applies). The `permissions` and `maxOutputTokens` from project settings still apply to you — local file only overrides what it explicitly sets.
+
+---
+
+**Scenario 12 — CLI Flag Priority**
+
+*What is tested:* CLI flags override all settings-file values (but NOT enterprise locked keys).
+
+*Commands:*
+```bash
+# Override model for this one invocation only
+claude --model claude-opus-4-7 "Review the architecture"
+
+# Override permission mode for this CI run
+claude --permission-mode bypassPermissions --print "Run all tests"
+
+# Cap cost for this script
+claude --max-budget-usd 0.50 --max-turns 10 --print "Summarise changes"
+```
+
+*Expected outcome:* The specified flags apply for this invocation only. They do not persist to the next session. They override local/project/user settings for any non-enterprise-locked key. The session returns to default settings next time Claude is launched.
+
+*Security note:* `--permission-mode bypassPermissions` should only be used in sandboxed CI environments, never in interactive developer sessions.
+
+---
 
 ### Key Conflict Resolution Rules
 
-| Rule | Result |
-|------|--------|
-| Enterprise vs user setting | Enterprise always wins |
-| Two CLAUDE.md files at different paths | Both load; deeper path appended |
-| Project settings vs user settings | Project settings override user |
-| Local settings vs project settings | Local settings override project |
-| CLI flag vs settings file | CLI flag wins |
-| Same key in two rules files | Last-loaded file wins |
+| Rule | Result | Notes |
+|------|--------|-------|
+| Enterprise vs user setting | Enterprise always wins | Keys with `enterpriseLock` are immutable |
+| Enterprise vs CLI flag | Enterprise always wins | CLI flags cannot override managed keys |
+| CLI flag vs local settings | CLI flag wins | Flags are ephemeral, per-invocation |
+| Local vs project settings | Local settings win | Closest scope wins for settings |
+| Project vs user settings | Project settings win | Closer to the work |
+| Two CLAUDE.md at different paths | Both load; deeper path appended | Context is additive |
+| Project settings vs user settings | Project settings override user | Scope proximity |
+| Same key in two rules files | Last-loaded alphabetically wins | Use numeric prefixes to control order |
+| Rules paths overlap | Both rules load for the file | Additive context |
+
+### Precedence Quick-Check Flowchart
+
+```
+Is the key in enterprise managed-settings.json?
+  YES → Enterprise value is FINAL. Stop.
+  NO  ↓
+
+Is the key in CLI flags for this invocation?
+  YES → CLI value applies (for this run only). Stop.
+  NO  ↓
+
+Is the key in .claude/settings.local.json?
+  YES → Local value applies. Stop.
+  NO  ↓
+
+Is the key in .claude/settings.json?
+  YES → Project value applies. Stop.
+  NO  ↓
+
+Is the key in ~/.claude/settings.json?
+  YES → User value applies. Stop.
+  NO  ↓
+
+Default value from Claude Code applies.
+```
 
 → Full reference: [Configuration Guide](./claude-code-config-guide)

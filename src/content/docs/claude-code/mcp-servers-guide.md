@@ -1409,6 +1409,611 @@ app.listen(3000, () => console.error('MCP server listening on :3000'));
 
 ---
 
+## 12. Minimal TypeScript MCP Server — Complete Working Example
+
+This is a self-contained, production-ready MCP server in TypeScript that demonstrates all key patterns in the smallest possible footprint. Use this as your starting template.
+
+```typescript
+#!/usr/bin/env node
+/**
+ * minimal-mcp-server.ts
+ * 
+ * A complete, minimal MCP server with:
+ *  - Tool registration via the high-level McpServer API
+ *  - Request handling for two tools
+ *  - Proper stdio transport setup
+ *  - All output correctly routed to stderr (never stdout)
+ *
+ * Install:
+ *   npm install @modelcontextprotocol/sdk zod
+ *   npx tsx minimal-mcp-server.ts
+ *
+ * Configure in .mcp.json:
+ *   {
+ *     "mcpServers": {
+ *       "my-server": {
+ *         "type": "stdio",
+ *         "command": "npx",
+ *         "args": ["tsx", "/absolute/path/to/minimal-mcp-server.ts"]
+ *       }
+ *     }
+ *   }
+ */
+
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+
+// CRITICAL: Do NOT use console.log() — that goes to stdout and corrupts JSON-RPC.
+// ALL non-protocol output must go to stderr.
+console.error("[minimal-mcp-server] Starting...");
+
+// ─── 1. Create the server instance ───────────────────────────────────────────
+const server = new McpServer({
+  name: "minimal-mcp-server",
+  version: "1.0.0",
+});
+
+// ─── 2. Register tools ───────────────────────────────────────────────────────
+
+// Tool 1: A simple utility tool — echo with transformation
+server.tool(
+  "echo_upper",                          // Tool name (must be unique on this server)
+  "Echo the input text in UPPERCASE. Use this to test the MCP connection.",
+  {
+    // Input schema using Zod — automatically converted to JSON Schema
+    text: z.string().min(1).max(1000).describe("Text to echo in uppercase"),
+  },
+  async ({ text }) => {
+    // Handler receives validated, typed input
+    const result = text.toUpperCase();
+
+    console.error(`[minimal-mcp-server] echo_upper called: "${text.slice(0, 50)}"`);
+
+    // Return format: { content: [{ type: "text", text: "..." }] }
+    return {
+      content: [{ type: "text", text: result }],
+    };
+  }
+);
+
+// Tool 2: A data tool — fetch and process data
+server.tool(
+  "get_timestamp",
+  "Get the current UTC timestamp in ISO 8601 format, optionally with timezone offset.",
+  {
+    timezone_offset_hours: z
+      .number()
+      .int()
+      .min(-14)
+      .max(14)
+      .default(0)
+      .describe("Timezone offset in hours from UTC (e.g. -5 for EST, +1 for CET)"),
+    format: z
+      .enum(["iso", "unix", "human"])
+      .default("iso")
+      .describe("Output format: iso=ISO8601, unix=Unix timestamp, human=readable string"),
+  },
+  async ({ timezone_offset_hours, format }) => {
+    const now = new Date();
+    const offsetMs = timezone_offset_hours * 60 * 60 * 1000;
+    const adjusted = new Date(now.getTime() + offsetMs);
+
+    let result: string;
+    switch (format) {
+      case "unix":
+        result = Math.floor(now.getTime() / 1000).toString();
+        break;
+      case "human":
+        result = adjusted.toUTCString().replace("GMT", `UTC${timezone_offset_hours >= 0 ? "+" : ""}${timezone_offset_hours}`);
+        break;
+      case "iso":
+      default:
+        result = adjusted.toISOString().replace("Z", `${timezone_offset_hours >= 0 ? "+" : ""}${String(Math.abs(timezone_offset_hours)).padStart(2, "0")}:00`);
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({ timestamp: result, format, offset_hours: timezone_offset_hours }),
+      }],
+    };
+  }
+);
+
+// ─── 3. Connect the stdio transport and start ─────────────────────────────────
+// StdioServerTransport reads JSON-RPC messages from stdin and writes to stdout.
+// The McpServer handles the protocol negotiation (initialize/initialized handshake)
+// and routes incoming requests to your registered tool handlers.
+
+const transport = new StdioServerTransport();
+
+try {
+  await server.connect(transport);
+  console.error("[minimal-mcp-server] Ready. Waiting for requests on stdin.");
+} catch (error) {
+  console.error("[minimal-mcp-server] Fatal startup error:", error);
+  process.exit(1);
+}
+
+// The server runs until the client disconnects (Claude Code session ends).
+// No cleanup code is needed — the process exits naturally when stdin closes.
+```
+
+### Registering the server
+
+```json
+// .mcp.json in your project root
+{
+  "mcpServers": {
+    "minimal": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["tsx", "/home/user/my-server/minimal-mcp-server.ts"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
+```
+
+### Testing it manually
+
+```bash
+# Step 1: Verify the server starts without error output on stdout
+npx tsx minimal-mcp-server.ts < /dev/null
+# Should show NO output (stderr goes to terminal, stdout stays clean)
+
+# Step 2: Send an initialize handshake
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1.1","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}' \
+  | npx tsx minimal-mcp-server.ts
+
+# Step 3: Call a tool
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo_upper","arguments":{"text":"hello world"}}}' \
+  | npx tsx minimal-mcp-server.ts
+# Expected response: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"HELLO WORLD"}]}}
+```
+
+---
+
+## 13. MCP Security Checklist
+
+Use this checklist before deploying any MCP server to production or sharing it with a team.
+
+```
+MCP SERVER SECURITY CHECKLIST
+══════════════════════════════════════════════════════════════════
+
+BEFORE BUILDING
+[ ] Have a clear, minimal scope — only expose what Claude actually needs
+[ ] Document all tools that have side effects (writes, deletions, external calls)
+[ ] Decide on authentication model before writing any code
+
+AUTHENTICATION & SECRETS
+[ ] HTTP servers: Bearer token or OAuth 2.1 required (no unauthenticated endpoints)
+[ ] Tokens stored in environment variables, not hardcoded in source
+[ ] .mcp.json uses ${ENV_VAR} expansion — never plain text tokens
+[ ] Tokens scoped to minimum required permissions (read-only where possible)
+[ ] Token rotation procedure documented and scheduled (90-day maximum)
+[ ] .mcp.json is NOT in .gitignore (safe to commit) — credentials are in env vars
+
+INPUT VALIDATION
+[ ] All tool inputs validated with JSON Schema (required array complete)
+[ ] No raw SQL string concatenation — use parameterised queries
+[ ] File path inputs validated/normalized — prevent path traversal (../../etc/passwd)
+[ ] URL inputs validated — prevent SSRF (internal network access)
+[ ] Numeric inputs bounded (min/max) to prevent resource exhaustion
+[ ] String inputs length-bounded to prevent token budget exhaustion
+
+TOOL DESIGN
+[ ] Destructive tools have explicit "confirm: true" parameter (prevents accidental calls)
+[ ] Side effects documented in tool description ("PERMANENTLY DELETES", "WRITES TO")
+[ ] Read-only tools clearly marked — Claude prefers read tools over write tools
+[ ] No tools that combine read + irreversible write in a single call
+[ ] MCP server total tool definitions < 20,000 tokens (check with /mcp status)
+
+STDIO SERVERS (LOCAL)
+[ ] ALL non-JSON output directed to stderr (never stdout)
+[ ] No startup banners, debug prints, or log messages to stdout
+[ ] .NET: using Host.CreateEmptyApplicationBuilder (not WebApplication.CreateBuilder)
+[ ] Python: print(..., file=sys.stderr) for all diagnostic output
+[ ] Server tested with: node server.js | head -1  (should output valid JSON only)
+
+HTTP SERVERS (REMOTE)
+[ ] HTTPS enforced (no HTTP in production)
+[ ] Authentication validated before ANY handler logic runs
+[ ] Rate limiting implemented to prevent abuse
+[ ] Request size limits set (prevent OOM via giant tool inputs)
+[ ] Health check endpoint does NOT expose sensitive config/secrets
+[ ] Error responses do NOT include internal paths, stack traces, or DB details
+[ ] CORS configured restrictively (whitelist origins, not wildcard)
+
+PROMPT INJECTION DEFENSE
+[ ] Tool return values are data, not instructions (don't include "Now do X..." text)
+[ ] Resource content is sanitized before return — strip markdown headers that could confuse Claude
+[ ] Tool descriptions don't include user-controlled text (prevents meta-injection)
+
+DEPENDENCY SECURITY
+[ ] mcp-remote >= 0.1.3 (CVE-2025-6514 OS command injection fix)
+[ ] npm audit / pip audit / dotnet list package --vulnerable run clean
+[ ] Dependencies pinned to specific versions in production
+[ ] Supply chain: only trusted packages from official registries
+
+MONITORING
+[ ] All tool calls logged with: timestamp, tool name, caller session, input summary
+[ ] Error rate monitored — spike in errors may indicate attack attempts
+[ ] Response time monitored — slowdowns may indicate resource exhaustion
+[ ] Alert on authentication failures (brute force detection)
+```
+
+---
+
+## 14. OAuth 2.1 for Remote MCP Servers
+
+Remote MCP servers (HTTP transport) that need user-level authentication use **OAuth 2.1 with PKCE** (Proof Key for Code Exchange). This is the recommended authentication standard for MCP as of spec version 1.1.
+
+### Why OAuth 2.1, not a simple API key?
+
+A static API key grants the same access to every Claude Code user. OAuth 2.1 allows each user to authenticate with their own identity, with consent-based scopes, and with tokens that can be revoked per user without affecting others. It also eliminates the need to distribute shared secrets.
+
+### OAuth 2.1 Flow for MCP
+
+```
+  OAUTH 2.1 WITH PKCE — MCP AUTHENTICATION FLOW
+  ══════════════════════════════════════════════════════════════════
+
+  USER               CLAUDE CODE             MCP SERVER           AUTH SERVER
+   │                      │                       │                     │
+   │                      │── 1. Discover ────────►│                     │
+   │                      │                       │── /.well-known/oauth-authorization-server
+   │                      │◄── OAuth metadata ─────│                     │
+   │                      │    (auth_endpoint,      │                     │
+   │                      │     token_endpoint)     │                     │
+   │                      │                       │                     │
+   │  2. User launches    │                       │                     │
+   │  Claude Code, which  │                       │                     │
+   │  needs MCP access    │                       │                     │
+   │                      │                       │                     │
+   │                      │── 3. Generate ─────────►│                     │
+   │                      │   PKCE challenge        │                     │
+   │                      │   (code_verifier,       │                     │
+   │                      │    code_challenge)      │                     │
+   │                      │                       │                     │
+   │◄─ 4. Redirect URL ───│                       │                     │
+   │   (browser opens     │                       │                     │
+   │    auth page)        │                       │                     │
+   │                      │                       │                     │
+   │─── 5. User logs in ──────────────────────────────────────────────►│
+   │       (clicks Allow) │                       │                     │
+   │                      │                       │                     │
+   │◄── 6. Redirect ────────────────────────────────────────────────────│
+   │   with auth code     │                       │                     │
+   │                      │                       │                     │
+   │── 7. Auth code ─────►│                       │                     │
+   │                      │                       │                     │
+   │                      │─── 8. Exchange code ──────────────────────►│
+   │                      │    + code_verifier                          │
+   │                      │    (PKCE verification)                      │
+   │                      │                       │                     │
+   │                      │◄── 9. Access token + ──────────────────────│
+   │                      │    refresh token                            │
+   │                      │                       │                     │
+   │                      │─── 10. MCP calls ─────►│                     │
+   │                      │    Authorization:       │                     │
+   │                      │    Bearer <access_token>│                     │
+   │                      │                       │                     │
+   │                      │◄── 11. Tool results ───│                     │
+   │                      │                       │                     │
+```
+
+### Server-side OAuth 2.1 implementation (TypeScript/Express)
+
+```typescript
+import express from "express";
+import crypto from "crypto";
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ─── 1. Publish OAuth metadata (required by MCP spec) ────────────────────────
+// Claude Code discovers these endpoints automatically
+app.get("/.well-known/oauth-authorization-server", (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  res.json({
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/oauth/authorize`,
+    token_endpoint: `${baseUrl}/oauth/token`,
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    code_challenge_methods_supported: ["S256"],   // PKCE required
+    token_endpoint_auth_methods_supported: ["none"], // public client (PKCE replaces secret)
+    scopes_supported: ["mcp:tools", "mcp:resources", "profile"],
+  });
+});
+
+// In-memory stores (use a database in production)
+const authCodes = new Map<string, {
+  clientId: string; userId: string; codeChallenge: string;
+  codeChallengeMethod: string; expiresAt: number;
+}>();
+const accessTokens = new Map<string, { userId: string; scopes: string[]; expiresAt: number }>();
+const refreshTokens = new Map<string, { userId: string; scopes: string[] }>();
+
+// ─── 2. Authorization endpoint ───────────────────────────────────────────────
+app.get("/oauth/authorize", (req, res) => {
+  const { client_id, redirect_uri, code_challenge, code_challenge_method, state, scope } = req.query as Record<string, string>;
+
+  // In a real app: validate client_id, show login UI, get user consent
+  // Here we auto-approve for simplicity (do NOT do this in production)
+  const userId = "demo-user-123";
+
+  // Generate authorization code
+  const code = crypto.randomBytes(32).toString("hex");
+  authCodes.set(code, {
+    clientId: client_id,
+    userId,
+    codeChallenge: code_challenge,
+    codeChallengeMethod: code_challenge_method || "S256",
+    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Redirect back to Claude Code with the auth code
+  const redirectUrl = new URL(redirect_uri);
+  redirectUrl.searchParams.set("code", code);
+  if (state) redirectUrl.searchParams.set("state", state);
+
+  res.redirect(redirectUrl.toString());
+});
+
+// ─── 3. Token endpoint ───────────────────────────────────────────────────────
+app.post("/oauth/token", (req, res) => {
+  const { grant_type, code, code_verifier, redirect_uri, refresh_token } = req.body;
+
+  if (grant_type === "authorization_code") {
+    const authCode = authCodes.get(code);
+    if (!authCode || authCode.expiresAt < Date.now()) {
+      return res.status(400).json({ error: "invalid_grant", error_description: "Code expired or invalid" });
+    }
+    authCodes.delete(code);
+
+    // Verify PKCE — this is what makes OAuth 2.1 safe for public clients
+    const verifierHash = crypto
+      .createHash("sha256")
+      .update(code_verifier)
+      .digest("base64url");
+
+    if (verifierHash !== authCode.codeChallenge) {
+      return res.status(400).json({ error: "invalid_grant", error_description: "PKCE verification failed" });
+    }
+
+    // Issue tokens
+    const accessToken = crypto.randomBytes(32).toString("hex");
+    const newRefreshToken = crypto.randomBytes(32).toString("hex");
+
+    accessTokens.set(accessToken, {
+      userId: authCode.userId,
+      scopes: ["mcp:tools", "mcp:resources"],
+      expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour
+    });
+    refreshTokens.set(newRefreshToken, {
+      userId: authCode.userId,
+      scopes: ["mcp:tools", "mcp:resources"],
+    });
+
+    return res.json({
+      access_token: accessToken,
+      token_type: "Bearer",
+      expires_in: 3600,
+      refresh_token: newRefreshToken,
+      scope: "mcp:tools mcp:resources",
+    });
+  }
+
+  if (grant_type === "refresh_token") {
+    const tokenData = refreshTokens.get(refresh_token);
+    if (!tokenData) {
+      return res.status(400).json({ error: "invalid_grant", error_description: "Invalid refresh token" });
+    }
+
+    // Rotate refresh token (refresh token rotation — required by OAuth 2.1)
+    refreshTokens.delete(refresh_token);
+    const newAccessToken = crypto.randomBytes(32).toString("hex");
+    const newRefreshToken = crypto.randomBytes(32).toString("hex");
+
+    accessTokens.set(newAccessToken, { ...tokenData, expiresAt: Date.now() + 3600_000 });
+    refreshTokens.set(newRefreshToken, tokenData);
+
+    return res.json({
+      access_token: newAccessToken,
+      token_type: "Bearer",
+      expires_in: 3600,
+      refresh_token: newRefreshToken,
+    });
+  }
+
+  res.status(400).json({ error: "unsupported_grant_type" });
+});
+
+// ─── 4. Token validation middleware ──────────────────────────────────────────
+function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized", error_description: "Bearer token required" });
+  }
+
+  const token = authHeader.slice(7);
+  const tokenData = accessTokens.get(token);
+
+  if (!tokenData || tokenData.expiresAt < Date.now()) {
+    return res.status(401).json({ error: "invalid_token", error_description: "Token expired or invalid" });
+  }
+
+  // Attach user context to request
+  (req as any).userId = tokenData.userId;
+  (req as any).scopes = tokenData.scopes;
+  next();
+}
+
+// ─── 5. MCP endpoint — protected by OAuth ────────────────────────────────────
+app.post("/mcp", requireAuth, async (req, res) => {
+  const { HttpServerTransport } = await import("@modelcontextprotocol/sdk/server/http.js");
+  const transport = new HttpServerTransport(req, res);
+  await mcpServer.connect(transport); // your McpServer instance
+});
+
+app.listen(3000, () => console.error("MCP OAuth server running on :3000"));
+```
+
+### Configure Claude Code to use the OAuth MCP server
+
+```json
+{
+  "mcpServers": {
+    "my-oauth-server": {
+      "type": "http",
+      "url": "https://mcp.example.com/mcp"
+    }
+  }
+}
+```
+
+When Claude Code first connects to this server, it will:
+1. Discover the OAuth metadata from `/.well-known/oauth-authorization-server`
+2. Open a browser window for the user to authenticate
+3. Exchange the authorization code for tokens (with PKCE)
+4. Store the tokens securely and use them automatically on subsequent requests
+5. Refresh the access token automatically when it expires
+
+### Key OAuth 2.1 requirements for MCP compliance
+
+| Requirement | Why | Implementation |
+|-------------|-----|----------------|
+| PKCE required | Prevents auth code interception | `code_challenge_method: "S256"` |
+| Refresh token rotation | Prevents replay attacks | Delete old token on refresh |
+| Short access token lifetime | Limits exposure window | 1 hour maximum recommended |
+| HTTPS only | Prevents token interception | Never deploy MCP over HTTP |
+| No implicit grant | Removed in OAuth 2.1 | Only `authorization_code` grant |
+| Metadata endpoint | Client discovery | `/.well-known/oauth-authorization-server` |
+
+---
+
+## 15. Debugging MCP Connections
+
+When an MCP server isn't working as expected, follow this systematic debugging approach.
+
+### Step 1: Check connection status
+
+```
+/mcp
+```
+
+This shows:
+- Server name and status (`connected`, `error`, `starting`, `disconnected`)
+- Number of tools, resources, and prompts exposed
+- Last error message (if any)
+- Token budget usage
+
+### Step 2: Enable MCP debug logging
+
+```bash
+CLAUDE_MCP_DEBUG=1 claude
+```
+
+With debug mode on, every JSON-RPC message (both sent and received) is logged to the terminal. You'll see the exact initialize handshake, tool list response, and tool call/response pairs.
+
+### Step 3: Test the server independently
+
+**For stdio servers:**
+
+```bash
+# Full protocol test — initialize, list tools, call a tool
+(
+  echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1.1","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}'
+  echo '{"jsonrpc":"2.0","id":2,"method":"initialized","params":{}}'
+  echo '{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}}'
+  echo '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"YOUR_TOOL_NAME","arguments":{"param":"value"}}}'
+) | node /path/to/your-server.js 2>/dev/null
+# The 2>/dev/null suppresses stderr so you only see the JSON-RPC responses
+```
+
+**For HTTP servers:**
+
+```bash
+# Test with curl — initialize
+curl -s -X POST https://mcp.example.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $MCP_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1.1","capabilities":{},"clientInfo":{"name":"curl-test","version":"1.0"}}}' \
+  | jq .
+
+# List tools
+curl -s -X POST https://mcp.example.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $MCP_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | jq '.result.tools[].name'
+
+# Call a specific tool
+curl -s -X POST https://mcp.example.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $MCP_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"my_tool","arguments":{"input":"test"}}}' \
+  | jq .
+```
+
+### Common error codes and their fixes
+
+| Error / Symptom | Root Cause | Fix |
+|----------------|-----------|-----|
+| Server fails to appear in `/mcp` | Command not found (`ENOENT`) | Use absolute path for `command`; verify `node`/`python` is in PATH |
+| `JSON parse error` on connect | Non-JSON stdout on startup | Redirect all `console.log`/`print` to stderr; use `CreateEmptyApplicationBuilder` in .NET |
+| Tool not appearing after connect | Invalid JSON Schema | Check `inputSchema` is valid; use `jsonschema.net` to validate; ensure `required` array matches property names |
+| `401 Unauthorized` on HTTP server | Wrong or missing token | Check `${ENV_VAR}` is set in your shell; print `echo $MCP_TOKEN` to verify |
+| `initialize` handshake timeout | Server crashes during startup | Run server manually and check stderr output for errors |
+| Tools appear but calls fail | Handler throws uncaught exception | Add try/catch in handler; check server stderr during tool call |
+| `Token budget exceeded` | Too many large tool schemas | Remove unused tools; shorten descriptions; split into multiple servers |
+| Server disconnects mid-session | Process crash / OOM | Check server memory usage; add error handling for edge cases |
+| `tools/list` returns empty array | Wrong handler registration | Verify you're using `server.tool()` or `setRequestHandler(ListToolsRequestSchema, ...)` |
+| `"result":{"content":[]}` | Handler returns nothing | Ensure handler returns `{ content: [{ type: "text", text: "..." }] }` |
+| Slow tool calls | External API latency | Add caching; implement timeouts; use connection pooling |
+
+### Debugging checklist
+
+```
+MCP DEBUGGING CHECKLIST
+══════════════════════════════════════════════════════════════════
+
+CONNECTION FAILURES
+[ ] Server process starts without errors: node server.js (check stderr)
+[ ] No non-JSON output on stdout: node server.js | head -1 (should be valid JSON)
+[ ] All environment variables set: printenv | grep -E "API_KEY|TOKEN|URL"
+[ ] For HTTP: server is reachable: curl -I https://mcp.example.com/mcp
+[ ] For HTTP: auth works: curl -H "Authorization: Bearer $TOKEN" ...
+
+TOOL ISSUES
+[ ] Tool appears in /mcp tool list
+[ ] Tool inputSchema is valid JSON Schema (validate at jsonschema.net)
+[ ] All required fields are in the "required" array
+[ ] Enum values match exactly (case-sensitive)
+[ ] Default values don't violate type constraints
+
+RESPONSE ISSUES
+[ ] Handler always returns { content: [...] } — never undefined or null
+[ ] Error responses use throw new Error("...") — SDK converts to MCP error
+[ ] Large responses are truncated appropriately (< 100KB recommended)
+[ ] Binary data is base64-encoded, not raw bytes
+
+PERFORMANCE
+[ ] /mcp status shows < 20,000 tokens total
+[ ] Tool descriptions are concise (< 200 tokens each)
+[ ] Resources are paginated for large datasets
+[ ] Database connections use connection pooling (not one connection per call)
+```
+
+---
+
 ## Related Guides
 
 - [CLI Technical Reference](./claude-code-reference) — Section 9: MCP (full spec)

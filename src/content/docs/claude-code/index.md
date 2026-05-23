@@ -3,7 +3,7 @@ title: Claude Code
 description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles, memory management (7 types), models & pricing, slash commands, context engineering, and 14 interactive diagrams. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 1
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-23
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
@@ -101,6 +101,35 @@ Task (subagent)            Output style costs         Role-based access
 
 ## Quick Setup (5 minutes)
 
+The five-step flow from zero to a productive Claude Code session:
+
+```
+STEP 1: Install          STEP 2: Auth            STEP 3: First Task
+─────────────────        ────────────────        ──────────────────
+curl -fsSL               claude                  claude "Explain
+  claude.ai/             (browser OAuth          what this codebase
+  install.sh | bash      opens automatically)    does"
+       │                       │                       │
+       ▼                       ▼                       ▼
+  Binary placed           ~/.claude/              Claude reads your
+  in PATH               auth.json saved          files autonomously
+  (v2.1.113+:            session begins          and responds
+  no Node.js needed)
+       │
+       ▼
+STEP 4: Project Context         STEP 5: Explore Features
+────────────────────────        ──────────────────────────────
+cat > CLAUDE.md << 'EOF'        /config   → settings UI
+# Project Context               /memory   → view memory files
+[tech stack, conventions,       /mcp      → connect MCP servers
+ coding standards]              /hooks    → set up automation
+EOF                             /skills   → browse skills
+                                /agents   → manage subagents
+claude "What patterns                     │
+should I follow for                       ▼
+new features?"              Full productivity in < 1 day
+```
+
 ```bash
 # 1. Install
 curl -fsSL https://claude.ai/install.sh | bash
@@ -117,6 +146,12 @@ cat > CLAUDE.md << 'EOF'
 [Describe your project, tech stack, conventions here]
 EOF
 claude "What patterns should I follow when adding new features?"
+
+# 5. Explore the slash command UI
+claude
+> /config          # settings, output styles, model selection
+> /memory          # view and edit all memory files
+> /hooks           # configure automation hooks
 ```
 
 → [Full Quick Start Guide](./quick-start)
@@ -331,6 +366,61 @@ Send back to API
 
 ---
 
+## Troubleshooting Quick Reference
+
+Common issues and their solutions:
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Claude ignores CLAUDE.md | File not at project root or encoding issue | Check `git show HEAD:CLAUDE.md`, ensure UTF-8 without BOM |
+| High costs unexpectedly | Large CLAUDE.md or low cache hit rate | Run `/context` to see token usage; check cache hit rate with `/usage` |
+| Context fills up fast | Path-scoped rules matching too broadly | Tighten `paths:` globs in `.claude/rules/*.md`; move broad rules to CLAUDE.md |
+| Skills not loading | Missing SKILL.md or wrong directory | Check `.claude/skills/<name>/SKILL.md` exists; verify frontmatter `name:` field |
+| Auto-compaction thrash | Context jumping between unrelated tasks | Use `/clear` between unrelated tasks; enable circuit breaker (v2.1.89+) |
+| MCP server not connecting | Transport mismatch or auth failure | Check `.mcp.json` config; run `/mcp` for live connection status and error details |
+| Permission denied errors | Tool not in allowlist | Add to `permissions.allow` in `.claude/settings.json`; or use `/permissions` UI |
+| Hooks not firing | Wrong event name or JSON syntax error | Validate JSON with `jq`; check hook event spelling — names are case-sensitive |
+| Subagent OOM | Too many parallel subagents consuming memory | Reduce concurrency in Task calls; switch to serial Task chaining for large payloads |
+| Slow cold starts | Old Node.js-based binary installed | Upgrade to v2.1.113+ (native binary with embedded bfs/ugrep, no Node.js required) |
+
+### Diagnosing Context and Cost Issues
+
+```
+Session cost spike? Use this checklist:
+
+1. /context           → see token breakdown (system / conversation / tools)
+2. /usage             → check cache hit rate (target: >80% on system prompt)
+3. /memory            → audit CLAUDE.md size — keep under 8K tokens
+4. Check rules/       → path globs loading rules for every file?
+5. /compact           → manually compact if auto-compaction hasn't triggered
+6. /clear             → start fresh if context is polluted with unrelated work
+```
+
+### MCP Debugging Flow
+
+```
+MCP server not responding?
+
+/mcp                         → lists all configured servers + connection state
+   │
+   ├── Status: "error"?      → check server logs in ~/.claude/mcp-logs/
+   ├── Status: "connecting"? → transport mismatch (stdio vs HTTP)?
+   └── Status: "connected"   → check tool permissions in settings.json
+
+.mcp.json quick-check:
+{
+  "servers": {
+    "my-server": {
+      "command": "npx",        ← stdio transport
+      "args": ["-y", "@my/mcp-server"],
+      "env": { "API_KEY": "${MY_API_KEY}" }
+    }
+  }
+}
+```
+
+---
+
 ## Learning Paths
 
 ### New to Claude Code
@@ -365,3 +455,53 @@ Send back to API
 1. [Compass Research Notes](./compass-research-notes) — all 5 domains with gap-fill reference
 2. [Concept Validation Report](./validation-report) — 270+ claims verified against official docs
 3. [Elite Training Program](./claude-training) — structured 8-module curriculum
+
+---
+
+## Version History Quick Reference
+
+The most impactful releases across Claude Code's history, grouped by theme:
+
+### Agentic & Multi-Agent Capabilities
+
+| Version | Release | Impact |
+|---------|---------|--------|
+| v2.1.32 | Agent Teams (Research Preview) | Peer-to-peer multi-agent sessions; persistent shared context via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` |
+| v2.1.98 | Monitor tool | Stream stdout from background processes line-by-line — enables real-time CI feedback loops |
+| v2.1.89 | Compaction circuit breaker | Prevents runaway auto-compaction thrash; critical for long-running agentic sessions |
+| v2.0.64 | Task tool (subagents) | Spawn isolated child Claude sessions from within a parent session for parallel workloads |
+
+### Configuration & Context
+
+| Version | Release | Impact |
+|---------|---------|--------|
+| v2.1.84 | Rules `paths:` scoping | Load rules conditionally based on file glob — reduces context overhead per task |
+| v2.1.120 | `${CLAUDE_EFFORT}` in skills | Skills can branch on session effort level for adaptive behaviour |
+| v2.1.119 | `/config` persistence | UI-driven settings saved to `settings.json` — no manual JSON editing required |
+| v2.1.116 | `/terminal-setup` | First-class terminal configuration: scroll sensitivity, clipboard, iTerm2 integration |
+
+### Performance & Infrastructure
+
+| Version | Release | Impact |
+|---------|---------|--------|
+| v2.1.113 | Native binary | Eliminated Node.js dependency; embedded `bfs` (file traversal) and `ugrep` (search); 30–50% faster cold starts |
+| v2.1.92 | `--bare` mode | CI-optimised launch: 14% faster startup, skips non-essential initialization |
+| v2.1.108 | Cache TTL fix | 1-hour prompt cache TTL restored for `DISABLE_TELEMETRY=1` users — previously broken |
+
+### Cloud & Enterprise Integration
+
+| Version | Release | Impact |
+|---------|---------|--------|
+| v2.1.121 | Vertex WIF | GCP Workload Identity Federation in CI — no service account key required |
+| v2.1.122 | Bedrock service tiers | `default`/`flex`/`priority` tier routing via `CLAUDE_CODE_BEDROCK_SERVICE_TIER` |
+| v2.1.117 | Opus 4.7 + 1M context | Opus 4.7 as `xhigh`-effort default; 1M token context window stabilised |
+| v2.1.118 | `mcp_tool` hooks | Hook handlers can now target individual MCP tool calls by tool name |
+
+### Hooks & Automation
+
+| Version | Release | Impact |
+|---------|---------|--------|
+| v2.1.63 | `http` hook handler | POST hook payloads to any webhook URL — enables external audit logging |
+| v2.1.118 | `DISABLE_UPDATES` env var | Freeze Claude Code version in managed/enterprise environments |
+| v2.1.105 | `/doctor` auto-fix | Health check with `f`-key guided repair; plugin health monitors |
+| v2.1.104 | `/team-onboarding` | Generate codebase-aware onboarding guides from project analysis |
