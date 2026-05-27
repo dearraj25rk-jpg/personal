@@ -9,7 +9,7 @@ description: >
   system. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 16
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-27
 ---
 
 import ContextEngineeringCE from '../../../components/interactive/ContextEngineeringCE.jsx';
@@ -20,6 +20,12 @@ import ContextEngineeringCE from '../../../components/interactive/ContextEnginee
 
 ## Context Engineering — Reference
 
+### What is Context Engineering?
+
+Context engineering (CE) is the practice of deliberately managing what information enters Claude's context window on each API call, and when. Unlike prompt engineering (which focuses on _how_ you phrase instructions), CE focuses on _what_ is present in the context at each turn — and at what cost.
+
+Every token in Claude's context window costs money on every API call. A context window with 800K used tokens costs roughly 4× as much per turn as one with 200K used tokens, even for the same user prompt. CE is the discipline of maximising signal while minimising token cost.
+
 ### The Four CE Strategies
 
 | Strategy | Primitive | In Claude Code | When to use |
@@ -28,6 +34,38 @@ import ContextEngineeringCE from '../../../components/interactive/ContextEnginee
 | **SELECT** | Retrieve selectively | JIT via glob/grep, path-scoped rules, ToolSearch | Any read — avoid bulk-loading |
 | **COMPRESS** | Shrink before keeping | `/compact`, `/clear`, summarise bash output, `/effort low` | At 70% usage; between unrelated tasks |
 | **ISOLATE** | Separate context windows | Subagents via Task tool, `/branch` worktrees, `/clear` | Research-heavy subtasks, parallel work |
+
+### Context Engineering in Practice — The WRITE→SELECT→COMPRESS→ISOLATE Loop
+
+```
+  SESSION START
+       │
+       ▼
+  WRITE: Ensure CLAUDE.md has project context.
+  Add architectural decisions to MEMORY.md before starting.
+       │
+       ▼
+  SELECT: Use targeted tools (Grep/Glob/Read) not bulk reads.
+  Let path-scoped rules load conditionally.
+  Use ToolSearch to defer rarely-needed tool schemas.
+       │
+       ▼
+  Work begins — context fills...
+       │
+       ▼
+  At 60-70% context usage:
+  COMPRESS: Run /compact with focus instruction.
+  Clear unrelated tool results from context.
+       │
+       ▼
+  Task needs parallel work?
+  ISOLATE: Spawn Task (subagent) for independent subtask.
+  Use /branch for work requiring a clean context window.
+       │
+       ▼
+  WRITE again: Save outcomes, decisions, state to MEMORY.md.
+  SESSION END: /rename for retrieval; /clear for next task.
+```
 
 ### Token Budget — 1M Window (Sonnet 4.6 / Opus 4.x)
 
@@ -69,6 +107,16 @@ MEMORY.md is Claude Code's durable per-project memory file. Unlike CLAUDE.md, it
 
 Use `/memory` to view and edit. Add project-specific facts that should persist across all sessions: database schemas, API quirks, known bugs, architectural decisions already made.
 
+**What belongs in MEMORY.md vs CLAUDE.md:**
+
+| MEMORY.md | CLAUDE.md |
+|-----------|----------|
+| Discoveries made during sessions | Standing project conventions |
+| "We decided to use JWT not sessions" | "Always use JWT for auth" |
+| Current task state, blockers | Team conventions and standards |
+| Per-session notes | Architectural decisions (permanent) |
+| Automatically written by Claude | Manually maintained by team |
+
 ### /advisor — CE Superpower
 
 `/advisor` activates dual-model mode: Sonnet 4.6 handles execution (reading files, running tools, writing code) while Opus 4.7 reviews context periodically and provides strategic guidance.
@@ -80,7 +128,7 @@ Normal session:             Sonnet 4.6 → does everything
 ```
 
 | Mode | Cost per session | Best for |
-|------|-----------------|---------|
+|------|-----------------|----------|
 | Sonnet only | ~$5–15 | Standard feature work |
 | /advisor | ~$20–45 | Architecture, ambiguous bugs |
 | Opus only | ~$50–150 | Highest complexity, slowest |
@@ -123,7 +171,7 @@ Each compaction costs **100–200K tokens** to execute. Run `/compact` proactive
 ### Models (v2.1.126)
 
 | Model | Context | Effort | Best for |
-|-------|---------|--------|---------|
+|-------|---------|--------|----------|
 | Opus 4.7 | 1M | xhigh default | Hardest tasks, architecture, migrations |
 | Opus 4.6 | 1M | high | Complex analysis, large codebases |
 | Sonnet 4.6 | 1M | medium | Daily coding — **default** |
@@ -148,5 +196,16 @@ Each compaction costs **100–200K tokens** to execute. Run `/compact` proactive
 | `/rewind` | COMPRESS | Roll back changes without clearing context |
 | `/usage` | Monitor | Cost and token breakdown |
 | `/debug` | Debug | Diagnose context/caching anomalies |
+
+### CE Anti-Patterns to Avoid
+
+| Anti-pattern | Problem | CE fix |
+|-------------|---------|--------|
+| Starting every session by asking Claude to "read the entire codebase" | 50-200K tokens wasted on context that won't all be relevant | Use Glob/Grep to SELECT specific files; let rules inject context conditionally |
+| Giant CLAUDE.md with 500+ lines | Every session pays full cost; most content irrelevant to current task | Split into path-scoped rules; keep root CLAUDE.md under 200 lines |
+| Never running /compact | Context degrades at 85%+; compaction is more expensive than proactive compact | Run /compact at 70% with a focus instruction |
+| One giant session for unrelated tasks | Context from task A pollutes task B; costs compound | Use /clear between unrelated tasks; ISOLATE with separate sessions |
+| Asking Claude to remember things verbally | Verbal "remember this" has no persistence | WRITE to MEMORY.md or CLAUDE.md explicitly |
+| Running 10 MCP servers for every project | 26,500 extra tokens every session | Connect only servers needed for current task via .claude/.mcp.json.local |
 
 → Full reference: [Context, Cost & Token Efficiency](./claude-code-efficiency-reference)

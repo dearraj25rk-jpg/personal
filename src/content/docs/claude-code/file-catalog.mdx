@@ -7,7 +7,7 @@ description: >
   v2.1.126 (May 2026).
 sidebar:
   order: 14
-lastUpdated: 2026-05-23
+lastUpdated: 2026-05-27
 ---
 
 import FileCatalog from '../../../components/interactive/FileCatalog.jsx';
@@ -189,5 +189,48 @@ I need to bundle multiple components for distribution
 | Skills SKILL.md | Unlimited | 2,000 tokens (~150 lines) | Loaded on invoke; can be richer |
 | Subagent .md | Unlimited | 1,500 tokens (~100 lines) | Subagent context only |
 | Commands .md | Unlimited | 500 tokens (~40 lines) | Per invocation |
+
+### Load Timing Visual
+
+```
+SESSION LIFECYCLE — When each file loads
+══════════════════════════════════════════════════════════
+
+STARTUP (fixed cost — before any prompt)
+  │
+  ├─ Managed settings          [~5ms]
+  ├─ User settings             [~8ms]
+  ├─ Project settings          [~10ms]
+  ├─ Local settings            [~11ms]
+  ├─ Enterprise CLAUDE.md      [~15ms]
+  ├─ User CLAUDE.md            [~18ms]
+  ├─ Project CLAUDE.md         [~20ms]
+  ├─ Subdirectory CLAUDE.md    [~22ms]
+  ├─ CLAUDE.local.md           [~23ms]
+  ├─ Rules (indexed, not loaded)[~25ms]
+  ├─ Auto-Memory MEMORY.md     [~30ms]
+  ├─ MCP server connections    [~35ms]
+  └─ Hooks registered          [~50ms]
+
+PER TOOL CALL (variable cost)
+  │
+  ├─ Rules — loaded when file path matches paths: glob
+  └─ First-use of deferred tools — ToolSearch resolves schema
+
+ON DEMAND (zero cost at startup)
+  │
+  ├─ Skills        — on /skill-name invocation
+  ├─ Commands      — on /command invocation
+  ├─ Output styles — on /config select
+  ├─ Themes        — on /theme select
+  └─ Agents        — on Task tool call (subagent context only)
+
+POST-COMPACTION (reload)
+  │
+  ├─ CLAUDE.md (all) — fully reloaded from disk
+  ├─ MEMORY.md       — fully reloaded from disk
+  └─ Rules index     — re-indexed for next file match
+══════════════════════════════════════════════════════════
+```
 
 → Full reference: [Every Markdown File — Complete Catalog](./claude-code-all-markdown-files-catalog)

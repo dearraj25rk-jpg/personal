@@ -7,7 +7,7 @@ description: >
   mechanics, and scope boundaries. v2.1.126 (May 2026).
 sidebar:
   order: 12
-lastUpdated: 2026-05-23
+lastUpdated: 2026-05-27
 ---
 
 import PrecedenceDiagram from '../../../components/interactive/PrecedenceDiagram.jsx';
@@ -233,7 +233,10 @@ Token cost: Reading `README.md` loads zero rule tokens. Reading `src/api/UserCar
       "Bash(rm -rf *)",           // Protect against recursive deletes
       "Bash(git push --force*)",  // Block force pushes
       "Bash(sudo *)",             // No privilege escalation
-      "WebFetch(http://*)"        // HTTPS only (deny plain HTTP)
+      "WebFetch(http://*)",       // HTTPS only (deny plain HTTP)
+      "Bash(dd if=*)",            // Block disk operations
+      "Bash(mkfs.*)",             // Block filesystem formatting
+      "Bash(curl * | bash)"       // Block curl-pipe-to-shell
     ]
   }
 }
@@ -275,16 +278,16 @@ Foreign key constraints must be explicitly named.
 
 | Mistake | Symptom | Fix |
 |---------|---------|-----|
-| Committing `.claude/settings.local.json` | Personal API keys or model choices shared with team; CI fails on your model pick | Add to `.gitignore`: `.claude/settings.local.json` and `.claude/*.local.json` |
-| Putting everything in root CLAUDE.md | Huge CLAUDE.md (500+ lines); all tokens loaded for every file; slow; expensive | Split into `.claude/rules/*.md` with `paths:` frontmatter — zero cost until needed |
-| Using `CLAUDE.local.md` thinking it overrides | Both CLAUDE.md and CLAUDE.local.md apply; "override" instructions are additive, not replacing | Understand `.local.md` appends — it doesn't replace. Use settings files for actual overrides. |
-| Expecting subdirectory CLAUDE.md to isolate | All parent CLAUDE.md files still load for every file in that subdirectory | Use subagents with `allowedPaths` for true isolation of a subtree |
-| Setting `model` in project settings expecting precedence over enterprise | Enterprise always wins — project setting silently ignored | Check: `cat ~/.claude/managed-settings.json`; if it locks model, you can't override |
-| Relying on rule file load order by filename | Natural sort: `backend.md` loads before `frontend.md` alphabetically, but order only matters for same-key conflicts | Name files with numeric prefix: `01-core.md`, `02-api.md`, `03-frontend.md` |
+| Committing `.claude/settings.local.json` | Personal API keys or model choices shared with team | Add to `.gitignore`: `.claude/settings.local.json` |
+| Putting everything in root CLAUDE.md | Huge CLAUDE.md (500+ lines); expensive every session | Split into `.claude/rules/*.md` with `paths:` — zero cost until needed |
+| Using `CLAUDE.local.md` thinking it overrides | Both files apply; "override" instructions are additive | Understand `.local.md` appends. Use settings files for actual overrides. |
+| Expecting subdirectory CLAUDE.md to isolate | All parent CLAUDE.md files still load | Use subagents with `allowedPaths` for true isolation |
+| Setting `model` in project expecting precedence over enterprise | Enterprise always wins — project setting silently ignored | Check: `cat ~/.claude/managed-settings.json` |
+| Relying on rule file load order by filename | Natural sort: alphabetical, only matters for same-key conflicts | Name files with numeric prefix: `01-core.md`, `02-api.md` |
 | Expecting `/compact` to reload settings | Settings are NOT reloaded after compaction — only CLAUDE.md and MEMORY.md reload | Restart session to pick up settings changes |
-| Using `deny` expecting it to supersede `allow` | Deny and allow are evaluated: deny wins for the same pattern, but an `allow` for a broader pattern can supersede a `deny` on a narrower one | Be explicit: deny broad, allow narrow; test with `/permissions check Bash(cmd)` |
-| @import in CLAUDE.local.md | Imported content is gitignored along with the file — fine | Works correctly, but remember imported path must be accessible on each developer's machine |
-| Setting `maxTurns` thinking it controls cost | `maxTurns` limits agentic loop iterations, not total tokens or cost per turn | Use `--max-budget-usd` for hard cost ceiling |
+| Using `deny` expecting it to supersede `allow` | Deny wins for the same pattern; broader `allow` can supersede narrower `deny` | Be explicit: deny broad, allow narrow |
+| @import in CLAUDE.local.md | Imported path must be accessible on each developer's machine | Works correctly but requires local path to exist |
+| Setting `maxTurns` thinking it controls cost | `maxTurns` limits iterations, not tokens or cost per turn | Use `--max-budget-usd` for hard cost ceiling |
 
 ### Scope Boundary Diagram
 
@@ -333,5 +336,40 @@ CLAUDE.local.md
 .claude/plugins/*.local/
 *.claude.local
 ```
+
+### Precedence Quick-Check Flowchart
+
+```
+Is the key in enterprise managed-settings.json?
+  YES → Enterprise value is FINAL. Stop.
+  NO  ↓
+
+Is the key in CLI flags for this invocation?
+  YES → CLI value applies (for this run only). Stop.
+  NO  ↓
+
+Is the key in .claude/settings.local.json?
+  YES → Local value applies. Stop.
+  NO  ↓
+
+Is the key in .claude/settings.json?
+  YES → Project value applies. Stop.
+  NO  ↓
+
+Is the key in ~/.claude/settings.json?
+  YES → User value applies. Stop.
+  NO  ↓
+
+Default value from Claude Code applies.
+```
+
+### Key Architecture Insight
+
+The most important thing to understand about Claude Code precedence is that **settings files and context files work in opposite directions**:
+
+- **Settings files (JSON):** Higher layer WINS. Use for anything that can conflict: model choice, permissions, token limits.
+- **Context files (CLAUDE.md, rules):** ALL layers load additively. Use for anything where more context is better: coding standards, architecture decisions, domain knowledge.
+
+This explains why you can have a 10-file hierarchy of CLAUDE.md files without any conflicts — they all stack — while having a single `model` key that can only come from one source.
 
 → Full reference: [Configuration Guide — CLAUDE.md vs Skills vs Rules](./claude-code-config-guide)
