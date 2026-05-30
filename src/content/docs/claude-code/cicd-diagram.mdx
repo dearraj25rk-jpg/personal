@@ -10,7 +10,7 @@ description: >
   and complete environment variable reference. Claude Code v2.1.126 · anthropics/claude-code-action@v1.
 sidebar:
   order: 22
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-30
 ---
 
 import CICDDiagram from '../../../components/interactive/CICDDiagram.jsx';
@@ -76,5 +76,129 @@ jobs:
 - [ ] Audit hooks log all tool calls
 - [ ] Pin `anthropics/claude-code-action@v1` (use SHA pin in production)
 - [ ] Restrict `allowedTools` to what CI needs
+
+### Complete GitHub Actions Workflow (Production-Grade)
+
+```yaml
+# .github/workflows/claude-review.yml
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]  # Trigger on /review comment
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-pr-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' ||
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/review'))
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for accurate diff
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: "claude-sonnet-4-6"
+          prompt: |
+            Review this pull request. Focus on:
+            1. Security vulnerabilities (OWASP Top 10)
+            2. Breaking API changes
+            3. Missing tests for new code
+            4. Performance regressions
+            Post findings as inline PR comments with file/line references.
+          max_turns: "15"
+          max_budget_usd: "3.00"
+          permission_mode: "default"
+          allowed_tools: "Read,Bash(git*),WebFetch"
+          claude_code_flags: "--bare"
+```
+
+### GitLab CI Configuration
+
+```yaml
+# .gitlab-ci.yml
+claude-review:
+  image: node:20-slim
+  stage: review
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - npm install -g @anthropic-ai/claude-code
+    - |
+      claude -p --bare --max-turns 10 --max-budget-usd 2.00 \
+        --permission-mode bypassPermissions \
+        --allowed-tools "Read,Bash(git*)" \
+        "Review the diff of MR !$CI_MERGE_REQUEST_IID for security and correctness.
+        Output a JSON array of findings: [{file, line, severity, description}]" \
+        > review.json
+    - cat review.json
+  variables:
+    ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+  artifacts:
+    paths: [review.json]
+```
+
+### AWS Bedrock Integration
+
+```yaml
+# GitHub Actions with Bedrock (no ANTHROPIC_API_KEY needed)
+- name: Configure AWS credentials
+  uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ClaudeCodeCI
+    aws-region: us-east-1
+
+- uses: anthropics/claude-code-action@v1
+  env:
+    CLAUDE_CODE_USE_BEDROCK: "1"
+    AWS_REGION: us-east-1
+    CLAUDE_CODE_BEDROCK_SERVICE_TIER: "priority"  # v2.1.122+
+  with:
+    prompt: "Review this PR"
+    # anthropic_api_key not needed — uses AWS IAM
+```
+
+### GCP Vertex AI with Workload Identity Federation (v2.1.121+)
+
+```yaml
+# No service account keys — uses OIDC tokens
+- id: auth
+  uses: google-github-actions/auth@v2
+  with:
+    workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+    service_account: claude-code-ci@${{ secrets.GCP_PROJECT }}.iam.gserviceaccount.com
+
+- uses: anthropics/claude-code-action@v1
+  env:
+    CLAUDE_CODE_USE_VERTEX: "1"
+    CLOUD_ML_REGION: us-central1
+    ANTHROPIC_VERTEX_PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+  with:
+    prompt: "Review this PR"
+```
+
+### Cost Optimisation for CI
+
+| Strategy | Savings | How |
+|----------|---------|-----|
+| `--bare` flag | ~14% faster | Skips non-essential startup |
+| Model selection | 20x cost diff | Haiku for simple checks, Sonnet for review |
+| `--max-turns` cap | Prevents runaway | Set N = task complexity × 2 |
+| `--max-budget-usd` | Hard ceiling | $0.50 for linting, $3 for full review |
+| Prompt caching | 75% off cached tokens | Same CLAUDE.md + CI = 90%+ hit rate |
+| `--allowed-tools` restriction | Scope reduction | Only give CI the tools it needs |
 
 → Full reference: [CI/CD Integration Guide](./cicd-integration)

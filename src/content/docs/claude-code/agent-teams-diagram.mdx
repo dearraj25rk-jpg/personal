@@ -9,7 +9,7 @@ description: >
   for choosing the right pattern. v2.1.126 (May 2026).
 sidebar:
   order: 20
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-30
 ---
 
 import AgentTeamsDiagram from '../../../components/interactive/AgentTeamsDiagram.jsx';
@@ -81,5 +81,103 @@ Task(
 └── shared/
     └── state.json
 ```
+
+### Complete Subagent Types Reference
+
+Built-in subagent types you can use with the `Task` tool:
+
+| Type | Capability | Best for |
+|------|-----------|---------|
+| `Explore` | Read-only search and analysis | Codebase exploration, fact gathering |
+| `code-reviewer` | Code quality analysis | PR review, security audit |
+| `general-purpose` | Full tool access | Complex multi-step tasks |
+| `Plan` | Architecture planning | Design docs, implementation strategy |
+| Custom `.claude/agents/<name>.md` | User-defined | Domain-specific specialists |
+
+### Subagent Full Frontmatter Reference
+
+```yaml
+---
+name: security-auditor          # Required: identifier for Task tool reference
+description: >                  # Required: shown to orchestrator Claude when selecting agent
+  Performs security analysis on code changes — checks for injection vulnerabilities,
+  insecure dependencies, exposed secrets, and auth bypass risks.
+model: claude-opus-4-7          # Optional: override session model for this agent
+tools:                          # Optional: restrict available tools
+  - Read
+  - Bash
+  - Grep
+  - WebFetch
+allowedPaths:                   # Optional: further restrict file system access
+  - src/**
+  - tests/**
+blockedTools:                   # Optional: block specific tools even if in tools list
+  - Bash(rm*)
+maxTurns: 30                    # Optional: stop after N turns (default: unlimited)
+memory: isolated                # Optional: isolated | shared | none
+effort: high                    # Optional: low | normal | high | xhigh
+temperature: 0.2                # Optional: 0.0–1.0
+---
+
+You are a security auditor. Focus on OWASP Top 10 vulnerabilities...
+```
+
+### Agent Teams Message Protocol (v2.1.32+)
+
+```
+Enable: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+
+Message types in filesystem mailbox:
+  task      → Request for another agent to do work
+  result    → Completion notification with output
+  status    → Progress update (e.g. "40% complete")
+  question  → Block on input needed from another agent
+  error     → Failure report with context
+
+Message structure:
+.claude/agent-teams/mailbox/<agent-name>/inbox/<timestamp>-<from>.json
+{
+  "from": "orchestrator",
+  "type": "task",
+  "payload": { "task": "Review auth module for SQL injection", "priority": "high" },
+  "timestamp": "2026-05-30T10:00:00Z",
+  "correlation_id": "a1b2c3"
+}
+```
+
+### Orchestration Pattern Examples
+
+**Sequential pipeline** (each step depends on previous):
+```
+Orchestrator → Researcher (gather context)
+             → Architect (design based on context)
+             → Implementer (build the design)
+             → Reviewer (check the implementation)
+```
+
+**Parallel fan-out** (independent work items):
+```
+Orchestrator → Service-A specialist (in parallel)
+             → Service-B specialist (in parallel)
+             → Test-writer (in parallel)
+             → Combine results when all complete
+```
+
+**Specialist pool** (ongoing work distribution):
+```
+Orchestrator → Frontend specialist (UI changes)
+             → Backend specialist (API changes)
+             → Database specialist (schema changes)
+Each specialist is a persistent teammate with domain context
+```
+
+### Cost Considerations
+
+| Pattern | Cost profile | When to use |
+|---------|------------|------------|
+| Task tool (sequential) | Sum of subagent costs | Linear dependency chains |
+| Task tool (parallel) | Parallel = wall-clock win but same total cost | Independent subtasks |
+| Agent Teams | Higher (persistent overhead) | Long-running collaborative work |
+| Single Opus session | Higher per-turn but fewer turns | Simple tasks needing deep reasoning |
 
 → Full reference: [Agent Teams & Subagents Guide](./agent-teams-guide)

@@ -8,7 +8,7 @@ description: >
   approach. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 17
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-30
 ---
 
 import AdvisorDiagram from '../../../components/interactive/AdvisorDiagram.jsx';
@@ -65,6 +65,84 @@ Normal session (default):
 /advisor --frequency 5      # Advisor every 5 turns
 /advisor --model opus-4-7   # Use specific Opus model
 /advisor now                # Force immediate consultation
+```
+
+### /advisor Session Flow Detail
+
+```
+Session with /advisor enabled:
+
+Turn 1–N (executor phase):
+  You → Sonnet 4.6 → tool calls, edits, analysis
+                    │
+                    │ Every N turns (or complexity signal)
+                    ▼
+              Context snapshot taken
+              [conversation so far + current state]
+                    │
+                    ▼
+              Opus 4.7 receives snapshot
+              Opus 4.7 generates strategic review:
+                - "The current approach will hit X problem"
+                - "Consider Y alternative for the auth refactor"
+                - "Missing error handling on Z path"
+                    │
+                    ▼
+              Sonnet 4.6 receives Opus guidance
+              Sonnet 4.6 adjusts plan accordingly
+                    │
+                    ▼
+Turn N+1 onwards: Sonnet continues with improved direction
+```
+
+### When /advisor Provides the Most Value
+
+| Task type | /advisor benefit | Worth the cost? |
+|-----------|-----------------|----------------|
+| Large refactors (1000+ lines) | Catches architectural mistakes early | Yes |
+| Security audit | Opus identifies subtle vulnerabilities | Yes |
+| Greenfield design | Strategic direction at key checkpoints | Yes |
+| Bug fix (< 50 lines) | Minimal benefit — Sonnet handles it | No |
+| Formatting / docs | No benefit | No |
+| Simple CRUD feature | Low benefit | Usually not |
+
+### /advisor vs Full Opus Session
+
+```
+Task: Refactor authentication module (500 lines)
+
+Option A: Sonnet only (default)
+  Cost: ~$1.50-$3.00
+  Risk: May take suboptimal approach on complex decisions
+
+Option B: /advisor (Sonnet executor + Opus reviews at turns 5, 10, 15)
+  Cost: ~$4.00-$8.00 (Opus reviews = ~$2-4 extra)
+  Benefit: Opus strategic guidance reduces backtracking
+
+Option C: Opus 4.7 only
+  Cost: ~$15-$30
+  Benefit: Every decision gets Opus reasoning
+
+Decision rule:
+  If task complexity > medium AND mistakes are costly → use /advisor
+  If task complexity > high AND no cost constraint → use Opus directly
+  Otherwise → Sonnet is sufficient
+```
+
+### Model Selection Quick Reference
+
+| Model | Context | Best for | Cost/1M input |
+|-------|---------|---------|--------------|
+| Opus 4.7 | 1M tokens | Complex reasoning, architecture, security | $15 |
+| Opus 4.6 | 200K tokens | Balanced quality, larger batches | $15 |
+| Sonnet 4.6 | 200K tokens | Default — balanced quality + speed | $3 |
+| Haiku 4.5 | 200K tokens | Fast, cheap, simple tasks | $0.80 |
+
+**Set model for session:**
+```bash
+claude --model claude-opus-4-7   # CLI flag
+/model                           # Interactive model picker
+/config                          # Full settings UI
 ```
 
 → Full reference: [Models & Pricing](./models-pricing)

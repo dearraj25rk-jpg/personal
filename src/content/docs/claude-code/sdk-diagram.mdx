@@ -10,7 +10,7 @@ description: >
   web apps, and parallel workloads. Agent SDK v1 · Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 21
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-30
 ---
 
 import SDKDiagram from '../../../components/interactive/SDKDiagram.jsx';
@@ -84,6 +84,133 @@ console.log(result.totalCostUsd);
 // Continue same session
 const result2 = await session.send("Now add tests for the refactored code");
 await session.close();
+```
+
+### Full SDK Configuration Options
+
+```python
+# Python — all options
+import anthropic
+
+client = anthropic.Anthropic(api_key="sk-...")
+
+with client.beta.claude_code.sessions.stream(
+    # Session configuration
+    model="claude-sonnet-4-6",          # Model override
+    max_turns=20,                        # Stop after N turns
+    max_budget_usd=5.00,                 # Hard cost cap
+    permission_mode="autoAccept",        # Permission mode
+    tools=["Read", "Edit", "Bash"],      # Tool allowlist
+    blocked_tools=["Bash(rm*)"],         # Tool blocklist
+    initial_message="Fix failing tests",
+
+    # Context loading
+    cwd="/path/to/project",              # Working directory
+    env={"NODE_ENV": "test"},            # Extra env vars
+
+    # Claude Code flags
+    claude_code_flags=["--bare", "--no-color"],
+
+    # MCP integration (uses project .mcp.json by default)
+) as stream:
+    for event in stream:
+        match event.type:
+            case "system":
+                print(f"Session: {event.session_id}, Model: {event.model}")
+            case "assistant":
+                for block in event.message.content:
+                    if block.type == "text":
+                        print(block.text, end="", flush=True)
+            case "tool_result":
+                print(f"[Tool: {event.tool_name}, {event.duration_ms}ms]")
+            case "result":
+                if event.subtype == "success":
+                    print(f"\nDone. Cost: ${event.total_cost_usd:.4f}, Turns: {event.num_turns}")
+                else:
+                    print(f"\nError: {event.error}")
+```
+
+### TypeScript — Full StatefulClient Example
+
+```typescript
+import { ClaudeCode } from "@anthropic-ai/claude-code";
+
+async function runReviewSession(prDiff: string): Promise<string> {
+  const client = new ClaudeCode.StatefulClient({
+    model: "claude-sonnet-4-6",
+    permissionMode: "bypassPermissions",
+    tools: ["Read", "Bash"],
+    maxBudgetUsd: 2.00,
+    cwd: process.cwd(),
+  });
+
+  const session = await client.createSession();
+
+  try {
+    // First turn: provide context
+    await session.send(`Here is the PR diff:\n\`\`\`\n${prDiff}\n\`\`\``);
+
+    // Second turn: ask for analysis
+    const result = await session.send(
+      "List the top 3 security concerns in this diff, with line numbers."
+    );
+
+    return result.text;
+  } finally {
+    await session.close();
+  }
+}
+```
+
+### Parallel Sessions Pattern
+
+```python
+import asyncio
+import anthropic
+
+client = anthropic.Anthropic()
+
+async def run_service_review(service_name: str, service_path: str) -> dict:
+    """Run Claude Code review on one service concurrently."""
+    results = []
+    with client.beta.claude_code.sessions.stream(
+        max_turns=10,
+        tools=["Read", "Grep"],
+        cwd=service_path,
+        initial_message=f"Review {service_name} for security issues. Report findings as JSON."
+    ) as stream:
+        for event in stream:
+            if event.type == "result" and event.subtype == "success":
+                results.append({"service": service_name, "cost": event.total_cost_usd})
+    return results
+
+async def review_all_services():
+    services = [
+        ("auth-service", "/workspace/services/auth"),
+        ("payment-service", "/workspace/services/payments"),
+        ("api-gateway", "/workspace/services/gateway"),
+    ]
+    tasks = [run_service_review(name, path) for name, path in services]
+    all_results = await asyncio.gather(*tasks)
+    print(f"Total cost: ${sum(r[0]['cost'] for r in all_results):.4f}")
+```
+
+### OAuth Authentication Flow
+
+```
+For claude.ai/code remote sessions:
+
+1. Your app redirects user to Claude OAuth endpoint
+2. User approves access
+3. Claude returns authorization code
+4. Your app exchanges code for access_token + refresh_token
+5. Use access_token in SDK: ClaudeCode.StatefulClient({ auth: { token } })
+6. Refresh when expired (1h TTL for access tokens)
+
+Environment variables:
+  CLAUDE_CODE_CLIENT_ID       — OAuth app client ID
+  CLAUDE_CODE_CLIENT_SECRET   — OAuth app client secret
+  CLAUDE_CODE_REDIRECT_URI    — Your callback URL
 ```
 
 → Full reference: [Agent SDK Guide](./sdk-guide)

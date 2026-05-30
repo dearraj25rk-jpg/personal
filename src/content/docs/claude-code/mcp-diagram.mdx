@@ -9,7 +9,7 @@ description: >
   MCP Spec 1.1 · Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 19
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-30
 ---
 
 import MCPDiagram from '../../../components/interactive/MCPDiagram.jsx';
@@ -81,5 +81,88 @@ import MCPDiagram from '../../../components/interactive/MCPDiagram.jsx';
 | `google-maps` | geocoding, places | `@modelcontextprotocol/server-google-maps` |
 | `sentry` | issues, errors | `@modelcontextprotocol/server-sentry` |
 | `sequential-thinking` | multi-step reasoning | `@modelcontextprotocol/server-sequential-thinking` |
+
+### JSON-RPC 2.0 Message Flow
+
+```
+Claude Code (Client)                    MCP Server
+        │                                    │
+        │── initialize ────────────────────► │  Protocol handshake
+        │◄── initialized ──────────────────── │
+        │                                    │
+        │── tools/list ───────────────────► │  Discover available tools
+        │◄── {tools: [...]} ──────────────── │
+        │                                    │
+        │── tools/call ───────────────────► │  Claude calls a tool
+        │   {name:"query_db", args:{...}}    │
+        │◄── {content:[{type:"text",...}]} ── │  Tool result returned
+        │                                    │
+        │── resources/list ───────────────► │  (Optional) resource discovery
+        │── prompts/list ──────────────────► │  (Optional) prompt discovery
+```
+
+### Building a Custom MCP Server (TypeScript minimal)
+
+```typescript
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+
+const server = new McpServer({ name: "my-server", version: "1.0.0" });
+
+server.tool("query_orders", {
+  order_id: z.string().describe("The order ID to look up")
+}, async ({ order_id }) => {
+  const result = await db.query("SELECT * FROM orders WHERE id = $1", [order_id]);
+  return { content: [{ type: "text", text: JSON.stringify(result.rows[0]) }] };
+});
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+### Configuration Examples
+
+```json
+// .mcp.json — project-level
+{
+  "mcpServers": {
+    "my-db": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./mcp-servers/db-server/index.js"],
+      "env": { "DB_URL": "${DATABASE_URL}" }
+    },
+    "remote-api": {
+      "type": "http",
+      "url": "https://internal.company.com/mcp",
+      "headers": { "Authorization": "Bearer ${API_TOKEN}" }
+    }
+  }
+}
+```
+
+### Tool Description Best Practices
+
+Good tool descriptions reduce Claude's token usage and improve accuracy:
+
+| Pattern | Example |
+|---------|---------|
+| Action verb + noun | `"Get customer order history by customer ID"` |
+| Include constraints | `"Max 100 results. Returns null if not found."` |
+| Mention side effects | `"WRITES to database. Irreversible."` |
+| Expected input format | `"Date in ISO 8601 format: YYYY-MM-DD"` |
+
+**Keep descriptions under 100 tokens** — each tool schema costs tokens. A server with 20 tools costs ~2,650 tokens regardless of description length.
+
+### Security Checklist for MCP Servers
+
+- [ ] Validate all inputs with a schema library (Zod, Pydantic)
+- [ ] Never expose destructive operations (DROP TABLE) without confirmation
+- [ ] Use `readonly: true` flag for read-only tools to signal intent
+- [ ] Scope database users to minimum required permissions
+- [ ] Audit log all MCP tool calls via PostMCPTool hook
+- [ ] Use `CLAUDE_CODE_DISABLE_MCP_TOOLS` to blocklist dangerous tools
+- [ ] Rotate credentials; use environment variables never hardcoded in `.mcp.json`
 
 → Full reference: [MCP Servers — Architecture & Development](./mcp-servers-guide)

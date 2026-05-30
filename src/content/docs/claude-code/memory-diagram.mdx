@@ -9,7 +9,7 @@ description: >
   Includes @import syntax, memory commands, and environment variables. v2.1.126 (May 2026).
 sidebar:
   order: 23
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-30
 ---
 
 import MemoryDiagram from '../../../components/interactive/MemoryDiagram.jsx';
@@ -75,5 +75,79 @@ Auto-Memory MEMORY.md (per-project durable memory)
 | `CLAUDE_CODE_MEMORY_PATH` | Override MEMORY.md location |
 | `claudeMdExcludes` | Glob patterns to exclude from loading |
 | `DISABLE_MEMORY` | Disable auto-memory entirely |
+
+### Auto-Memory (MEMORY.md) — How It Works
+
+Auto-Memory is Claude Code's persistent scratchpad for facts that must survive compaction and session boundaries. Unlike CLAUDE.md (which you maintain), MEMORY.md is managed by Claude itself.
+
+```
+Tell Claude: "Remember that we use vertical slice architecture"
+                    │
+                    ▼
+  Claude appends to: ~/.claude/projects/<SHA256(abs-path)>/memory/MEMORY.md
+
+  Contents after command:
+  # Project Memory
+  - Architecture: vertical slice (feature folders, not layer folders)
+  - Last updated: 2026-05-30
+```
+
+**Auto-Memory limits:**
+- **200 lines** maximum (older entries truncated from bottom)
+- **25 KB** maximum file size
+- Path = SHA256 of the absolute project directory path
+- **Survives compaction**: MEMORY.md fully reloads from disk after compaction (unlike conversation history)
+- `/memory` opens the memory editor; `DISABLE_MEMORY=1` disables the feature entirely
+
+### When Each Memory Type Is Best
+
+| Situation | Recommended type |
+|-----------|-----------------|
+| Project architecture decisions | CLAUDE.md (project root) — stable, team-shared |
+| Personal workflow preferences | User CLAUDE.md (`~/.claude/CLAUDE.md`) |
+| Session-specific discoveries | Auto-Memory MEMORY.md via `/memory add` |
+| Per-file domain rules (auth, payments) | `.claude/rules/*.md` with `paths:` |
+| Temporary personal overrides | CLAUDE.local.md (gitignored) |
+| Shared org conventions | Enterprise CLAUDE.md via managed settings |
+
+### @import Chain Example (Monorepo)
+
+```markdown
+# Root CLAUDE.md
+@.claude/shared/security-policy.md      # org security guidelines
+@.claude/shared/api-conventions.md      # REST/GraphQL standards
+
+## Project context
+This is the e-commerce platform...
+```
+
+```
+.claude/shared/
+├── security-policy.md        # → injected anywhere @import is used
+└── api-conventions.md        # → ditto
+```
+
+Import chains are resolved recursively — an imported file can itself import other files. Circular imports cause a load error.
+
+### Compaction Survival Reference
+
+Understanding what survives compaction prevents unexpected context loss:
+
+```
+COMPACTION FIRES at ~83.5% context
+     │
+     ├─ WHAT RELOADS FROM DISK (survives):
+     │   ├─ All CLAUDE.md files (enterprise, user, project, local)
+     │   ├─ MEMORY.md (fully reloaded — most durable)
+     │   └─ Path-scoped rules (re-indexed, load on next match)
+     │
+     └─ WHAT IS LOST (only summary survives):
+         ├─ Conversation history → dense summary (~2,000 tokens)
+         ├─ Bash command output
+         ├─ Extended thinking traces
+         └─ File contents read during session (re-read on demand)
+```
+
+**Best practice:** Write important discoveries to MEMORY.md immediately after finding them: `"Remember: the legacy payment module uses synchronous I/O, never call from async context"`
 
 → Full reference: [Memory Management](./memory-management)

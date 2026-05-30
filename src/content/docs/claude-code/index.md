@@ -3,7 +3,7 @@ title: Claude Code
 description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles, memory management (7 types), models & pricing, slash commands, context engineering, and 14 interactive diagrams. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 1
-lastUpdated: 2026-05-23
+lastUpdated: 2026-05-30
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
@@ -186,6 +186,9 @@ claude
 | [Permissions & Security](./permissions-security) | Permission modes, tool allowlists/blocklists, sandbox architecture, enterprise managed settings, audit logging, trust model |
 | [Agent SDK — Python & TypeScript](./sdk-guide) | Subprocess SDK, streaming message types, StatefulClient multi-turn sessions, parallel sessions, OAuth auth, CI/CD integration, production patterns |
 | [Worktrees & Parallel Development](./worktrees-guide) | `/branch` command, multiple simultaneous Claude Code sessions, PR review workflows, SDK-driven parallel worktrees, team coordination |
+| [Enterprise Deployment Guide](./enterprise-guide) | Managed settings via MDM/registry/plist, policy federation for 500+ developer orgs, shared MCP server infrastructure, audit logging with OpenTelemetry, cost governance, multi-cloud auth (Bedrock + Vertex WIF), security hardening, rollout playbook |
+| [Monorepo & Multi-Service Guide](./monorepo-guide) | Root-level and service-specific CLAUDE.md hierarchy, path-scoped rules for domain isolation, shared MCP servers, parallel worktree development, Agent Teams cross-service coordination, CI/CD matrix builds |
+| [Troubleshooting Guide](./troubleshooting) | Authentication failures, MCP connection issues, hook failures, context/compaction problems, sandbox errors, performance debugging, CI/CD pipeline issues, error message dictionary |
 
 ---
 
@@ -368,6 +371,8 @@ Send back to API
 
 ## Troubleshooting Quick Reference
 
+For comprehensive diagnostics and error message dictionary, see the **[Troubleshooting Guide](./troubleshooting)**.
+
 Common issues and their solutions:
 
 | Symptom | Likely cause | Fix |
@@ -447,8 +452,10 @@ MCP server not responding?
 2. [Plugins](./plugins-guide) — build and distribute extensions
 3. [Output Styles](./output-styles-guide) — customise Claude's response format
 4. [Models & Pricing](./models-pricing) — deep-dive into model selection and cost control
-5. [Elite Training Program](./claude-training) — 8-module curriculum for mastery
-6. [Compass Research Notes](./compass-research-notes) — deep dives into internals
+5. [Enterprise Deployment Guide](./enterprise-guide) — managed settings, org rollout, audit logging, cost governance
+6. [Monorepo & Multi-Service Guide](./monorepo-guide) — CLAUDE.md hierarchy, path-scoped rules, shared MCP servers, Agent Teams across services
+7. [Elite Training Program](./claude-training) — 8-module curriculum for mastery
+8. [Compass Research Notes](./compass-research-notes) — deep dives into internals
 
 ### Preparing for CCA-F Exam
 

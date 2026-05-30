@@ -9,7 +9,7 @@ description: >
   Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 24
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-30
 ---
 
 import PluginsDiagram from '../../../components/interactive/PluginsDiagram.jsx';
@@ -91,5 +91,108 @@ my-plugin/
 |----------|---------|
 | `CLAUDE_PLUGIN_ROOT` | Override plugin installation root |
 | `CLAUDE_PLUGIN_DATA` | Override plugin data/config storage |
+
+### Plugin vs Direct Configuration
+
+Plugins package multiple Claude Code components into a single distributable unit. Use plugins when you want to share a coherent set of tools, commands, and conventions across a team or organisation.
+
+| Use case | Plugin? | Direct config? |
+|----------|---------|---------------|
+| Personal workflow scripts | No | `~/.claude/commands/` |
+| Team-wide code standards | Yes | Plugin distributed via npm |
+| Project-specific MCP server | No | `.mcp.json` |
+| Org-wide security hooks | Yes | Enterprise plugin |
+| One-off slash command | No | `.claude/commands/my-cmd.md` |
+
+### Full plugin.json Schema
+
+```json
+{
+  "name": "my-org-standards",
+  "version": "2.1.0",
+  "description": "Company-wide Claude Code configuration",
+  "author": "Platform Team <platform@company.com>",
+  "license": "MIT",
+  "engines": { "claude-code": ">=2.1.0" },
+  "userConfig": {
+    "jiraProject": {
+      "type": "string",
+      "description": "JIRA project key (e.g. PLAT)",
+      "required": true,
+      "pattern": "^[A-Z]{2,10}$"
+    },
+    "enableAuditHooks": {
+      "type": "boolean",
+      "description": "Enable audit logging to SIEM",
+      "default": true
+    }
+  },
+  "permissions": {
+    "hooks": ["PreFileWrite", "PostBash"],
+    "tools": ["Bash(git*)", "Read", "Edit", "Write"]
+  }
+}
+```
+
+### Installation & Update Commands
+
+```bash
+# Install from npm
+claude plugin install @myorg/claude-standards
+
+# Install from git
+claude plugin install github:myorg/claude-plugin
+
+# Install locally (development)
+claude plugin install /path/to/my-plugin --local
+
+# List installed plugins
+claude plugin list
+
+# Update all plugins
+claude plugin update
+
+# Hot-reload without restarting
+/reload-plugins
+
+# Remove a plugin
+claude plugin remove my-plugin
+```
+
+### Plugin Distribution Patterns
+
+**Private npm registry** (enterprise recommended):
+```bash
+# .npmrc in plugin repo
+@myorg:registry=https://npm.company.com
+
+# Install from private registry
+claude plugin install @myorg/claude-standards
+```
+
+**Git-based install** (small teams):
+```bash
+# Tag-based for version pinning
+claude plugin install github:myorg/claude-plugin#v2.1.0
+```
+
+**Local symlink** (active development):
+```bash
+# Developer can iterate without reinstalling
+claude plugin install /workspace/my-plugin --link
+```
+
+### Component Type Details
+
+| Component | Activation | Namespaced? | Overridable? |
+|-----------|-----------|------------|-------------|
+| `commands` | `/plugin-name:command` | Yes | By project commands |
+| `agents` | `Task(subagent_type: "plugin:agent")` | Yes | No |
+| `skills` | Auto-invoked or `/plugin:skill` | Yes | No |
+| `output-styles` | `/config → Output Style` | Yes | By user |
+| `monitors` | Auto-started with session | Yes | Disabled via settings |
+| `themes` | `/theme plugin:name` | Yes | By user |
+| `hooks` | Event-driven | No | Settings blocklist |
+| `mcp-servers` | Auto-registered | No | Disabled via settings |
 
 → Full reference: [Plugins Guide](./plugins-guide)

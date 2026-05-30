@@ -8,7 +8,7 @@ description: >
   CCA-F study reference covering D1-D5.
 sidebar:
   order: 15
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-30
 ---
 
 import ClaudeCodeEfficiency from '../../../components/interactive/ClaudeCodeEfficiency.jsx';
@@ -70,5 +70,73 @@ Cache read costs: **$0.30/M** vs $3.00/M input (Sonnet 4.6) → **10x cheaper**
 | Opus 4.6 | $15/M | $75/M | $1.50/M | $3.75/M |
 | Sonnet 4.6 | $3/M | $15/M | $0.30/M | $0.75/M |
 | Haiku 4.5 | $0.80/M | $4/M | $0.08/M | $0.20/M |
+
+### Context Engineering Checklist
+
+Use this checklist before starting any substantial session to minimise waste and maximise cache hits:
+
+**CLAUDE.md Health**
+- [ ] Project CLAUDE.md is under 120 lines (aim for 80)
+- [ ] No duplicate content across CLAUDE.md files in hierarchy
+- [ ] No explanatory prose — only directives and facts
+- [ ] Build/test commands are current and working
+- [ ] Architecture section describes actual structure (not aspirational)
+
+**Rules Setup**
+- [ ] Domain-specific rules are in `.claude/rules/` with `paths:` globs, not in CLAUDE.md
+- [ ] Rules are named alphabetically for load order control (01-security.md, 02-testing.md)
+- [ ] Each rule file is focused on one concern
+- [ ] Glob patterns are as specific as possible to avoid false loads
+
+**Session Start**
+- [ ] Session starts from the correct working directory (context sensitivity)
+- [ ] Check `/context` to see current token baseline
+- [ ] If continuing work, use `/resume <session-id>` not a fresh session
+- [ ] Run `/compact focus on <area>` at ~65% context to control compaction summary
+
+**Model & Effort Selection**
+- [ ] Choose model based on task complexity (Haiku/Sonnet/Opus)
+- [ ] Set effort level explicitly: `--effort low` for deterministic tasks
+- [ ] For CI: use Sonnet + `--effort normal` + `--bare`
+- [ ] For complex architecture: use Opus + `--effort high`
+
+**Caching Strategy**
+- [ ] CLAUDE.md content is stable (not changing every session — kills cache)
+- [ ] System prompt block is above all user content in context order
+- [ ] For CI: same CLAUDE.md across all PR jobs = shared cache = 75% savings
+- [ ] Check cache hit rate: `claude --output-format json -p "." | jq .cache_hit_rate`
+
+### Token Budget Guide by Task Type
+
+| Task | Recommended model | Effort | Expected input tokens | Expected output tokens |
+|------|-----------------|--------|---------------------|----------------------|
+| Format/lint fix | Haiku 4.5 | low | 2K–5K | 200–500 |
+| Single bug fix | Sonnet 4.6 | normal | 5K–20K | 500–2K |
+| Feature addition | Sonnet 4.6 | normal | 10K–50K | 2K–10K |
+| Security audit | Opus 4.7 | high | 20K–100K | 2K–8K |
+| Architecture design | Opus 4.7 | xhigh | 30K–80K | 5K–20K |
+| Full codebase refactor | Opus 4.7 + /advisor | high | 100K–500K | 20K–100K |
+| CI PR review | Sonnet 4.6 | normal | 5K–30K | 1K–5K |
+
+### Session Rhythm Best Practices
+
+```
+OPTIMAL SESSION RHYTHM (50-turn example):
+
+Turns 1-10:   Exploration (Read, Grep, Glob) — gather context
+               → Context at ~15-20%
+
+Turns 11-25:  Core work (Edit, Write, Bash) — implement changes
+               → Context at ~35-50%
+
+Turn ~30:      Manual /compact focus on <work done>
+               → Context back to ~20%, summary preserves progress
+
+Turns 31-45:  Continued work + testing
+               → Context at ~40-55%
+
+Turn ~50:      /compact again if needed OR /todos + wrap up
+               → Save key decisions to MEMORY.md before closing
+```
 
 → Full reference: [Context, Cost & Token Efficiency](./claude-code-efficiency-reference)
