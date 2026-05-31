@@ -247,7 +247,7 @@ export default function ModelsDiagram() {
                 model: 'claude-opus-4-8',
                 color: '#d2a8ff',
                 tasks: ['Novel algorithm design', 'Ambiguous architectural decisions', 'Cross-cutting system redesign', 'Hardest debugging problems', 'Research-grade analysis'],
-                why: 'Most capable model. Use when Opus 4.7 isn\\'t cutting it \\u2014 for the hardest 5% of problems.',
+                why: 'Most capable model. Use when Opus 4.7 isn\'t cutting it — for the hardest 5% of problems.',
               },
             ].map(card => (
               <div key={card.title} style={{
@@ -351,7 +351,7 @@ export default function ModelsDiagram() {
             })}
           </div>
           <div style={{ marginTop: 16, padding: 12, border: '1px solid #30363d', borderRadius: 8, fontSize: 13, color: '#8b949e' }}>
-            <strong style={{ color: '#7ee787' }}>Tip:</strong> Increase cache hit rate to 80%+ for repeated sessions with the same CLAUDE.md.
+            <strong style={{ color: '#7ee787' }}>Tip:</strong> Increase cache hit rate to 80%+ for repeated sessions with the same CLAUDE.md. 
             Cache hit rate above 80% reduces Sonnet session cost by ~70%.
           </div>
         </div>
