@@ -6,6 +6,38 @@
 
 ---
 
+## [feature/rag-hub] — 2026-05-31 (Update: Opus 4.8 + Fast Mode + Models Diagram)
+
+**Branch:** `feature/rag-hub`  
+**Scope:** Add claude-opus-4-8 model throughout, add /fast command documentation, new Models Comparison interactive diagram  
+**Baseline:** Claude Code v2.1.126+ (May 2026)  
+**Author:** Claude Code (automated)
+
+### New Files Created
+
+| File | Description |
+|------|-------------|
+| `src/components/interactive/ModelsDiagram.jsx` | New interactive React component — 3-tab diagram: Model Comparison cards (5 models with capability scores), Task Decision Guide (task complexity → model recommendation), Pricing Calculator (real-time cost with cache hit rate slider) |
+| `src/content/docs/claude-code/models-diagram.mdx` | New interactive page wrapping ModelsDiagram — includes Models Quick Reference table, Fast Mode documentation, model switching commands, Bedrock/Vertex model IDs. `sidebar.order: 16` |
+
+### Updated Files
+
+#### Content Updates (new model + /fast command)
+
+| File | Key changes |
+|------|-------------|
+| `src/content/docs/claude-code/index.md` | Added claude-opus-4-8 to models table; /fast to slash commands table; new models-diagram entry in Diagrams section; updated ECOSYSTEM block model line |
+| `src/content/docs/claude-code/models-pricing.md` | Added claude-opus-4-8 as first row in models table; added Fast Mode section with /fast docs; updated all model comparisons |
+| `src/content/docs/claude-code/quick-start.md` | Added claude-opus-4-8 to model selection guidance and mistake table |
+| `src/content/docs/claude-code/slash-commands-reference.md` | Added /fast to commands table; added dedicated /fast section with full usage guide |
+| `src/content/docs/claude-code/architecture.mdx` | Updated model references to include Opus 4.8 |
+| `src/content/docs/index.mdx` | +1 Claude Code doc count (38→39); added Models Comparison interactive card; updated Claude Code card description with Opus 4.8 |
+
+#### Date Updates
+All files updated `lastUpdated` to `2026-05-31`.
+
+---
+
 ## [feature/rag-hub] — 2026-05-30 (Update: Gap-Fill Pass + Diagram Expansions)
 
 **Branch:** `feature/rag-hub`  
