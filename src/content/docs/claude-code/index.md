@@ -3,7 +3,7 @@ title: Claude Code
 description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles, memory management (7 types), models & pricing, slash commands, context engineering, and 14 interactive diagrams. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 1
-lastUpdated: 2026-05-30
+lastUpdated: 2026-05-31
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
@@ -32,7 +32,7 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 │  │                Memory, Skills)      Monitor/...                    │   │
 │  └────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  MODELS: Opus 4.7 (1M ctx) · Opus 4.6 · Sonnet 4.6 (default) · Haiku 4.5 │
+│  MODELS: Opus 4.8 (new) · Opus 4.7 (1M ctx) · Sonnet 4.6 (default) · Haiku 4.5 │
 │  EFFORT: low · normal · high · xhigh (extended thinking)                   │
 │  MEMORY: Enterprise CLAUDE.md > User > Project > Local > Rules > Skills    │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -44,6 +44,7 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 
 | Version | Feature | What changed |
 |---------|---------|-------------|
+| v2.1.126+ | claude-opus-4-8 | Newest Opus model added; `/fast` command for Opus speed optimization |
 | v2.1.126 | Latest stable (May 2026) | Bug fixes, stability improvements |
 | v2.1.122 | Bedrock service tiers | `default`, `flex`, `priority` tier selection via `CLAUDE_CODE_BEDROCK_SERVICE_TIER` |
 | v2.1.121 | Vertex Workload Identity Federation | WIF support for GCP auth — no service account key required |
@@ -169,7 +170,7 @@ claude
 | [Slash Commands — Complete Reference](./slash-commands-reference) | All built-in slash commands (30+), custom project and personal commands, special variables ($ARGUMENTS, @imports, !shell), frontmatter reference, 6 practical examples |
 | [Context, Cost & Token Efficiency](./claude-code-efficiency-reference) | Auto-compaction, token budgets, caching economics, effort levels, model selection, cost optimisation, the advisor command |
 | [Memory Management](./memory-management) | All 6 memory types, /memory command, compaction survival, @import syntax, claudeMdExcludes, MEMORY.md limits, monorepo patterns |
-| [Models, Pricing & Effort](./models-pricing) | All models (Opus 4.7/4.6, Sonnet 4.6, Haiku 4.5), context windows, effort levels, extended thinking, Bedrock/Vertex integration, cost optimisation |
+| [Models, Pricing & Effort](./models-pricing) | All models (Opus 4.8/4.7/4.6, Sonnet 4.6, Haiku 4.5), context windows, effort levels, extended thinking, Fast Mode, Bedrock/Vertex integration, cost optimisation |
 | [Output Styles](./output-styles-guide) | Built-in styles (Default, Explanatory, Learning), creating custom styles, keep-coding-instructions behavior, team styles, token cost implications |
 | [Plugins](./plugins-guide) | Plugin architecture, all 10 component types, plugin.json manifest, userConfig, CLAUDE_PLUGIN_ROOT vs CLAUDE_PLUGIN_DATA, installation scopes, building and distributing plugins |
 
@@ -200,6 +201,7 @@ claude
 | [Precedence Diagram](./precedence) | Visual hierarchy of all configuration layers, conflict resolution, and override rules |
 | [Override Test Lab](./override-test-lab) | Interactive sandbox for testing configuration precedence across 12 hands-on scenarios |
 | [File Catalog — Interactive](./file-catalog) | Browse and filter all 23 Claude Code file types with token costs, load timing, and usage examples |
+| [Models — Comparison & Pricing](./models-diagram) | Interactive model comparison, task decision guide, and real-time pricing calculator with cache ROI for all 5 models |
 | [Context & Cost Efficiency Guide](./claude-code-efficiency-guide) | Visual interactive guide to token efficiency, compaction strategies, caching, and effort levels |
 | [Context Engineering for Claude Code](./context-engineering-ce) | Four CE strategies, token window simulator, session rhythm, command reference, full CE checklist |
 | [/advisor Command Diagram](./advisor-diagram) | Interactive flow diagram of the dual-model /advisor command — Sonnet executor + Opus advisor |
@@ -283,6 +285,7 @@ Auto-Memory                  (~/.claude/projects/<hash>/memory/MEMORY.md — per
 | `/clear` | Reset conversation (keep config) |
 | `/compact [instructions]` | Summarise conversation to free context |
 | `/model` | Switch Claude model mid-session |
+| `/fast` | Toggle Fast Mode — Opus-speed output without downgrading to a smaller model |
 | `/plan` | Enter plan-only mode (no file writes) |
 | `/memory` | View and edit all memory files |
 | `/todos` | View and manage current task list |
@@ -351,7 +354,8 @@ Send back to API
 
 | Model | Alias | Context | Best for | Pricing tier |
 |-------|-------|---------|---------|-------------- |
-| `claude-opus-4-7` | `opus` | 1M tokens | Complex reasoning, architecture, research | $$$$$ |
+| `claude-opus-4-8` | `opus` | 1M tokens | Frontier reasoning, hardest problems, novel design | $$$$$ |
+| `claude-opus-4-7` | — | 1M tokens | Complex reasoning, architecture, research | $$$$$ |
 | `claude-opus-4-6` | — | 1M tokens | Heavy analysis, long documents | $$$$ |
 | `claude-sonnet-4-6` | `sonnet` | 200K tokens | Balanced quality/speed — **default** | $$$ |
 | `claude-haiku-4-5` | `haiku` | 200K tokens | Bulk operations, CI/CD, quick edits | $ |
