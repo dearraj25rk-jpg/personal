@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 12
   label: Slash Commands
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-31
 ---
 
 # Slash Commands — Complete Reference
@@ -273,13 +273,39 @@ To exit plan mode and execute, type `/config` and switch permission mode back to
 Opens a picker showing all models available to your account with their context windows and relative cost tier:
 
 ```
+  claude-opus-4-8        1M tokens    $$$$$   Newest, most capable — frontier reasoning
   claude-opus-4-7        1M tokens    $$$$$   Complex reasoning, architecture
   claude-opus-4-6        1M tokens    $$$$    Heavy analysis, long documents
 ▶ claude-sonnet-4-6      200K tokens  $$$     Balanced quality/speed (current)
   claude-haiku-4-5       200K tokens  $        Bulk operations, CI/CD, quick edits
 ```
 
-The change takes effect immediately for the next turn. The model selection persists for the session but reverts to your default on the next session launch. To make a model change permanent, use `/config` which writes the setting to `settings.json`.
+The change takes effect immediately for the next turn. The model selection persists for the session but reverts to your default on the next session launch. To make a model change permanent, use `/config` which writes the setting to `settings.json`. The `opus` alias now resolves to `claude-opus-4-8`, the newest and most capable Opus model.
+
+---
+
+### `/fast` — Fast Mode Toggle (Opus only)
+
+Toggles Fast Mode for the current session. Fast Mode delivers faster Opus output without switching to a smaller model.
+
+**Available for:** claude-opus-4-8, claude-opus-4-7, claude-opus-4-6  
+**Not available for:** Sonnet or Haiku (already optimized for speed)
+
+```
+/fast              # toggle on
+/fast              # toggle off (second invocation)
+```
+
+**When to use Fast Mode:**
+- When you need Opus-quality reasoning but latency matters (e.g., interactive architecture questions)
+- In pair-programming sessions where wait time is noticeable
+- When the task is slightly below "full deliberation" complexity but still needs Opus
+
+**When NOT to use Fast Mode:**
+- On tasks requiring deep extended thinking (use `xhigh` effort instead)
+- On maximally complex problems (normal Opus deliberation produces better output)
+
+Fast Mode does not change model cost — you are billed at the same rate as the underlying Opus model. It only changes how the model generates output (speed-optimized vs. full deliberation).
 
 ---
 
@@ -1484,6 +1510,7 @@ End with an overall risk rating: SAFE TO MERGE / REVIEW REQUIRED / DO NOT MERGE
 | `/usage` | Session | Total tokens + cost for session |
 | `/plan` | Session | Enter plan-only mode (no file writes) |
 | `/model` | Config | Switch model mid-session |
+| `/fast` | Config | Toggle Fast Mode on/off. Fast Mode uses Opus with optimized speed — does not downgrade to a smaller model. Available for Opus 4.8, 4.7, 4.6. |
 | `/config` | Config | Tabbed settings UI; persists to settings.json |
 | `/permissions` | Config | View/manage tool allowlist for session |
 | `/hooks` | Config | View/manage automation hooks |
