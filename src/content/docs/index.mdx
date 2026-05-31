@@ -21,9 +21,9 @@ hero:
       <span class="terminal-cursor" id="cursor"></span>
     </div>
     <div id="terminal-output" style="display:none">
-      <div class="terminal-line"><span class="terminal-out">Initializing Context v2.1.126...</span></div>
+      <div class="terminal-line"><span class="terminal-out">Initializing Context v2.1.126+...</span></div>
       <div class="terminal-line"><span class="terminal-out">Loading modules: <span class="terminal-accent">rag</span> <span class="terminal-accent">bert</span> <span class="terminal-accent">langchain</span> <span class="terminal-accent">claude-code</span> <span class="terminal-accent">cert</span></span></div>
-      <div class="terminal-line"><span class="terminal-out">Interactive guides: <span class="terminal-success">✓ 105+ resources ready</span></span></div>
+      <div class="terminal-line"><span class="terminal-out">Interactive guides: <span class="terminal-success">✓ 106+ resources ready</span></span></div>
       <div class="terminal-line" style="margin-top:0.5rem">
         <span class="terminal-prompt">raj@context:~$</span>
         <span class="terminal-accent"> explore --all</span>
@@ -45,8 +45,8 @@ hero:
   <div class="stat-item"><div class="stat-value">11</div><div class="stat-label">BERT Resources</div></div>
   <div class="stat-item"><div class="stat-value">3</div><div class="stat-label">LangChain Refs</div></div>
   <div class="stat-item"><div class="stat-value">15</div><div class="stat-label">Cert Guides</div></div>
-  <div class="stat-item"><div class="stat-value">38</div><div class="stat-label">Claude Code Docs</div></div>
-  <div class="stat-item"><div class="stat-value">105+</div><div class="stat-label">Total Resources</div></div>
+  <div class="stat-item"><div class="stat-value">39</div><div class="stat-label">Claude Code Docs</div></div>
+  <div class="stat-item"><div class="stat-value">106+</div><div class="stat-label">Total Resources</div></div>
 </div>
 
 <div class="section-label">Modules</div>
@@ -76,7 +76,7 @@ hero:
   <a class="section-card" href="/ai-lab/claude-code/" style="--card-accent:#d2a8ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
     <div class="card-title">Claude Code Docs</div>
-    <div class="card-desc">The most comprehensive independent Claude Code reference available — covering v2.1.126 (May 2026). All 23 file types with full attribute tables, the complete configuration hierarchy from Enterprise Managed down to Auto-Memory, the 30+ hooks system with all five handler types (command, prompt, agent, http, mcp_tool), MCP server architecture (stdio and HTTP transports, Tools/Resources/Prompts primitives), agent teams and subagent orchestration, CI/CD integration for GitHub Actions, GitLab, Azure DevOps, AWS Bedrock, and GCP Vertex AI with Workload Identity Federation, the Agent SDK for Python and TypeScript, worktrees for parallel development, all 10 plugin component types, 7 memory types, current model lineup and pricing, enterprise deployment at scale (MDM/managed settings, audit logging, cost governance, multi-cloud auth), monorepo patterns (path-scoped rules, shared MCP servers, parallel worktrees, Agent Teams across services), and comprehensive troubleshooting guide with error dictionary. 14 interactive diagrams covering every major subsystem.</div>
+    <div class="card-desc">The most comprehensive independent Claude Code reference available — covering v2.1.126 (May 2026). All 23 file types with full attribute tables, the complete configuration hierarchy from Enterprise Managed down to Auto-Memory, the 30+ hooks system with all five handler types (command, prompt, agent, http, mcp_tool), MCP server architecture (stdio and HTTP transports, Tools/Resources/Prompts primitives), agent teams and subagent orchestration, CI/CD integration for GitHub Actions, GitLab, Azure DevOps, AWS Bedrock, and GCP Vertex AI with Workload Identity Federation, the Agent SDK for Python and TypeScript, worktrees for parallel development, all 10 plugin component types, 7 memory types, current model lineup and pricing including claude-opus-4-8 (newest Opus), Sonnet 4.6, and Haiku 4.5, enterprise deployment at scale (MDM/managed settings, audit logging, cost governance, multi-cloud auth), monorepo patterns (path-scoped rules, shared MCP servers, parallel worktrees, Agent Teams across services), and comprehensive troubleshooting guide with error dictionary. 14 interactive diagrams covering every major subsystem.</div>
     <div class="card-count">24 reference docs · 14 interactive diagrams</div>
   </a>
 
@@ -111,6 +111,11 @@ hero:
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
     <div class="card-title">File Catalog</div>
     <div class="card-desc">Browse and filter all 23 Claude Code file types — token cost at each context budget, required and optional frontmatter schema fields, exact load timing within the session lifecycle, and annotated usage examples for each file type.</div>
+  </a>
+  <a class="section-card" href="/ai-lab/claude-code/models-diagram/" style="--card-accent:#d2a8ff;">
+    <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="3" y1="20" x2="21" y2="20"/></svg></div>
+    <div class="card-title">Models Comparison</div>
+    <div class="card-desc">Interactive comparison of all 5 Claude models (Opus 4.8/4.7/4.6, Sonnet 4.6, Haiku 4.5) — capability cards with best-use cases, task-based decision guide, and real-time pricing calculator with prompt caching ROI. Includes Fast Mode guide for Opus models.</div>
   </a>
   <a class="section-card" href="/ai-lab/claude-code/context-engineering-ce/" style="--card-accent:#58a6ff;">
     <div class="card-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div>
