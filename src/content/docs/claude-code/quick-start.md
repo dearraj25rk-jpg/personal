@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 2
   label: Quick Start
-lastUpdated: 2026-05-23
+lastUpdated: 2026-05-31
 ---
 
 # Quick Start — Claude Code for New Users
@@ -257,6 +257,7 @@ Run `/keybindings` to view and customise all keyboard shortcuts for your current
 | `/compact [instructions]` | Summarise conversation to free context window |
 | `/plan` | Enter plan-only mode — no file writes until you approve |
 | `/model` | Switch Claude model mid-session |
+| `/fast` | Toggle Fast Mode — Opus-speed output without downgrading to a smaller model |
 | `/usage` | Show token usage and cost for this session |
 | `/context` | Display token-usage grid |
 | `/rewind` | Roll back code changes + conversation |
@@ -678,12 +679,13 @@ or set up a Stop hook that runs tests automatically.
 
 | Task type | Right model | Wrong choice |
 |-----------|-------------|--------------|
-| Bulk file renaming | Haiku 4.5 ($0.80/M) | Opus 4.7 ($15/M) = 18× overspend |
+| Bulk file renaming | Haiku 4.5 ($0.80/M) | Opus 4.8 ($15/M) = 18× overspend |
 | Complex architectural review | Opus 4.7 | Haiku 4.5 = poor output |
-| Standard feature work | Sonnet 4.6 | Opus 4.7 = 5× overspend |
+| Frontier/novel problems | Opus 4.8 | Opus 4.7 = usually fine but Opus 4.8 is strongest |
+| Standard feature work | Sonnet 4.6 | Opus 4.8 = 5× overspend |
 | CI quick scans | Haiku 4.5 | Sonnet 4.6 = 4× overspend |
 
-Switch model with `/model` or `--model` flag.
+Switch model with `/model` or `--model` flag. The `opus` alias now resolves to `claude-opus-4-8`, the newest and most capable Opus model.
 
 ### Mistake 9: Not rewinding after a wrong turn
 
@@ -1031,7 +1033,7 @@ Claude will verify at session start:
 
 ## Cost Governance
 - Default model: claude-sonnet-4-6
-- Upgrade to Opus only with `/model claude-opus-4-7` for architecture decisions
+- Upgrade to Opus only with `/model claude-opus-4-8` for architecture decisions
 - Max budget per session: $5 (enforced via --max-budget-usd in CI)
 - Weekly team spend reviewed in #ai-costs channel
 ```

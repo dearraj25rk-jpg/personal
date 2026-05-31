@@ -2,34 +2,37 @@
 title: Models, Pricing & Effort — Complete Reference
 description: >
   Complete reference for Claude model selection in Claude Code — all available models 
-  (Opus 4.7, Opus 4.6, Sonnet 4.6, Haiku 4.5), context windows, pricing, effort levels
+  (Opus 4.8 (newest), Opus 4.7, Opus 4.6, Sonnet 4.6, Haiku 4.5), context windows, pricing, effort levels
   (low/normal/high/xhigh), model selection strategies, extended thinking, the /advisor
   command, Bedrock and Vertex AI deployment, model environment variables, and cost
   optimization. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 16
   label: Models & Pricing
-lastUpdated: 2026-05-19
+lastUpdated: 2026-05-31
 ---
 
 # Models, Pricing & Effort — Complete Reference
 
-> **Version**: Claude Code v2.1.126 | **Last Updated**: May 19, 2026
+> **Version**: Claude Code v2.1.126+ | **Last Updated**: May 31, 2026
 
 ---
 
 ## 1. Available Models (May 2026)
 
-Claude Code supports four model tiers as of v2.1.126. All models are members of the Claude 4 generation. The tier names (Opus, Sonnet, Haiku) reflect capability level; the version number reflects the release generation within that tier.
+Claude Code supports five model options as of v2.1.126+. All models are members of the Claude 4 generation. The tier names (Opus, Sonnet, Haiku) reflect capability level; the version number reflects the release generation within that tier. `claude-opus-4-8` is the newest and most capable model, and now holds the `opus` alias.
 
 ### Complete Model Reference Table
 
 | Model ID | Alias | Context Window | Input $/M | Output $/M | Cache Read $/M | Best Use Case |
 |---|---|---|---|---|---|---|
-| `claude-opus-4-7` | `opus` | 1,000,000 tokens | $15.00 | $75.00 | $1.50 | Architecture, complex debugging, ambiguous requirements |
+| `claude-opus-4-8` | `opus` | 1,000,000 tokens | $15.00 | $75.00 | $1.50 | Frontier reasoning, hardest problems, novel algorithm design |
+| `claude-opus-4-7` | — | 1,000,000 tokens | $15.00 | $75.00 | $1.50 | Architecture, complex debugging, ambiguous requirements |
 | `claude-opus-4-6` | — | 200,000 tokens | $15.00 | $75.00 | $1.50 | Opus tasks where 1M context not needed |
 | `claude-sonnet-4-6` | `sonnet` | 200,000 tokens | $3.00 | $15.00 | $0.30 | Daily development, feature work, code review |
 | `claude-haiku-4-5` | `haiku` | 200,000 tokens | $0.80 | $4.00 | $0.08 | Bulk operations, CI/CD, simple edits, formatting |
+
+> **`claude-opus-4-8` (newest):** The most capable Opus model, released after Opus 4.7. Same 1M context window and same pricing tier as Opus 4.7 ($15/M input, $75/M output, $1.50/M cache read). It is now the model behind the `opus` alias. Reach for it on the hardest 5% of problems — frontier reasoning, ambiguous architecture decisions, and novel algorithm design — where Opus 4.7 leaves something on the table.
 
 **Notes on pricing:**
 - Prices are in USD per million tokens
@@ -61,17 +64,19 @@ For very large monorepos:
 ### Model Capability Comparison
 
 ```
-Capability:  ██████████████████████████████  Opus 4.7
+Capability:  ████████████████████████████████ Opus 4.8 (newest)
+             ██████████████████████████████  Opus 4.7
              █████████████████████████       Opus 4.6
              ████████████████████            Sonnet 4.6
              ████████████                    Haiku 4.5
 
-Speed:       ██████████                      Opus 4.7
+Speed:       ██████████                      Opus 4.8 (faster with /fast)
+             ██████████                      Opus 4.7
              ████████████                    Opus 4.6
              ████████████████████████        Sonnet 4.6
              ███████████████████████████████ Haiku 4.5
 
-Cost (input):$15.00/M                        Opus 4.7 & 4.6
+Cost (input):$15.00/M                        Opus 4.8, 4.7 & 4.6
              $3.00/M                         Sonnet 4.6
              $0.80/M                         Haiku 4.5
 ```
@@ -94,8 +99,47 @@ What is your task?
 ├── Critical debugging, ambiguous requirements, strategic decisions
 │   └── → Opus 4.7 with effort=xhigh (or use /advisor)
 │
+├── Frontier problems: novel algorithms, hardest debugging, ambiguous redesign
+│   └── → Opus 4.8 with effort=xhigh (newest, most capable)
+│
 └── Long document analysis (legal, architecture docs > 200K tokens)
-    └── → Opus 4.7 (1M context window)
+    └── → Opus 4.8 or Opus 4.7 (1M context window)
+```
+
+### Fast Mode (`/fast`)
+
+**Fast Mode** delivers faster Opus output without downgrading to a smaller model. It keeps full Opus reasoning capability but optimizes token generation for speed over exhaustive deliberation.
+
+```
+Normal Opus session:          /fast session:
+─────────────────────         ─────────────────────
+Opus 4.8 reasoning            Opus 4.8 reasoning
+Full deliberation             Optimized for speed
+Slower token generation       Faster token generation
+                              Same model capability
+```
+
+**Key facts:**
+
+- **Toggle**: Type `/fast` in the REPL to enable or disable Fast Mode for the current session.
+- **Models**: Available for Opus 4.8, Opus 4.7, and Opus 4.6 only. Sonnet and Haiku are already speed-optimized, so Fast Mode does not apply to them.
+- **No downgrade**: Fast Mode does **not** switch you to a cheaper or smaller model — you stay on the Opus model you selected.
+- **Cost**: Same as the underlying Opus model. There is no surcharge or discount for Fast Mode; it only changes generation behavior.
+- **When to use**: Interactive architecture Q&A, pair-programming, and other latency-sensitive work where you still want Opus-grade reasoning.
+- **When not to use**: Maximally complex problems that benefit from full deliberation — prefer `xhigh` effort and normal Opus output there.
+
+```bash
+# Start an Opus session
+claude --model claude-opus-4-8
+
+# Inside the session, toggle Fast Mode on/off
+> /fast
+
+# Or enable Fast Mode by default via .claude/settings.json
+{
+  "model": "claude-opus-4-8",
+  "fastMode": true
+}
 ```
 
 ---
@@ -117,8 +161,8 @@ There are four mechanisms for setting the default model, applied in this priorit
 
 **1. CLI flag (highest priority, session-only):**
 ```bash
-claude --model claude-opus-4-7
-claude --model opus          # alias resolves to claude-opus-4-7
+claude --model claude-opus-4-8
+claude --model opus          # alias resolves to claude-opus-4-8 (newest)
 claude --model haiku         # alias resolves to claude-haiku-4-5
 ```
 
@@ -153,14 +197,15 @@ export ANTHROPIC_MODEL=claude-opus-4-7
 Current model: claude-sonnet-4-6 (effort: normal)
 
 Available models:
-  1. claude-opus-4-7    (alias: opus)    — Most capable, 1M context
-  2. claude-opus-4-6    (alias: —)       — Opus capability, 200K context
-  3. claude-sonnet-4-6  (alias: sonnet)  — Balanced [CURRENT]
-  4. claude-haiku-4-5   (alias: haiku)   — Fast and economical
+  1. claude-opus-4-8    (alias: opus)    — Newest, most capable, 1M context
+  2. claude-opus-4-7    (alias: —)       — Complex reasoning, 1M context
+  3. claude-opus-4-6    (alias: —)       — Opus capability, 200K context
+  4. claude-sonnet-4-6  (alias: sonnet)  — Balanced [CURRENT]
+  5. claude-haiku-4-5   (alias: haiku)   — Fast and economical
 
 Select model: 1
 
-Switched to claude-opus-4-7 (effort: xhigh)
+Switched to claude-opus-4-8 (effort: xhigh)
 Model change applies immediately to subsequent messages.
 ```
 
@@ -172,11 +217,11 @@ Model aliases always resolve to the **latest released model in that family**:
 
 | Alias | Resolves to (May 2026) | When might change |
 |---|---|---|
-| `opus` | `claude-opus-4-7` | When Opus 4.8 is released |
+| `opus` | `claude-opus-4-8` | When a newer Opus is released |
 | `sonnet` | `claude-sonnet-4-6` | When Sonnet 4.7 is released |
 | `haiku` | `claude-haiku-4-5` | When Haiku 4.6 is released |
 
-**Important**: If you pin production CI/CD to `opus`, the model will silently upgrade when a new Opus is released. For reproducible CI, always use full model IDs (`claude-opus-4-7`) rather than aliases.
+**Important**: If you pin production CI/CD to `opus`, the model will silently upgrade when a new Opus is released — for example, `opus` now resolves to `claude-opus-4-8` rather than `claude-opus-4-7`. For reproducible CI, always use full model IDs (`claude-opus-4-8`) rather than aliases.
 
 ---
 
@@ -578,6 +623,7 @@ Bedrock uses cross-region inference profile IDs rather than direct model IDs. Cl
 
 | Claude Model | Bedrock Cross-Region Inference Profile ID |
 |---|---|
+| claude-opus-4-8 | `us.anthropic.claude-opus-4-8-20261101-v1:0` |
 | claude-opus-4-7 | `us.anthropic.claude-opus-4-7-20261001-v1:0` |
 | claude-opus-4-6 | `us.anthropic.claude-opus-4-6-20260601-v1:0` |
 | claude-sonnet-4-6 | `us.anthropic.claude-sonnet-4-6-20260301-v1:0` |
@@ -687,6 +733,7 @@ Vertex AI uses simplified model IDs (no date suffix required for stable releases
 
 | Claude Model | Vertex AI Model ID |
 |---|---|
+| claude-opus-4-8 | `claude-opus-4@8` |
 | claude-opus-4-7 | `claude-opus-4@7` |
 | claude-opus-4-6 | `claude-opus-4@6` |
 | claude-sonnet-4-6 | `claude-sonnet-4@6` |
@@ -1161,6 +1208,7 @@ For pure cost minimization (e.g., CI/CD pipelines):
 ├─────────────────┬──────────┬───────────┬──────────────────────────────┤
 │ Model           │ Ctx      │ Input $/M │ Best For                     │
 ├─────────────────┼──────────┼───────────┼──────────────────────────────┤
+│ claude-opus-4-8 │ 1M       │ $15.00    │ Frontier, hardest problems    │
 │ claude-opus-4-7 │ 1M       │ $15.00    │ Architecture, hard debugging  │
 │ claude-opus-4-6 │ 200K     │ $15.00    │ Opus tasks, smaller context  │
 │ claude-sonnet-4-6│ 200K    │ $3.00     │ Daily dev, feature work      │
@@ -1218,6 +1266,9 @@ START: What is the task?
     │
     ├─ Hardest problems: distributed systems, Heisenbugs, trade-off analysis?
     │   └─► Opus 4.7, xhigh effort  ($15.00/M + heavy thinking)
+    │
+    ├─ Frontier problems: novel algorithms, ambiguous redesign, research-grade?
+    │   └─► Opus 4.8, xhigh effort  (newest, most capable; same $15.00/M)
     │
     ├─ Mixed session (some routine, some complex)?
     │   └─► /advisor command  (Sonnet + Opus on demand, ~32% of all-Opus cost)
