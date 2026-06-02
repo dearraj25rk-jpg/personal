@@ -9,7 +9,7 @@ description: >
   v2.1.126 (May 2026).
 sidebar:
   order: 27
-lastUpdated: 2026-05-30
+lastUpdated: 2026-06-02
 ---
 
 # Monorepo & Multi-Service Guide
@@ -2252,3 +2252,10 @@ claude --agent monorepo-orchestrator
 | `.claude/settings.json` | Project settings, plugin declarations |
 | `.claude/agents/<name>.md` | Agent definitions for orchestration |
 | `shared/docs/security-policy.md` | @imported shared policy documents |
+
+---
+
+## Related Visual Guides
+
+- [Monorepo Patterns — Diagram](./monorepo-diagram) — Interactive CLAUDE.md hierarchy tree, path-scoped rules matcher, shared MCP server architecture, Agent Teams cross-service orchestration, and CI/CD matrix build pattern
+- [Agent Teams — Architecture Diagram](./agent-teams-diagram) — Task tool vs Agent Teams comparison, subagent YAML reference, and orchestration patterns

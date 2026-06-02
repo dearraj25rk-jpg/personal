@@ -1,0 +1,80 @@
+---
+tableOfContents: false
+title: Slash Commands — Visual Reference
+description: >
+  Interactive visual reference for all Claude Code slash commands — filterable by
+  category (session, memory, context, agents, config, git, debug), custom command
+  anatomy with special variables, personal vs project command scopes, and practical
+  examples for common workflows. v2.1.126 (June 2026).
+sidebar:
+  order: 30
+lastUpdated: 2026-06-02
+---
+
+import SlashCommandsDiagram from '../../../components/interactive/SlashCommandsDiagram.jsx';
+
+<div class="interactive-tool">
+  <SlashCommandsDiagram client:only="react" />
+</div>
+
+## Slash Commands Quick Reference
+
+### Categories
+
+| Category | Commands |
+|----------|---------|
+| **Session** | `/clear`, `/compact`, `/rewind`, `/resume`, `/rename`, `/exit` |
+| **Memory** | `/memory`, `/todos`, `/usage`, `/context` |
+| **Config** | `/config`, `/model`, `/fast`, `/permissions`, `/theme`, `/keybindings`, `/terminal-setup` |
+| **Agents** | `/agents`, `/skills`, `/plan`, `/advisor` |
+| **Connections** | `/mcp`, `/hooks` |
+| **Git** | `/branch` |
+| **Debug** | `/doctor`, `/debug`, `/changelog` |
+| **Team** | `/team-onboarding` |
+
+### Custom Command Anatomy
+
+```markdown
+<!-- .claude/commands/deploy.md -->
+---
+description: Deploy the current service to staging
+allowed-tools: Bash, Read
+---
+
+# Deploy to Staging
+
+## Context
+Current branch: !`git branch --show-current`
+Service: $ARGUMENTS
+
+## Steps
+@import standards/deploy-checklist.md
+
+Run the deployment for the {{service}} service:
+...
+```
+
+| Variable | Resolves to |
+|----------|------------|
+| `$ARGUMENTS` | Text typed after the command: `/deploy api-service` → `api-service` |
+| `!` prefix | Shell command output: `` !`git log --oneline -5` `` → last 5 commits |
+| `@import path` | Contents of another file inserted inline |
+| `{{var}}` | Prompt Claude to substitute (not built-in — Claude interprets) |
+
+### Personal vs Project Commands
+
+| Scope | Path | Git? | Visible to |
+|-------|------|------|-----------|
+| Personal | `~/.claude/commands/<name>.md` | No | Only you, all projects |
+| Project | `.claude/commands/<name>.md` | Yes | All team members on this project |
+| Plugin | `~/.claude/plugins/<name>/commands/` | Via plugin | Plugin users |
+
+### Invocation
+
+```
+> /deploy api-service      ← project command with argument
+> /my-standup              ← personal command, no argument
+> /deploy<tab>             ← tab completion shows description
+```
+
+→ Full reference: [Slash Commands — Complete Reference](./slash-commands-reference)

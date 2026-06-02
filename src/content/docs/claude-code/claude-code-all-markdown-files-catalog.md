@@ -2,11 +2,12 @@
 title: Every Markdown File Claude Code Recognizes — Complete Catalog
 sidebar:
   order: 4
+lastUpdated: 2026-06-02
 ---
 
 # Every Markdown File Claude Code Recognizes — Complete Catalog
 
-> **Last updated: May 23, 2026 — reflects Claude Code v2.1.126+**
+> **Last updated: June 2, 2026 — reflects Claude Code v2.1.126+**
 > All information sourced from official `code.claude.com` documentation.
 
 ---
@@ -1915,7 +1916,7 @@ At any point during a session, run `/memory` to:
 
 ## Sources
 
-All information sourced from official documentation as of May 2026:
+All information sourced from official documentation as of June 2026:
 - Memory management: https://code.claude.com/docs/en/memory
 - Skills: https://code.claude.com/docs/en/skills
 - Subagents: https://code.claude.com/docs/en/sub-agents

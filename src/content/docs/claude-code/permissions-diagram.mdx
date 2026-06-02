@@ -1,0 +1,77 @@
+---
+tableOfContents: false
+title: Permissions & Security — Diagram
+description: >
+  Interactive visual guide to Claude Code's permission and security model — four-layer
+  permission hierarchy, four permission modes, tool allowlist and blocklist syntax,
+  sandbox architecture (Seatbelt on macOS, bubblewrap on Linux), and audit logging
+  flow with destinations. v2.1.126 (June 2026).
+sidebar:
+  order: 27
+lastUpdated: 2026-06-02
+---
+
+import PermissionsDiagram from '../../../components/interactive/PermissionsDiagram.jsx';
+
+<div class="interactive-tool">
+  <PermissionsDiagram client:only="react" />
+</div>
+
+## Permissions Quick Reference
+
+### Four Permission Layers
+
+From highest to lowest precedence:
+
+| Layer | File | Who controls | Override? |
+|-------|------|-------------|----------|
+| Enterprise Managed | `~/.claude/managed-settings.json` | MDM/IT admin | Cannot be overridden |
+| Project Local | `.claude/settings.local.json` | Individual dev | Overrides project + user |
+| Project | `.claude/settings.json` | Team (committed) | Overrides user settings |
+| User Global | `~/.claude/settings.json` | Individual dev | Base defaults |
+
+### Permission Modes
+
+| Mode | `--permission-mode` flag | What it does |
+|------|------------------------|-------------|
+| `default` | (none) | Prompts for each new tool permission |
+| `acceptEdits` | `--permission-mode acceptEdits` | Auto-approves file edits, prompts for Bash |
+| `bypassPermissions` | `--permission-mode bypassPermissions` | Skips ALL permission checks — use in sandboxed CI only |
+| `autoApprove` | `--permission-mode autoApprove` | Approves everything including dangerous operations |
+
+> **CI recommendation:** Use `--permission-mode bypassPermissions` only inside Docker containers or restricted CI environments where the filesystem scope is already constrained at the container level.
+
+### Tool Allowlist / Blocklist Syntax
+
+```json
+// .claude/settings.json
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm:*)",           // allow npm commands
+      "Bash(git:*)",           // allow all git commands
+      "Read",                  // allow all file reads
+      "Edit(.claude/**)"       // allow edits only in .claude/
+    ],
+    "deny": [
+      "Bash(rm:-rf*)",         // block rm -rf
+      "Bash(curl:*)",          // block all curl
+      "WebFetch",              // block all web fetches
+      "Write(/etc/**)"         // block writes to /etc/
+    ]
+  }
+}
+```
+
+### Sandbox Architecture
+
+Claude Code uses OS-level sandboxing:
+
+| Platform | Sandbox tech | What it restricts |
+|----------|-------------|-----------------|
+| macOS | Seatbelt (sandbox-exec) | Filesystem paths, network, process spawning |
+| Linux | bubblewrap (bwrap) | Mount namespaces, user namespaces, network |
+
+The sandbox is applied to **Bash tool executions** when sandbox mode is enabled. File tools (Read, Write, Edit) are controlled via the allowlist, not the OS sandbox.
+
+→ Full guide: [Permissions & Security](./permissions-security)

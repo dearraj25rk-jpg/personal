@@ -1,0 +1,82 @@
+---
+tableOfContents: false
+title: Monorepo Patterns — Diagram
+description: >
+  Interactive visual guide to Claude Code in monorepo and multi-service architectures —
+  CLAUDE.md hierarchy tree, path-scoped rules matching visualizer, shared MCP server
+  architecture, Agent Teams cross-service orchestration flow, and CI/CD matrix build
+  pattern with change detection. v2.1.126 (June 2026).
+sidebar:
+  order: 29
+lastUpdated: 2026-06-02
+---
+
+import MonorepoDiagram from '../../../components/interactive/MonorepoDiagram.jsx';
+
+<div class="interactive-tool">
+  <MonorepoDiagram client:only="react" />
+</div>
+
+## Monorepo Quick Reference
+
+### CLAUDE.md Hierarchy in a Monorepo
+
+Files load bottom-up (most specific last, most specific wins on conflict):
+
+```
+CLAUDE.md                        ← root: shared context, all services
+├── services/api/CLAUDE.md       ← API service: API-specific conventions
+├── services/frontend/CLAUDE.md  ← Frontend: React/TS conventions
+├── services/worker/CLAUDE.md    ← Worker: async job patterns
+└── packages/shared/CLAUDE.md    ← Shared libs: interface contracts
+```
+
+When Claude is working in `services/api/src/`, it loads:
+1. Root `CLAUDE.md` (always)
+2. `services/CLAUDE.md` (if exists)
+3. `services/api/CLAUDE.md` (if exists)
+4. Any matching `.claude/rules/*.md` (path-scoped, on file match)
+
+### Path-Scoped Rules
+
+Define rules that only load when Claude touches specific files:
+
+```yaml
+# .claude/rules/api-rules.md
+---
+paths:
+  - "services/api/**"
+  - "packages/api-client/**"
+---
+# API service conventions
+- Always validate request schemas with zod
+- Use repository pattern for database access
+- All endpoints must have OpenAPI annotations
+```
+
+Zero tokens consumed for `api-rules.md` when Claude is working in `services/frontend/`.
+
+### Shared MCP Servers (root .mcp.json)
+
+```json
+{
+  "servers": {
+    "github": { "command": "npx", "args": ["-y", "@anthropic/mcp-server-github"] },
+    "linear": { "command": "npx", "args": ["-y", "@linear/mcp-server"] },
+    "datadog": { "command": "npx", "args": ["-y", "@datadog/mcp-server"] }
+  }
+}
+```
+
+Service-specific `.mcp.json` in `services/api/`:
+```json
+{
+  "servers": {
+    "postgres": { "command": "npx", "args": ["-y", "@anthropic/mcp-server-postgres"],
+      "env": { "DATABASE_URL": "${API_DATABASE_URL}" } }
+  }
+}
+```
+Claude Code merges both — root servers plus service servers are all active.
+
+→ Full guide: [Monorepo & Multi-Service Guide](./monorepo-guide)

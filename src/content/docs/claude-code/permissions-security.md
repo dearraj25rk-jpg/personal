@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 9
   label: Permissions & Security
-lastUpdated: 2026-05-19
+lastUpdated: 2026-06-02
 ---
 
 # Permissions, Sandbox & Security
@@ -902,6 +902,7 @@ Claude Code's trust model has three principals:
 
 ## Related Guides
 
+- [Permissions & Security — Diagram](./permissions-diagram) — Visual layer pyramid, modes, allowlists, sandbox, and audit logging
 - [CLI Technical Reference](./claude-code-reference) — Section 15: Permission System, Section 16: Sandbox
 - [Hooks System](./hooks-deep-dive) — PreToolUse blocking hooks for security enforcement
 - [MCP Servers Guide](./mcp-servers-guide) — MCP security and prompt injection

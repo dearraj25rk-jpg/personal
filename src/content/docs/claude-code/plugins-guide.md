@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 13
   label: Plugins
-lastUpdated: 2026-05-19
+lastUpdated: 2026-06-02
 ---
 
 # Plugins — Complete Reference

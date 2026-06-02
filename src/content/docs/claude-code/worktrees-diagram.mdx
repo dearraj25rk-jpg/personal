@@ -1,0 +1,78 @@
+---
+tableOfContents: false
+title: Worktrees & Parallel Development — Diagram
+description: >
+  Interactive visual guide to Git worktrees in Claude Code — worktree vs clone architecture,
+  parallel Claude Code session flow across multiple branches, the /branch command walkthrough,
+  coordination patterns for teams, and directory layout reference. v2.1.126 (June 2026).
+sidebar:
+  order: 26
+lastUpdated: 2026-06-02
+---
+
+import WorktreesDiagram from '../../../components/interactive/WorktreesDiagram.jsx';
+
+<div class="interactive-tool">
+  <WorktreesDiagram client:only="react" />
+</div>
+
+## Worktrees Quick Reference
+
+### What is a Git Worktree?
+
+A Git worktree is a separate checkout of a repository that **shares the same `.git/` database** as your main working copy. Unlike cloning, worktrees:
+- Share all commit history, objects, branches, and remotes
+- Each worktree has exactly one branch checked out
+- Are lightweight — no duplication of the `.git/` directory
+- Can be created and deleted in seconds
+
+```bash
+# Create a worktree for a new feature branch
+git worktree add ../my-project-feature-auth feature/auth
+
+# Or use Claude Code's built-in command
+> /branch feature/auth
+# → creates worktree at ../my-project-feature-auth
+# → opens new terminal window focused on that directory
+# → starts a fresh Claude Code session in the new branch context
+```
+
+### The /branch Command
+
+| Step | What happens |
+|------|-------------|
+| `/branch <name>` | Claude creates the git worktree at the sibling path |
+| Git checkout | Branch `<name>` is created and checked out in the new worktree |
+| New terminal | A new terminal window/pane opens with CWD set to the worktree |
+| Fresh context | A new Claude Code session initialises — clean context, loads CLAUDE.md for that branch |
+| Independence | The new session has zero knowledge of your current session |
+
+### Parallel Session Layout
+
+```
+~/projects/my-project/              ← main worktree (branch: main)
+  └── Claude Code session 1: "Fix billing bug"
+
+~/projects/my-project-feature-auth/ ← worktree 1 (branch: feature/auth)
+  └── Claude Code session 2: "Implement OAuth flow"
+
+~/projects/my-project-feature-ui/   ← worktree 2 (branch: feature/ui)
+  └── Claude Code session 3: "Build settings page"
+```
+
+Each session:
+- Has its own context window and conversation history
+- Reads CLAUDE.md from its own branch (may differ!)
+- Has its own MEMORY.md (shared path hash — same project root)
+- Can have separate MCP connections and hook configs
+
+### Coordination Patterns
+
+| Pattern | How | Best for |
+|---------|-----|---------|
+| **Feature isolation** | `/branch feature/<name>` per feature | Preventing context bleed between unrelated features |
+| **PR review** | `/branch pr/<number>` from remote | Review someone's PR while you keep working on `main` |
+| **CI worktree** | Script creates worktree, runs tests, deletes | Parallel CI without touching working copy |
+| **Agent Teams** | Each team member agent gets a worktree | Parallel multi-agent work on different services |
+
+→ Full guide: [Worktrees & Parallel Development](./worktrees-guide)

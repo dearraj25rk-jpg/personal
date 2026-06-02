@@ -2,11 +2,12 @@
 title: CLAUDE.md vs Skills vs Rules — Architecture Guide
 sidebar:
   order: 3
+lastUpdated: 2026-06-02
 ---
 
 # CLAUDE.md vs Skills vs Rules — Complete Architecture & Best Practices Guide
 
-> **Last updated: May 23, 2026 — reflects Claude Code v2.1.126+**
+> **Last updated: June 2, 2026 — reflects Claude Code v2.1.126+**
 > **Document scope:** Complete configuration reference for CLAUDE.md, Rules, Skills, Commands, Output Styles, Subagents, Plugins, Hooks, MCP, and enterprise settings through v2.1.126 (May 2026).
 
 ## 1. The Core Problem These Three Files Solve
@@ -1696,7 +1697,7 @@ claude plugin list --json --available        # Include marketplace listings
 
 Hooks are handlers that run automatically at specific lifecycle events. They are NOT the same as rules or skills — they are code execution triggers, not knowledge/instruction files. Use hooks for mechanical enforcement (lint check, secret scanning, policy validation) and rules/skills for nuanced judgment.
 
-**Complete hook event list** (as of May 2026):
+**Complete hook event list** (as of June 2026):
 
 | Category | Events |
 |----------|--------|
@@ -1860,7 +1861,7 @@ Run `/memory` at any time to see what memory files are currently loaded, verify 
 
 ## 16. Sources
 
-All information sourced from official documentation as of May 2026:
+All information sourced from official documentation as of June 2026:
 - Memory management: https://code.claude.com/docs/en/memory
 - Skills: https://code.claude.com/docs/en/skills
 - Subagents: https://code.claude.com/docs/en/sub-agents

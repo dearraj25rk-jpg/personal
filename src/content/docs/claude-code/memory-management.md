@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 15
   label: Memory Management
-lastUpdated: 2026-05-23
+lastUpdated: 2026-06-02
 ---
 
 # Memory Management — Complete Reference
@@ -1883,6 +1883,98 @@ If these are team conventions that every developer should follow, they belong in
 - Discovered project facts ("the payment service has a 30s SLA")
 - Machine-specific observations ("local DB is on port 5433")
 - Temporary preferences ("for this session, verbose output please")
+
+---
+
+## 7. Memory Anti-Patterns — What to Avoid
+
+Understanding what NOT to do with Claude Code's memory system prevents the most common mistakes.
+
+### Anti-Pattern 1: Putting Everything in CLAUDE.md
+
+**Problem:** A 2,000-line CLAUDE.md costs ~6,000 tokens on every single turn. In a 50-turn session, that's 300,000 extra tokens (≈ $0.90 at Sonnet 4.6 input prices) just from memory overhead.
+
+**Instead:** Use `.claude/rules/` with `paths:` scoping. Rules that match only `src/api/**` cost 0 tokens when Claude is working in `src/frontend/`.
+
+```
+Before (everything in CLAUDE.md):          After (split into rules):
+───────────────────────────────────        ──────────────────────────────────────
+CLAUDE.md: 2,000 lines (6K tokens          CLAUDE.md: 120 lines (360 tokens — 
+           loaded every turn)                          always loaded)
+                                            .claude/rules/api-rules.md   — 800 tokens
+                                              paths: ["src/api/**"]       — only when in API
+                                            .claude/rules/frontend-rules.md — 600 tokens
+                                              paths: ["src/frontend/**"]  — only when in frontend
+                                            .claude/rules/test-rules.md   — 400 tokens
+                                              paths: ["**/*.test.ts"]     — only for test files
+                                            
+Cost per turn on API work: 360 + 800 = 1,160 tokens (vs 6,000 — 81% reduction)
+```
+
+### Anti-Pattern 2: Using MEMORY.md as a To-Do List
+
+**Problem:** MEMORY.md is limited to 200 lines / 25KB. Using it to track task status wastes the limited space on transient information.
+
+**Instead:** Use TodoWrite/TodoRead for tasks. MEMORY.md is for durable facts that shouldn't need to be re-established each session:
+- Architectural decisions ("We use repository pattern, not active record")
+- Conventions ("All event names are past-tense: UserCreated, not CreateUser")
+- Known issues ("Avoid modifying auth.service.ts — rewrite in progress by Sarah")
+- Project-specific vocabulary ("'pipeline' means the Kafka stream, not CI/CD")
+
+### Anti-Pattern 3: Relying on Conversation History for Critical Facts
+
+**Problem:** Conversation history is summarised (and compressed) during compaction. Detailed facts discussed 30 turns ago may be lost or distorted.
+
+**Instead:** Any fact that matters must be written to MEMORY.md or CLAUDE.md explicitly:
+
+```
+After making an important architectural decision:
+"Save to MEMORY.md: We decided to use JWT-based auth with 24-hour expiry and 
+ Redis for token revocation. Refresh tokens stored in httpOnly cookies only."
+```
+
+This explicit write ensures the fact survives compaction.
+
+### Anti-Pattern 4: Circular @import Chains
+
+**Problem:** `CLAUDE.md` imports `shared.md` which imports `CLAUDE.md` — results in an error.
+
+**Symptom:** Error message "@import cycle detected" at session start.
+
+**Fix:** Use a one-directional import tree. Never have a file that imports its own ancestor.
+
+```
+✅ Valid:           ❌ Invalid:
+CLAUDE.md           CLAUDE.md
+  @import standards.md    @import standards.md
+    @import linting.md        @import shared.md
+                                  @import CLAUDE.md ← CYCLE
+```
+
+### Anti-Pattern 5: Committing CLAUDE.local.md to Git
+
+**Problem:** CLAUDE.local.md is meant for personal overrides that shouldn't be shared. Committing it means your teammates see your personal hacks.
+
+**Fix:** Add `CLAUDE.local.md` to `.gitignore` (Claude Code does this automatically, but verify it's there).
+
+```bash
+# Verify it's gitignored:
+grep "CLAUDE.local.md" .gitignore
+```
+
+### Memory Health Checklist
+
+```
+Monthly review of project CLAUDE.md:
+□ Under 120 lines? (aim for 80-100 lines)
+□ No duplication with rules/ files?
+□ All examples still accurate?
+□ Outdated conventions removed?
+□ MEMORY.md under 200 lines?
+□ MEMORY.md facts still relevant? (prune old decisions)
+□ @import chain still valid? (no orphaned imports)
+□ rules/ paths: globs still accurate to project structure?
+```
 
 ---
 

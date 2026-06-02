@@ -1,9 +1,9 @@
 ---
 title: Claude Code
-description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles, memory management (7 types), models & pricing, slash commands, context engineering, and 14 interactive diagrams. Claude Code v2.1.126 (May 2026).
+description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles, memory management (7 types), models & pricing, slash commands, context engineering, enterprise deployment, monorepo patterns, and 19 interactive diagrams. 44 total resources. Claude Code v2.1.126 · Updated June 2026.
 sidebar:
   order: 1
-lastUpdated: 2026-05-31
+lastUpdated: 2026-06-02
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
@@ -40,7 +40,7 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 
 ---
 
-## What's New (v2.1.108–v2.1.126)
+## What's New (v2.1.108–v2.1.126) · Documentation Updated June 2026
 
 | Version | Feature | What changed |
 |---------|---------|-------------|
@@ -212,6 +212,11 @@ claude
 | [Agent SDK — Diagram](./sdk-diagram) | Subprocess architecture, all SDK event types, Python/TypeScript session patterns, parallel workloads |
 | [Memory System — Diagram](./memory-diagram) | All 7 memory types, scope, load timing, compaction survival, size limits, @import syntax |
 | [Plugins — Architecture Diagram](./plugins-diagram) | All 10 plugin component types, environment variables, installation scopes, directory structure |
+| [Worktrees & Parallel Dev — Diagram](./worktrees-diagram) | Interactive visual of git worktree architecture, parallel session flow, /branch command walkthrough, coordination patterns, and directory layout |
+| [Permissions & Security — Diagram](./permissions-diagram) | Visual permission layer pyramid, four permission modes, tool allowlist/blocklist syntax, sandbox architecture (Seatbelt/bubblewrap), and audit logging flow |
+| [Enterprise Deployment — Diagram](./enterprise-diagram) | Managed settings hierarchy, auth provider comparison (Direct/Bedrock/Vertex WIF), audit logging destinations, cost governance dashboard, and phased rollout playbook |
+| [Monorepo Patterns — Diagram](./monorepo-diagram) | CLAUDE.md hierarchy tree for multi-service repos, path-scoped rules matching visualizer, shared MCP server architecture, Agent Teams cross-service orchestration, and CI/CD matrix build patterns |
+| [Slash Commands — Visual Reference](./slash-commands-diagram) | Interactive slash command browser — filter by category (session, memory, config, agents, git, debug), see usage examples, custom command anatomy, and special variable reference |
 
 ---
 

@@ -4,11 +4,11 @@ description: >
   Complete guide to the Model Context Protocol (MCP) in Claude Code — architecture,
   transport types, primitives, configuration scopes, building custom servers, security,
   official and community servers, .NET integration, and production deployment patterns.
-  Covers MCP spec and Claude Code v2.1.126 (May 2026).
+  Covers MCP spec and Claude Code v2.1.126 (May 2026). Updated June 2026
 sidebar:
   order: 6
   label: MCP Servers
-lastUpdated: 2026-05-23
+lastUpdated: 2026-06-02
 ---
 
 # MCP Servers — Architecture, Configuration & Development
@@ -1200,6 +1200,118 @@ For HTTP MCP servers:
 - Rotate tokens regularly
 - Use `${ENV_VAR}` — never hardcode tokens in `.mcp.json`
 - For enterprise: use OAuth 2.0 with PKCE
+
+---
+
+## MCP Performance & Cost Optimization
+
+### Token Cost Per Server
+
+Each connected MCP server adds ~2,650 tokens to the system prompt (from tool schemas). This is a fixed cost paid **every session turn** that uses the MCP server.
+
+```
+Session context breakdown with 3 MCP servers:
+─────────────────────────────────────────────
+System prompt (base):          ~3,100 tokens
+Built-in tool schemas:         ~4,800 tokens
+MCP server A (github):         ~2,650 tokens
+MCP server B (linear):         ~2,650 tokens
+MCP server C (postgres):       ~2,650 tokens
+CLAUDE.md:                     ~3,000 tokens
+─────────────────────────────────────────────
+Total fixed overhead:         ~18,850 tokens
+Available for work (200K):   ~181,150 tokens
+```
+
+**Rule of thumb:** Connect only the MCP servers you'll use in the current session. Use `.claude/.mcp.json.local` to create a project-local subset of servers active during a specific workflow.
+
+### Scoped MCP Server Files
+
+| File | Scope | Git? | Use for |
+|------|-------|------|---------|
+| `.mcp.json` | Project | Yes | Team-shared servers (commit to git) |
+| `~/.claude/.mcp.json` | User | No | Personal servers across all projects |
+| `.claude/.mcp.json.local` | Project local | No | Session/workflow-specific subset |
+| Enterprise managed | Org-wide | Managed | Organisation-mandated servers |
+
+### Server Connection Health
+
+Monitor and debug server connections at runtime:
+
+```bash
+# In Claude Code session
+> /mcp                 # list all configured servers + status
+
+# Server status values:
+# "connected"   — active, tools available
+# "connecting"  — startup in progress
+# "error"       — failed, check ~/.claude/mcp-logs/<server-name>.log
+# "disabled"    — disabled in settings
+
+# Force-reconnect a broken server:
+> /mcp disconnect <server-name>
+> /mcp connect <server-name>
+```
+
+Logs for each server are at `~/.claude/mcp-logs/<server-name>.log`.
+
+### Building Efficient MCP Servers
+
+**Keep tool schemas concise.** Each tool's JSON schema contributes to the ~2,650 token overhead. Avoid verbose descriptions and deeply nested schemas:
+
+```typescript
+// ❌ Verbose — 150 tokens for one tool schema
+server.addTool({
+  name: "search_database",
+  description: "This comprehensive database search tool allows you to query the PostgreSQL database with flexible filtering options. You can filter by date ranges, user IDs, statuses, and many other fields...",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "The SQL WHERE clause to filter results" },
+      limit: { type: "number", description: "Maximum number of rows to return", default: 100 }
+    }
+  }
+});
+
+// ✅ Concise — 40 tokens for the same tool
+server.addTool({
+  name: "search_database",
+  description: "Query the database. Returns rows matching the filter.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string" },
+      limit: { type: "number", default: 100 }
+    }
+  }
+});
+```
+
+**Group related operations.** Combine multiple related tools into one with an `action` parameter to reduce schema overhead:
+
+```typescript
+// Instead of 5 separate CRUD tools (5 × ~40 tokens each):
+server.addTool({ name: "create_task", ... });
+server.addTool({ name: "read_task", ... });
+server.addTool({ name: "update_task", ... });
+server.addTool({ name: "delete_task", ... });
+server.addTool({ name: "list_tasks", ... });
+
+// Use one tool with an action parameter (saves ~160 tokens):
+server.addTool({
+  name: "manage_tasks",
+  description: "Create, read, update, delete, or list tasks.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["create", "read", "update", "delete", "list"] },
+      id: { type: "string" },
+      data: { type: "object" }
+    },
+    required: ["action"]
+  }
+});
+```
 
 ---
 

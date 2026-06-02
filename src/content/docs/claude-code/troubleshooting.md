@@ -7,12 +7,14 @@ description: >
   sandbox permission errors, and health-check commands. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 25
-lastUpdated: 2026-05-30
+lastUpdated: 2026-06-02
 ---
 
 # Troubleshooting Guide
 
 > **Version:** v2.1.126 (May 19, 2026)
+
+> **June 2026 update:** Added sections 10 and 11 covering /doctor auto-repair, /debug session diagnostics, and an extended error dictionary with 30+ entries covering binary, auth, MCP, hooks, context, and sandbox errors.
 
 This guide is a dense diagnostic reference. Each section covers a specific failure category with exact error messages, root-cause analysis, and resolution steps. Use the [Error Message Dictionary](#error-message-dictionary) at the end to jump directly from an error string to its fix.
 
@@ -1984,6 +1986,105 @@ Quick lookup: find your exact error message, get the cause and fix.
 | `Hook event 'preToolUse' not recognized` | Event name uses wrong case | Event names are PascalCase: `PreToolUse`, not `preToolUse` |
 | `Error: maxBudgetUsd is locked by enterprise policy` | Enterprise managed settings prevent budget changes | Contact your org admin to adjust the managed-settings.json policy |
 | `RateLimitError: 429 (parallel CI)` | Multiple CI jobs hitting API concurrently | Set `max-parallel: 2` in matrix strategy and add jitter delay |
+
+---
+
+## 10. New Diagnostic Commands (v2.1.105+)
+
+### /doctor — Automated Health Check
+
+The `/doctor` command runs a comprehensive health check on your Claude Code installation and configuration:
+
+```bash
+> /doctor
+```
+
+Output shows:
+- Claude Code version and whether an update is available
+- Authentication status (API key, OAuth, Bedrock, Vertex)
+- MCP server connection status (connected/error per server)
+- Hook configurations (syntax check, script permissions)
+- CLAUDE.md validity (size, encoding, @import chains)
+- MEMORY.md status (size, last write)
+- Permissions configuration (allow/deny list check)
+
+**Auto-repair:** Press `f` when prompted to auto-fix common issues:
+- Missing CLAUDE.md created with template
+- Broken MCP connections restarted
+- Hook script permissions fixed (chmod +x)
+- Corrupt MEMORY.md moved to MEMORY.md.bak and reset
+
+### /debug — Session Diagnostic Dump
+
+```bash
+> /debug
+```
+
+Shows live session state:
+- All loaded context files with their token counts
+- Active hook registrations
+- Current MCP connection status
+- Permission mode and active allow/deny rules
+- Context window usage by category
+
+## 11. Error Message Dictionary (Extended)
+
+### Claude Code binary errors
+
+| Error message | Cause | Fix |
+|--------------|-------|-----|
+| `ENOENT: no such file or directory 'claude'` | Binary not in PATH | Re-run install script; add `~/.local/bin` to PATH |
+| `EACCES: permission denied` | Binary not executable | `chmod +x $(which claude)` |
+| `Error: Node.js is required` | Using old Node.js-based binary on v2.1.113+ | Upgrade: `curl -fsSL https://claude.ai/install.sh | bash` |
+| `Update failed: disk full` | No space on device | Free disk space; `DISABLE_UPDATES=1` to skip auto-update |
+
+### Authentication errors
+
+| Error message | Cause | Fix |
+|--------------|-------|-----|
+| `AuthenticationError: Invalid API key` | Expired or malformed key | Regenerate at console.anthropic.com |
+| `AuthenticationError: Your account has insufficient credits` | Account balance depleted | Add credits at console.anthropic.com/settings/billing |
+| `Could not connect to authentication server` | Network/proxy issue | Check corporate proxy; try `ANTHROPIC_BASE_URL` env var |
+| `Bedrock: AccessDeniedException` | IAM role missing `bedrock:InvokeModel` permission | Add `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` to IAM role |
+| `Vertex AI: 403 Forbidden` | Service account lacks `roles/aiplatform.user` | Grant `roles/aiplatform.user` in GCP IAM |
+| `Vertex AI: Workload Identity Federation failed` | WIF pool/provider misconfigured | Verify `workload_identity_provider` ARN and service account email in GitHub Actions step |
+
+### MCP server errors
+
+| Error message | Cause | Fix |
+|--------------|-------|-----|
+| `MCP server exited with code 1` | Server crashed at startup | Check `~/.claude/mcp-logs/<server-name>.log`; usually missing env vars |
+| `MCP: timeout waiting for handshake` | Server slow to start; timeout too low | Increase `startup_timeout_ms` in .mcp.json config |
+| `MCP: Unknown transport type` | Typo in transport field | Must be `"stdio"` or `"http"` (lowercase) |
+| `MCP: Tool not found: <name>` | Tool removed from server | Restart server with `/mcp disconnect` then `/mcp connect`; check server version |
+| `MCP: schema validation failed` | Tool input doesn't match server schema | Check Claude's tool call against the schema shown in `/mcp` |
+
+### Hook errors
+
+| Error message | Cause | Fix |
+|--------------|-------|-----|
+| `Hook command failed with exit code 127` | Script not found or not in PATH | Check script path; make it absolute; verify it's executable |
+| `Hook: JSON parse error in stdout` | Script printed non-JSON when JSON expected | For `command` handlers, return valid JSON or nothing |
+| `Hook blocked: exit 2` | Intentional block by hook | Expected behaviour — check what the hook is blocking and why |
+| `http hook: connection refused` | Webhook URL not reachable | Verify URL; check network; set `timeout_ms` to avoid blocking |
+
+### Context and compaction errors
+
+| Error message | Cause | Fix |
+|--------------|-------|-----|
+| `Context window full — compaction required` | 100% context used before auto-compact | Run `/compact` at 70%; or use smaller CLAUDE.md |
+| `Auto-compaction failed` | Compaction call itself hit an error | Check API connectivity; retry with manual `/compact` |
+| `MEMORY.md exceeds size limit — truncating` | Auto-memory over 200 lines / 25KB | Run `/memory` and prune; or use CLAUDE.md for permanent context instead |
+| `@import cycle detected` | Circular @import chain in CLAUDE.md | Check for A imports B imports A patterns; fix the chain |
+| `Rules file failed to parse` | Malformed YAML frontmatter in rules file | Run `yamllint .claude/rules/<file>.md`; fix frontmatter syntax |
+
+### Sandbox errors
+
+| Error message | Cause | Fix |
+|--------------|-------|-----|
+| `sandbox: operation not permitted` | Seatbelt/bubblewrap blocking the operation | Tool is attempting a restricted syscall; add to allowlist or disable sandbox for this task |
+| `sandbox: file not accessible` | File path outside sandbox scope | Work within project directory; add path to sandbox allowlist in settings.json |
+| `bubblewrap: newuidmap not found` | Missing user namespace tools on Linux | Install: `apt install uidmap` (Debian) or `dnf install shadow-utils` (Fedora) |
 
 ---
 

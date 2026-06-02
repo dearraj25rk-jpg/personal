@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 11
   label: Worktrees & Parallel Dev
-lastUpdated: 2026-05-19
+lastUpdated: 2026-06-02
 ---
 
 # Git Worktrees — Parallel Development with Claude Code
@@ -836,6 +836,7 @@ git worktree remove .worktrees/feature-x
 
 | If you want to… | Go to |
 |----------------|-------|
+| Visual guide to worktree architecture | [Worktrees & Parallel Dev — Diagram](./worktrees-diagram) |
 | Automate worktree operations | [Agent SDK Guide](./sdk-guide) |
 | Coordinate multiple agents | [Agent Teams Guide](./agent-teams-guide) |
 | CI/CD parallel workflows | [CI/CD Integration](./cicd-integration) |

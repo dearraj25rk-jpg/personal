@@ -8,7 +8,7 @@ description: >
   enterprise hooks for compliance, and organisational rollout playbook. v2.1.126 (May 2026).
 sidebar:
   order: 26
-lastUpdated: 2026-05-30
+lastUpdated: 2026-06-02
 ---
 
 # Enterprise Deployment Guide
@@ -2461,5 +2461,15 @@ curl -s -X POST "$SLACK_WEBHOOK" \
 
 ---
 
-*Document version: v2.1.126 · Last updated: 2026-05-30 · Maintained by Platform Team*
+---
+
+## Related Visual Guides
+
+- [Enterprise Deployment — Diagram](./enterprise-diagram) — Interactive managed settings hierarchy, auth provider comparison, audit logging destinations, cost governance dashboard, and rollout playbook
+- [Permissions & Security — Diagram](./permissions-diagram) — Visual permission layer pyramid, sandbox architecture, and audit log format
+- [CI/CD Pipeline — Diagram](./cicd-diagram) — Full pipeline flow with Bedrock/Vertex auth patterns
+
+---
+
+*Document version: v2.1.126 · Last updated: 2026-06-02 · Maintained by Platform Team*
 *Feedback: `#claude-code-help` on Slack or open a ticket in JIRA → PLATFORM project*

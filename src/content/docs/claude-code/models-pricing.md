@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 16
   label: Models & Pricing
-lastUpdated: 2026-05-31
+lastUpdated: 2026-06-02
 ---
 
 # Models, Pricing & Effort — Complete Reference
@@ -18,7 +18,7 @@ lastUpdated: 2026-05-31
 
 ---
 
-## 1. Available Models (May 2026)
+## 1. Available Models (June 2026)
 
 Claude Code supports five model options as of v2.1.126+. All models are members of the Claude 4 generation. The tier names (Opus, Sonnet, Haiku) reflect capability level; the version number reflects the release generation within that tier. `claude-opus-4-8` is the newest and most capable model, and now holds the `opus` alias.
 
@@ -81,6 +81,38 @@ Cost (input):$15.00/M                        Opus 4.8, 4.7 & 4.6
              $0.80/M                         Haiku 4.5
 ```
 
+### Model Selection Decision Guide
+
+**Use Haiku 4.5 when:**
+- Processing >100 similar tasks (batch jobs, CI/CD, bulk refactoring)
+- Simple string transformations, formatting, documentation updates
+- Cost is a primary constraint
+- Response quality from Sonnet is overkill
+- Rule of thumb: if a clever prompt to Haiku would get 80%+ of Sonnet's quality, use Haiku
+
+**Use Sonnet 4.6 when:**
+- Daily feature development (the sweet spot — good quality, fast, affordable)
+- Code review, test writing, moderate complexity debugging
+- You're uncertain which model to use (Sonnet is the safe default)
+- Interactive sessions where latency matters more than maximum quality
+
+**Use Opus 4.7 when:**
+- Cross-cutting architectural changes affecting many components
+- Ambiguous requirements that need synthesis from many sources
+- You're stuck on a debugging problem Sonnet couldn't solve
+- Large codebase analysis where 1M context is genuinely needed
+
+**Use Opus 4.8 when:**
+- Frontier-level reasoning is needed (new algorithms, complex optimisation)
+- Opus 4.7 has tried and produced unsatisfactory results
+- Novel design problems with no established patterns
+- Maximum capability matters more than cost
+
+**Escalation strategy:**
+Start with Sonnet → if quality is insufficient → try Opus 4.7 → if still insufficient → Opus 4.8
+
+This escalation pattern maximises quality for hard problems while keeping costs low for routine work.
+
 ### Model Selection Decision Tree
 
 ```
@@ -108,39 +140,28 @@ What is your task?
 
 ### Fast Mode (`/fast`)
 
-**Fast Mode** delivers faster Opus output without downgrading to a smaller model. It keeps full Opus reasoning capability but optimizes token generation for speed over exhaustive deliberation.
-
-```
-Normal Opus session:          /fast session:
-─────────────────────         ─────────────────────
-Opus 4.8 reasoning            Opus 4.8 reasoning
-Full deliberation             Optimized for speed
-Slower token generation       Faster token generation
-                              Same model capability
-```
-
-**Key facts:**
-
-- **Toggle**: Type `/fast` in the REPL to enable or disable Fast Mode for the current session.
-- **Models**: Available for Opus 4.8, Opus 4.7, and Opus 4.6 only. Sonnet and Haiku are already speed-optimized, so Fast Mode does not apply to them.
-- **No downgrade**: Fast Mode does **not** switch you to a cheaper or smaller model — you stay on the Opus model you selected.
-- **Cost**: Same as the underlying Opus model. There is no surcharge or discount for Fast Mode; it only changes generation behavior.
-- **When to use**: Interactive architecture Q&A, pair-programming, and other latency-sensitive work where you still want Opus-grade reasoning.
-- **When not to use**: Maximally complex problems that benefit from full deliberation — prefer `xhigh` effort and normal Opus output there.
+Fast Mode is a toggle available for Opus models that optimises the output stream for speed without changing the underlying model. It does NOT downgrade to Sonnet or Haiku.
 
 ```bash
-# Start an Opus session
-claude --model claude-opus-4-8
-
-# Inside the session, toggle Fast Mode on/off
-> /fast
-
-# Or enable Fast Mode by default via .claude/settings.json
-{
-  "model": "claude-opus-4-8",
-  "fastMode": true
-}
+> /fast          # toggle Fast Mode on/off
 ```
+
+**What Fast Mode does:**
+- Enables a streaming optimisation in the Opus inference backend
+- Typically 20–40% faster time-to-first-token
+- Same model, same quality — just faster streaming
+- No cost difference (billed identically to normal Opus)
+
+**When to use Fast Mode:**
+- Interactive coding sessions where you're waiting for the first response
+- Short queries where the "thinking" latency is noticeable
+- Switching between many small tasks rapidly
+
+**When NOT to use Fast Mode:**
+- Extended thinking tasks (`xhigh` effort) — Fast Mode may conflict with maximum thinking time
+- Long-form generation where quality matters more than speed
+
+Fast Mode is available on: claude-opus-4-8, claude-opus-4-7, claude-opus-4-6
 
 ---
 
@@ -316,6 +337,38 @@ claude --effort high "design the caching layer for the recommendation service"
 claude --effort xhigh "design the event sourcing architecture for the billing domain"
 claude --model opus --effort xhigh "why does our distributed lock sometimes fail under high contention?"
 ```
+
+### Extended Thinking — Technical Details
+
+Extended thinking is Claude's internal reasoning capability that activates at `high` and `xhigh` effort levels. Understanding how it works helps you choose the right effort level.
+
+```
+Effort level:  low    normal    high         xhigh
+                │       │         │              │
+Thinking:      None    Minimal   Substantial   Maximum
+               │       │         │              │
+Token budget:  0     ~1,000   ~10,000       ~32,000 (Opus)
+               │       │         │              │
+Cost impact:   1x      1.2x     2-3x           4-6x
+```
+
+**Technical mechanics:**
+- Thinking tokens are generated before the visible response
+- Thinking tokens are billed at **output rates** for Opus, reduced rates for Sonnet
+- Thinking content is NOT included in the response you see (only Claude sees it)
+- Extended thinking improves: multi-step reasoning, math, code architecture, ambiguous requirements
+
+**When extended thinking pays off:**
+- Novel algorithm design (no training data pattern to copy)
+- Complex debugging spanning multiple abstraction layers
+- Architecture decisions with many competing constraints
+- Security audit of intricate logic
+
+**When extended thinking is waste:**
+- Simple CRUD operations (low effort suffices)
+- Formatting tasks (low effort always correct)
+- Running tests or scripts (tool calls, not reasoning)
+- Any task where the answer is immediately obvious
 
 ### Effort vs. Model: What Changes What
 

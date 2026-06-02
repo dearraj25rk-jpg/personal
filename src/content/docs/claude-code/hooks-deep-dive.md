@@ -4,16 +4,16 @@ description: >
   Deep-dive reference for the Claude Code hooks system — all 30+ hook events,
   five handler types, exit codes, matchers, practical patterns, and production
   examples for automation, audit logging, security gates, formatting, and CI/CD.
-  Covers v2.1.126 (May 2026).
+  Covers v2.1.126 (May 2026). · Updated June 2026
 sidebar:
   order: 5
   label: Hooks System
-lastUpdated: 2026-05-23
+lastUpdated: 2026-06-02
 ---
 
 # Hooks System — Complete Reference
 
-> **Version:** v2.1.126 (May 19, 2026) · Hooks were introduced in v1.0.x and have grown to 30+ events through v2.1.126.
+> **Version:** v2.1.126 (May 19, 2026) · Documentation updated June 2026 · Hooks were introduced in v1.0.x and have grown to 30+ events through v2.1.126.
 
 Hooks are shell commands (or sub-agents) that fire automatically at well-defined lifecycle points during a Claude Code session. They let you intercept, audit, block, or augment Claude's behaviour without modifying any Claude Code internals.
 
@@ -105,6 +105,94 @@ Hooks are shell commands (or sub-agents) that fire automatically at well-defined
 - Hooks have a **60-second timeout** by default (configurable)
 - Hook output (stdout) is fed back to Claude as context
 - Hook stderr appears in the Claude Code terminal log
+
+---
+
+## 1b. Hook Event Payload Schemas
+
+Each hook handler receives a JSON payload via stdin. The exact schema differs by event category:
+
+### Tool Events (PreToolUse / PostToolUse)
+
+```json
+{
+  "event": "PreToolUse",
+  "session_id": "sess_abc123",
+  "project_path": "/home/user/my-project",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "npm test",
+    "restart": false
+  },
+  "timestamp": "2026-06-02T10:45:31Z"
+}
+```
+
+For `PostToolUse`, the payload also includes:
+```json
+{
+  "tool_output": "...",   // stdout from tool
+  "tool_error": null,     // null if success
+  "exit_code": 0
+}
+```
+
+### Session Events (PreSessionStart / PostSessionEnd)
+
+```json
+{
+  "event": "PreSessionStart",
+  "session_id": "sess_abc123",
+  "project_path": "/home/user/my-project",
+  "model": "claude-sonnet-4-6",
+  "effort": "normal",
+  "timestamp": "2026-06-02T10:45:00Z"
+}
+```
+
+### Prompt Events (PrePrompt / PostPrompt)
+
+```json
+{
+  "event": "PrePrompt",
+  "session_id": "sess_abc123",
+  "prompt": "Refactor the auth module to use OAuth2",
+  "turn_number": 5,
+  "context_tokens_used": 45231,
+  "timestamp": "2026-06-02T10:45:31Z"
+}
+```
+
+### Agent Events (PreTask / PostTask)
+
+```json
+{
+  "event": "PreTask",
+  "session_id": "sess_abc123",
+  "parent_session_id": "sess_parent",
+  "task_description": "Run unit tests for auth module",
+  "subagent_model": "claude-haiku-4-5",
+  "timestamp": "2026-06-02T10:45:31Z"
+}
+```
+
+### MCP Tool Events (PreMCPTool / PostMCPTool)
+
+```json
+{
+  "event": "PreMCPTool",
+  "session_id": "sess_abc123",
+  "server_name": "github",
+  "tool_name": "create_pull_request",
+  "tool_input": {
+    "title": "feat: add OAuth2 support",
+    "body": "...",
+    "base": "main",
+    "head": "feature/oauth2"
+  },
+  "timestamp": "2026-06-02T10:45:31Z"
+}
+```
 
 ---
 
@@ -745,7 +833,98 @@ echo "Active environment: ${NODE_ENV:-${ENVIRONMENT:-development}}"
 }
 ```
 
-### Pattern 7: Prompt Hook — Natural Language Rule Enforcement
+### Pattern 7: Compile Check Gate
+
+Block code writes if compilation fails after the edit:
+
+```bash
+#!/bin/bash
+# .claude/hooks/compile-gate.sh
+# PostFileWrite hook — run only on .go files
+
+FILE="${TOOL_OUTPUT_PATH:-}"
+
+if [[ "$FILE" == *.go ]]; then
+  PKG=$(dirname "$FILE")
+  if ! go build "./$PKG/..." 2>&1; then
+    echo "Compilation failed after edit to $FILE — rejecting write" >&2
+    exit 2
+  fi
+fi
+```
+
+```json
+{
+  "hooks": {
+    "PostFileWrite": [{
+      "type": "command",
+      "command": ".claude/hooks/compile-gate.sh",
+      "matcher": { "path_glob": "**/*.go" }
+    }]
+  }
+}
+```
+
+### Pattern 8: Branch Protection
+
+Prevent writes to `main` branch CLAUDE.md or production configs:
+
+```bash
+#!/bin/bash
+BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+TOOL_INPUT=$(cat)
+FILE=$(echo "$TOOL_INPUT" | jq -r '.tool_input.path // ""')
+
+if [[ "$BRANCH" == "main" && "$FILE" =~ (CLAUDE\.md|\.env\.prod|config/production) ]]; then
+  echo "🛑 Blocked: writes to production config on main branch require PR review" 
+  exit 2
+fi
+```
+
+### Pattern 9: Auto-Push to Audit Log Service
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "type": "http",
+      "url": "https://audit.internal.corp/claude-events",
+      "headers": { "Authorization": "Bearer ${AUDIT_TOKEN}" },
+      "timeout_ms": 5000
+    }]
+  }
+}
+```
+
+The `http` handler POSTs the full event JSON payload. Set `timeout_ms` to avoid blocking the tool loop if the audit service is slow.
+
+### Pattern 10: Effort-Aware Context Injection
+
+Inject additional documentation only during high-effort sessions (architecture work):
+
+```bash
+#!/bin/bash
+PAYLOAD=$(cat)
+EFFORT=$(echo "$PAYLOAD" | jq -r '.effort // "normal"')
+
+if [[ "$EFFORT" == "high" || "$EFFORT" == "xhigh" ]]; then
+  cat .claude/architecture-decisions.md
+  cat .claude/api-contracts.md
+fi
+```
+
+```json
+{
+  "hooks": {
+    "PrePrompt": [{
+      "type": "prompt",
+      "command": ".claude/hooks/inject-arch-context.sh"
+    }]
+  }
+}
+```
+
+### Pattern 11: Prompt Hook — Natural Language Rule Enforcement
 
 ```json
 {
@@ -762,7 +941,7 @@ echo "Active environment: ${NODE_ENV:-${ENVIRONMENT:-development}}"
 }
 ```
 
-### Pattern 8: HTTP Webhook for Observability
+### Pattern 12: HTTP Webhook for Observability
 
 ```json
 {
@@ -783,7 +962,7 @@ echo "Active environment: ${NODE_ENV:-${ENVIRONMENT:-development}}"
 }
 ```
 
-### Pattern 9: MCP Tool Hook — External Audit System (v2.1.118+)
+### Pattern 13: MCP Tool Hook — External Audit System (v2.1.118+)
 
 ```json
 {
@@ -875,7 +1054,7 @@ exit 0  # Observe-only, never block
 
 ---
 
-### Pattern 10: Security Gate — Full Pipeline
+### Pattern 14: Security Gate — Full Pipeline
 
 This pattern implements a layered security gate that combines multiple checks:
 
@@ -969,7 +1148,7 @@ Settings configuration:
 }
 ```
 
-### Pattern 11: Compile Validation Before Accepting Code
+### Pattern 15: Compile Validation Before Accepting Code
 
 This `PostToolUse` hook rejects Claude's edits if they break compilation:
 
@@ -1023,7 +1202,7 @@ esac
 exit 0
 ```
 
-### Pattern 12: Prompt Enrichment — Auto-inject File Context
+### Pattern 16: Prompt Enrichment — Auto-inject File Context
 
 This `UserPromptSubmit` hook enriches user prompts with relevant context:
 

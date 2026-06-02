@@ -1,0 +1,73 @@
+---
+tableOfContents: false
+title: Enterprise Deployment — Diagram
+description: >
+  Interactive visual guide to deploying Claude Code at enterprise scale — managed settings
+  hierarchy (MDM/registry/plist), authentication provider comparison (Direct API, AWS Bedrock
+  service tiers, GCP Vertex AI Workload Identity Federation), audit logging destinations,
+  cost governance dashboard, and phased organisational rollout playbook. v2.1.126 (June 2026).
+sidebar:
+  order: 28
+lastUpdated: 2026-06-02
+---
+
+import EnterpriseDiagram from '../../../components/interactive/EnterpriseDiagram.jsx';
+
+<div class="interactive-tool">
+  <EnterpriseDiagram client:only="react" />
+</div>
+
+## Enterprise Deployment Quick Reference
+
+### Managed Settings
+
+Managed settings are pushed to all developer devices via your MDM platform and **cannot be overridden** by any user or project setting.
+
+```bash
+# macOS — MDM/JAMF/Intune plist location
+/Library/Managed Preferences/com.anthropic.claude.plist
+
+# Windows — Windows Registry
+HKCU\SOFTWARE\Anthropic\Claude
+
+# File-based (any platform)
+~/.claude/managed-settings.json
+```
+
+Common managed settings:
+
+| Setting | Purpose | Example value |
+|---------|---------|--------------|
+| `ANTHROPIC_BASE_URL` | Force API through corporate proxy | `https://proxy.corp.com/anthropic` |
+| `DISABLE_TELEMETRY` | Block usage telemetry | `"1"` |
+| `DISABLE_UPDATES` | Pin version in fleet | `"1"` |
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | Cap output per turn | `"8192"` |
+| `ANTHROPIC_MODEL` | Force specific model | `"claude-sonnet-4-6"` |
+
+### Auth Providers
+
+| Provider | Config | Best for |
+|----------|--------|---------|
+| **Anthropic Direct** | `ANTHROPIC_API_KEY` | Small teams, quick start |
+| **AWS Bedrock** | IAM roles + `AWS_REGION` | AWS-native orgs, compliance |
+| **GCP Vertex AI** | Workload Identity Federation | GCP-native orgs, no key rotation |
+
+#### Bedrock Service Tiers (v2.1.122+)
+
+```bash
+export CLAUDE_CODE_BEDROCK_SERVICE_TIER=priority   # highest throughput
+export CLAUDE_CODE_BEDROCK_SERVICE_TIER=default    # standard
+export CLAUDE_CODE_BEDROCK_SERVICE_TIER=flex       # lower cost, lower priority
+```
+
+#### Vertex Workload Identity Federation (v2.1.121+)
+
+No service account keys required. Configure in CI:
+```yaml
+- uses: google-github-actions/auth@v2
+  with:
+    workload_identity_provider: 'projects/123/locations/global/workloadIdentityPools/...'
+    service_account: 'claude-code@my-project.iam.gserviceaccount.com'
+```
+
+→ Full guide: [Enterprise Deployment Guide](./enterprise-guide)

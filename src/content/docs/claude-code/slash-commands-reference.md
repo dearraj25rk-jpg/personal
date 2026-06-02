@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 12
   label: Slash Commands
-lastUpdated: 2026-05-31
+lastUpdated: 2026-06-02
 ---
 
 # Slash Commands — Complete Reference
@@ -2536,3 +2536,9 @@ Override order
   Project (.claude/commands/) > Personal (~/.claude/commands/)
   Plugin (plugin-name:cmd)    — separate namespace, no override
 ```
+
+---
+
+## Related Visual Guides
+
+- [Slash Commands — Visual Reference](./slash-commands-diagram) — Interactive command browser with category filter, custom command anatomy, special variables, and scope guide

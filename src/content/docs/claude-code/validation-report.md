@@ -6,7 +6,7 @@ description: >
   CHANGELOG, and public release notes through v2.1.126 (May 2026).
 sidebar:
   order: 13
-lastUpdated: 2026-05-23
+lastUpdated: 2026-06-02
 ---
 
 # Concept Validation Report

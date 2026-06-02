@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 7
   label: Agent Teams
-lastUpdated: 2026-05-23
+lastUpdated: 2026-06-02
 ---
 
 # Agent Teams & Subagents — Complete Guide
@@ -855,6 +855,92 @@ This is treated with the same priority as CLAUDE.md.
 /agents edit my-agent         # Edit agent definition
 /agents delete my-agent       # Remove agent
 ```
+
+---
+
+## 11. Agent Teams — Production Patterns
+
+### Pattern 1: Parallel Test Generation
+
+Spawn one test-writing agent per module simultaneously:
+
+```markdown
+<!-- .claude/agents/test-writer.md -->
+---
+name: test-writer
+description: Writes comprehensive unit tests for a given module
+tools: [Read, Write, Bash]
+model: claude-sonnet-4-6
+effort: normal
+---
+You are a test-writing specialist. Given a source module:
+1. Read all source files in the module
+2. Identify all public functions, classes, and edge cases
+3. Write comprehensive unit tests following the project's testing conventions from CLAUDE.md
+4. Run the tests to verify they pass
+5. Return a summary of tests written and coverage estimate
+```
+
+Orchestrator:
+```
+Write comprehensive tests for all three modules simultaneously.
+Use Task tool to spawn three test-writer agents in parallel:
+- Task: "Write tests for services/auth/", agent: test-writer
+- Task: "Write tests for services/api/", agent: test-writer  
+- Task: "Write tests for services/worker/", agent: test-writer
+```
+
+### Pattern 2: Code Review Pipeline
+
+Sequential pipeline: security review → performance review → style review:
+
+```
+Orchestrator spawns:
+1. Task("Security review of PR changes", agent: security-reviewer)
+   → waits for result
+2. If security issues found: Task("Fix security issues", agent: code-fixer)
+3. Task("Performance review of updated code", agent: performance-reviewer)
+4. Task("Final style and documentation check", agent: style-checker)
+```
+
+### Pattern 3: Parallel Codebase Migration
+
+Migrate an API across all service packages simultaneously:
+
+```
+Orchestrator:
+"Migrate all services from axios to fetch API.
+ Spawn one migration agent per service directory:
+ - Task for services/auth
+ - Task for services/api
+ - Task for services/worker
+ - Task for packages/client
+ Each agent should: find all axios usages, replace with fetch equivalents,
+ update tests, verify tests pass, and report back."
+```
+
+**Key constraint:** Agents in the same Agent Team session share the filesystem — avoid two agents writing to the same file simultaneously. Use path scoping to give each agent exclusive ownership of its directory.
+
+### Pattern 4: Incremental Analysis → Fix Loop
+
+```
+1. Orchestrator: spawn analysis-agent → "Find all TypeScript type errors"
+2. Receive: list of 47 type errors across 12 files
+3. Group by file
+4. For each group: spawn fix-agent with specific file context
+5. After all fix agents complete: spawn test-agent → "Run all tests, report failures"
+6. If failures: loop back to step 1 with narrowed scope
+```
+
+### Known Limitations (as of v2.1.126)
+
+| Limitation | Impact | Workaround |
+|------------|--------|-----------|
+| No direct inter-agent API calls | Agents can't call each other directly | Use filesystem mailbox: write output to file, other agent reads it |
+| Parent context not shared | Subagents start with CLAUDE.md only, not parent conversation | Pass critical context in task description or shared files |
+| Max concurrent agents | Practical limit ~10 parallel agents (memory/API rate limits) | Use sequential batches for >10 agents |
+| No agent state persistence across sessions | Agent memory clears when session ends | Write important outputs to files before session ends |
+| Agent Teams requires env flag | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` required | Include in `.claude/settings.json` via env block |
 
 ---
 

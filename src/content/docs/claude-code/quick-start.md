@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 2
   label: Quick Start
-lastUpdated: 2026-05-31
+lastUpdated: 2026-06-02
 ---
 
 # Quick Start — Claude Code for New Users
@@ -1153,6 +1153,87 @@ Add to `.claude/settings.json`:
 - What goes in your CLAUDE.md vs your rules files vs slash commands?
 
 **Goal:** Articulate your personal Claude Code workflow to a colleague.
+
+---
+
+## 11. June 2026 Tips & Best Practices
+
+### Fastest Path to a Productive Session
+
+The four-step pattern that experienced users follow every session:
+
+```
+1. Start in project root
+   cd ~/projects/my-project
+   claude
+   
+2. Check context budget immediately
+   > /context        ← see token usage before doing anything
+   
+3. Clear if coming from a previous unrelated task
+   > /clear          ← reset conversation, keep all config loaded
+   
+4. Use effort level wisely
+   > /config         ← set effort to match task complexity
+   (low for formatting, high for architecture)
+```
+
+### Session Rhythm for Long Tasks
+
+```
+Start:     /clear → describe overall goal → Claude makes plan
+Work:      Let Claude run tool loop autonomously
+Monitor:   Check /context at 50% — /compact proactively at 70%
+Capture:   At end of session: "Save key decisions to MEMORY.md"
+Resume:    /rename my-oauth-work → close → later: /resume my-oauth-work
+```
+
+### CLAUDE.md Best Practices (June 2026)
+
+The single most impactful thing you can do for a new project:
+
+```markdown
+# [Project Name]
+
+## Tech Stack
+- Language: TypeScript 5.4 + Node.js 20
+- Framework: Express 4
+- Database: PostgreSQL 16 via Drizzle ORM
+- Testing: Vitest + Supertest
+
+## Conventions (follow these exactly)
+- All async functions return Promise<T>, never throw — use Result<T, E> pattern
+- API handlers in src/handlers/, schemas in src/schemas/, services in src/services/
+- Every new endpoint needs: (1) Zod input schema, (2) handler, (3) route registration, (4) unit test
+
+## Do NOT
+- Use `any` type
+- Write raw SQL — always use Drizzle query builder
+- Commit secrets or .env files
+
+## Project Structure
+src/
+├── handlers/     # HTTP request handlers
+├── services/     # Business logic
+├── schemas/      # Zod validation schemas  
+├── db/           # Database layer (Drizzle)
+└── middleware/   # Express middleware
+```
+
+**Keep CLAUDE.md under 120 lines.** Move detailed reference material to `.claude/rules/` files with `paths:` globs so they only load for relevant file types.
+
+### Cost Management Quick Reference
+
+| Daily budget | Strategy | Expected cost |
+|-------------|---------|--------------|
+| Low (~$1/day) | Haiku for everything, Sonnet for complex only | $0.50–2/day |
+| Medium (~$5/day) | Sonnet default, Opus for hard problems | $2–8/day |
+| High (~$20/day) | Opus for most work, unrestricted | $10–30/day |
+
+- Use `/usage` to check costs mid-session
+- Enable prompt caching (automatic) — 80% cache hit = 73% cost reduction
+- Use `high` effort only when needed — it's 3–5x more expensive than `normal`
+- Haiku for CI/CD tasks — same quality for tool-use, fraction of the cost
 
 ---
 
