@@ -214,3 +214,573 @@ Environment variables:
 ```
 
 → Full reference: [Agent SDK Guide](./sdk-guide)
+
+---
+
+## Agent SDK Deep Reference
+
+### Subprocess Architecture
+
+The SDK works by spawning the Claude Code binary as a managed child process. Your application writes prompts to its stdin and reads newline-delimited JSON events from stdout. The binary manages the full agentic loop — tool execution, multi-turn conversation, and cost tracking — internally.
+
+```
+Your application
+    │
+    │ spawns subprocess
+    ▼
+claude --print [PROMPT] --output-format stream-json
+    │
+    │ streams JSON events on stdout
+    ▼
+SDK parses events:
+  - system   → { type: "system", subtype: "init", session_id, model, tools }
+  - assistant → { type: "assistant", message: { content: [...] }, turn_number }
+  - user      → { type: "user", message: { content: [...] } }  (echoed)
+  - tool_result → { type: "tool_result", tool_use_id, content, is_error }
+  - result    → { type: "result", subtype: "success"|"error", total_cost_usd, num_turns }
+  - error     → { type: "result", subtype: "error", error: { type, message } }
+```
+
+The SDK manages process lifecycle, stream parsing, and reconnection automatically. You only interact with high-level session objects.
+
+### All SDK Streaming Event Types — Full Field Reference
+
+| Event type | Subtype | Key fields | Description |
+|-----------|---------|-----------|-------------|
+| `system` | `init` | `session_id: string`, `model: string`, `tools: string[]`, `mcp_servers: object[]` | First event — session established |
+| `assistant` | — | `message: { role, content: ContentBlock[] }`, `turn_number: number` | Claude's response turn |
+| `user` | — | `message: { role, content: ContentBlock[] }` | Echoed user message or tool results |
+| `tool_result` | — | `tool_use_id: string`, `tool_name: string`, `content: string`, `is_error: boolean`, `duration_ms: number` | Result of a tool execution |
+| `result` | `success` | `total_cost_usd: number`, `session_id: string`, `num_turns: number`, `usage: { input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens }` | Session completed successfully |
+| `result` | `error` | `error: { type: string, message: string }` | Session terminated with error |
+| `result` | `error_max_turns` | `error: { type: "max_turns_exceeded", message }` | `--max-turns` limit reached |
+| `result` | `error_budget_exceeded` | `error: { type: "budget_exceeded", message }`, `total_cost_usd: number` | `--max-budget-usd` exceeded |
+
+**ContentBlock types inside `assistant.message.content`:**
+
+| Block type | Fields | Description |
+|-----------|--------|-------------|
+| `text` | `text: string` | Claude's text response |
+| `tool_use` | `id: string`, `name: string`, `input: object` | Tool call request |
+| `thinking` | `thinking: string` | Extended thinking content (Opus models) |
+
+### Python SDK — StatefulClient Multi-Turn Session
+
+```python
+import anthropic
+
+client = anthropic.Anthropic()
+
+# ── Multi-turn session with preserved context ──────────────────────
+def multi_turn_refactor(project_path: str) -> None:
+    """Run a multi-turn session that builds on previous turns."""
+    with client.beta.claude_code.sessions.stream(
+        model="claude-sonnet-4-6",
+        max_turns=30,
+        max_budget_usd=10.00,
+        permission_mode="acceptEdits",
+        tools=["Read", "Edit", "Write", "Bash"],
+        cwd=project_path,
+        claude_code_flags=["--bare"],
+        initial_message="Read the project CLAUDE.md and summarise the architecture.",
+    ) as stream:
+        session_id = None
+
+        for event in stream:
+            match event.type:
+                case "system":
+                    session_id = event.session_id
+                    print(f"Session {session_id} started, model: {event.model}")
+
+                case "assistant":
+                    for block in event.message.content:
+                        if block.type == "text":
+                            print(block.text, end="", flush=True)
+                        elif block.type == "tool_use":
+                            print(f"\n[→ {block.name}({list(block.input.keys())})]")
+
+                case "tool_result":
+                    if event.is_error:
+                        print(f"\n[✗ {event.tool_name} FAILED: {event.content[:100]}]")
+                    else:
+                        print(f"\n[✓ {event.tool_name} {event.duration_ms}ms]")
+
+                case "result":
+                    if event.subtype == "success":
+                        print(f"\n\nDone in {event.num_turns} turns.")
+                        print(f"Cost: ${event.total_cost_usd:.4f}")
+                        print(f"Tokens: {event.usage.input_tokens:,} in / "
+                              f"{event.usage.output_tokens:,} out / "
+                              f"{event.usage.cache_read_input_tokens:,} cache hits")
+                    elif event.subtype == "error_budget_exceeded":
+                        print(f"\nBudget exceeded after ${event.total_cost_usd:.4f}")
+                    else:
+                        print(f"\nError: {event.error.message}")
+
+if __name__ == "__main__":
+    multi_turn_refactor("/workspace/my-project")
+```
+
+### TypeScript SDK — StatefulClient Multi-Turn Session
+
+```typescript
+import Anthropic from "@anthropic-ai/sdk";
+// Note: StatefulClient is part of the claude-code SDK package
+import { ClaudeCode } from "@anthropic-ai/claude-code";
+
+interface ReviewResult {
+  findings: string[];
+  totalCostUsd: number;
+  numTurns: number;
+}
+
+async function runMultiTurnReview(
+  prDiff: string,
+  projectPath: string
+): Promise<ReviewResult> {
+  const client = new ClaudeCode.StatefulClient({
+    model: "claude-sonnet-4-6",
+    permissionMode: "default",
+    tools: ["Read", "Bash"],
+    maxBudgetUsd: 3.00,
+    cwd: projectPath,
+    claudeCodeFlags: ["--bare"],
+  });
+
+  const session = await client.createSession();
+  const findings: string[] = [];
+
+  try {
+    // Turn 1: Provide context
+    console.log("Turn 1: Loading PR context...");
+    await session.send(
+      `Here is the PR diff to review:\n\`\`\`diff\n${prDiff}\n\`\`\``
+    );
+
+    // Turn 2: Request security analysis
+    console.log("Turn 2: Requesting security analysis...");
+    const securityResult = await session.send(
+      "List all security vulnerabilities in this diff. " +
+      "Format each as: [SEVERITY] file:line — description"
+    );
+    if (securityResult.text) findings.push(securityResult.text);
+
+    // Turn 3: Request correctness check
+    console.log("Turn 3: Checking correctness...");
+    const correctnessResult = await session.send(
+      "Now check for logical errors, missing error handling, " +
+      "and any breaking API changes. Same format."
+    );
+    if (correctnessResult.text) findings.push(correctnessResult.text);
+
+    return {
+      findings,
+      totalCostUsd: session.totalCostUsd,
+      numTurns: session.numTurns,
+    };
+  } finally {
+    await session.close();
+  }
+}
+
+// Usage
+runMultiTurnReview(process.env.PR_DIFF ?? "", process.cwd())
+  .then(({ findings, totalCostUsd, numTurns }) => {
+    console.log(`\nReview complete: ${numTurns} turns, $${totalCostUsd.toFixed(4)}`);
+    findings.forEach((f) => console.log(f));
+  })
+  .catch(console.error);
+```
+
+### Parallel Workload Management with Session Pooling (Python)
+
+```python
+import asyncio
+import anthropic
+from dataclasses import dataclass
+from typing import AsyncIterator
+
+client = anthropic.Anthropic()
+
+@dataclass
+class ServiceReviewResult:
+    service_name: str
+    findings: list[str]
+    cost_usd: float
+    num_turns: int
+    error: str | None = None
+
+async def review_service(
+    service_name: str,
+    service_path: str,
+    semaphore: asyncio.Semaphore,
+) -> ServiceReviewResult:
+    """Review one service, respecting the concurrency semaphore."""
+    async with semaphore:
+        findings: list[str] = []
+        cost = 0.0
+        turns = 0
+        error = None
+
+        try:
+            with client.beta.claude_code.sessions.stream(
+                model="claude-haiku-4-5",          # Haiku for cost efficiency
+                max_turns=10,
+                max_budget_usd=1.00,               # Per-service budget cap
+                permission_mode="bypassPermissions",
+                tools=["Read", "Grep"],
+                cwd=service_path,
+                claude_code_flags=["--bare"],
+                initial_message=(
+                    f"Review the {service_name} service for security issues. "
+                    "Output JSON: {\"findings\": [{\"file\", \"line\", \"severity\", \"desc\"}]}"
+                ),
+            ) as stream:
+                for event in stream:
+                    if event.type == "assistant":
+                        for block in event.message.content:
+                            if block.type == "text":
+                                findings.append(block.text)
+                    elif event.type == "result" and event.subtype == "success":
+                        cost = event.total_cost_usd
+                        turns = event.num_turns
+                    elif event.type == "result" and event.subtype != "success":
+                        error = getattr(event, "error", {}).get("message", "Unknown error")
+
+        except Exception as exc:
+            error = str(exc)
+
+        return ServiceReviewResult(
+            service_name=service_name,
+            findings=findings,
+            cost_usd=cost,
+            num_turns=turns,
+            error=error,
+        )
+
+async def review_all_services(max_concurrent: int = 3) -> None:
+    """Pool-managed parallel review — at most max_concurrent sessions at once."""
+    services = [
+        ("auth-service",     "/workspace/services/auth"),
+        ("payment-service",  "/workspace/services/payments"),
+        ("api-gateway",      "/workspace/services/gateway"),
+        ("notification-svc", "/workspace/services/notifications"),
+        ("search-service",   "/workspace/services/search"),
+    ]
+
+    semaphore = asyncio.Semaphore(max_concurrent)    # Session pool limit
+
+    tasks = [
+        review_service(name, path, semaphore)
+        for name, path in services
+    ]
+    results: list[ServiceReviewResult] = await asyncio.gather(*tasks)
+
+    total_cost = sum(r.cost_usd for r in results)
+    print(f"\n{'='*60}")
+    print(f"Reviewed {len(results)} services | Total cost: ${total_cost:.4f}")
+    print(f"{'='*60}")
+
+    for result in sorted(results, key=lambda r: r.cost_usd, reverse=True):
+        status = "ERROR" if result.error else "OK"
+        print(f"  [{status}] {result.service_name}: "
+              f"{result.num_turns} turns, ${result.cost_usd:.4f}")
+        if result.error:
+            print(f"         Error: {result.error}")
+
+if __name__ == "__main__":
+    asyncio.run(review_all_services(max_concurrent=3))
+```
+
+### OAuth Authentication Flow for SDK
+
+The SDK supports four authentication modes. Choose based on your deployment context:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│              SDK Authentication Decision Tree                    │
+│                                                                  │
+│  Are you running in CI / server-to-server?                      │
+│  ├── Yes, using Anthropic directly  → ANTHROPIC_API_KEY         │
+│  ├── Yes, on AWS                    → Bedrock IAM role / OIDC   │
+│  ├── Yes, on GCP                    → Vertex AI WIF             │
+│  └── No, per-user browser session   → OAuth flow (below)        │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Browser OAuth flow (claude.ai/code remote sessions):**
+
+```
+1. Your app redirects user → https://claude.ai/oauth/authorize
+   ?client_id=YOUR_CLIENT_ID
+   &redirect_uri=YOUR_CALLBACK
+   &response_type=code
+   &scope=claude_code:read+claude_code:write
+
+2. User approves access on claude.ai
+
+3. Claude redirects → YOUR_CALLBACK?code=AUTH_CODE
+
+4. Your app exchanges code:
+   POST https://claude.ai/oauth/token
+   { "code": AUTH_CODE, "client_id": ..., "client_secret": ..., "grant_type": "authorization_code" }
+   → { "access_token": "...", "refresh_token": "...", "expires_in": 3600 }
+
+5. Use in SDK:
+   new ClaudeCode.StatefulClient({ auth: { token: access_token } })
+
+6. Refresh when expired (access token TTL: 1 hour):
+   POST https://claude.ai/oauth/token
+   { "refresh_token": "...", "grant_type": "refresh_token" }
+```
+
+**Environment variable configuration by auth type:**
+
+| Auth type | Required variables | Optional |
+|-----------|------------------|---------|
+| Anthropic API key | `ANTHROPIC_API_KEY` | `CLAUDE_CODE_MODEL` |
+| AWS Bedrock | `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION` | `CLAUDE_CODE_BEDROCK_SERVICE_TIER` |
+| GCP Vertex AI | `CLAUDE_CODE_USE_VERTEX=1`, `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION` | `GOOGLE_APPLICATION_CREDENTIALS` |
+| OAuth (user) | `CLAUDE_CODE_CLIENT_ID`, `CLAUDE_CODE_CLIENT_SECRET`, `CLAUDE_CODE_REDIRECT_URI` | — |
+
+### CI/CD Integration Patterns for SDK
+
+When embedding the SDK in CI pipelines, apply these flags consistently:
+
+```python
+# CI-optimised session configuration
+with client.beta.claude_code.sessions.stream(
+    model="claude-haiku-4-5",           # Use Haiku for CI cost efficiency
+    max_turns=10,                        # Hard turn limit
+    max_budget_usd=1.50,                 # Hard cost ceiling per run
+    permission_mode="bypassPermissions", # Required in headless CI
+    tools=["Read", "Grep", "Bash"],
+    claude_code_flags=[
+        "--bare",                        # 14% faster, skips non-essential steps
+        "--no-color",                    # Clean output for CI logs
+    ],
+    cwd="/workspace",
+    initial_message=os.environ["CI_TASK"],
+) as stream:
+    ...
+```
+
+**Key CI flags:**
+
+| Flag / option | Why needed in CI | Value |
+|--------------|----------------|-------|
+| `--bare` | Faster startup, no interactive UI overhead | Always set in CI |
+| `--no-color` | Prevents ANSI escape codes in CI logs | Always set in CI |
+| `permission_mode="bypassPermissions"` | No human to approve prompts | Trusted repos only |
+| `max_turns=N` | Prevents infinite loops if task is ambiguous | 10–25 depending on task |
+| `max_budget_usd=N` | Hard cost cap per CI job | $0.50–$5.00 |
+| `model="claude-haiku-4-5"` | 20× cheaper than Sonnet for simple tasks | Lint, format, trivial review |
+
+**GitHub Actions with Python SDK (no `claude-code-action`):**
+
+```yaml
+- name: Run custom Claude SDK task
+  run: python ci/claude_review.py
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    CI_TASK: "Review the diff for OWASP Top 10 issues. Output JSON."
+    PYTHONPATH: ${{ github.workspace }}
+```
+
+### Production Patterns
+
+#### Error Handling and Retry Logic
+
+```python
+import time
+import anthropic
+from anthropic import APIStatusError, APIConnectionError
+
+def run_with_retry(
+    initial_message: str,
+    max_retries: int = 3,
+    backoff_base: float = 2.0,
+) -> dict:
+    """Run a Claude Code session with exponential backoff retry."""
+    client = anthropic.Anthropic()
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            result_data = {}
+            with client.beta.claude_code.sessions.stream(
+                model="claude-sonnet-4-6",
+                max_turns=15,
+                max_budget_usd=3.00,
+                tools=["Read", "Edit"],
+                initial_message=initial_message,
+            ) as stream:
+                for event in stream:
+                    if event.type == "result":
+                        result_data = {
+                            "subtype": event.subtype,
+                            "cost_usd": getattr(event, "total_cost_usd", 0),
+                            "num_turns": getattr(event, "num_turns", 0),
+                        }
+                        if event.subtype != "success":
+                            raise RuntimeError(
+                                f"Session ended with {event.subtype}: "
+                                f"{getattr(event, 'error', {}).get('message', '')}"
+                            )
+            return result_data
+
+        except (APIConnectionError, APIStatusError) as exc:
+            last_error = exc
+            if attempt < max_retries - 1:
+                wait = backoff_base ** attempt
+                print(f"Attempt {attempt+1} failed ({exc}). Retrying in {wait}s...")
+                time.sleep(wait)
+            continue
+
+        except RuntimeError as exc:
+            # Session errors (budget exceeded, max turns) — don't retry
+            raise
+
+    raise RuntimeError(f"All {max_retries} attempts failed: {last_error}") from last_error
+```
+
+#### Cost Tracking from SDK Events
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass
+class SessionCostTracker:
+    session_id: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    total_cost_usd: float = 0.0
+    tool_calls: list[str] = field(default_factory=list)
+
+    def update_from_result(self, event) -> None:
+        if hasattr(event, "usage"):
+            self.input_tokens = event.usage.input_tokens
+            self.output_tokens = event.usage.output_tokens
+            self.cache_read_tokens = event.usage.cache_read_input_tokens
+            self.cache_write_tokens = event.usage.cache_creation_input_tokens
+        self.total_cost_usd = getattr(event, "total_cost_usd", 0.0)
+
+    def report(self) -> str:
+        cache_pct = (
+            self.cache_read_tokens / max(self.input_tokens, 1) * 100
+        )
+        return (
+            f"Session {self.session_id}: "
+            f"{self.input_tokens:,} in / {self.output_tokens:,} out / "
+            f"{self.cache_read_tokens:,} cached ({cache_pct:.0f}%) | "
+            f"${self.total_cost_usd:.4f} | "
+            f"{len(self.tool_calls)} tool calls: {', '.join(set(self.tool_calls))}"
+        )
+
+# Usage in stream loop:
+tracker = SessionCostTracker()
+for event in stream:
+    if event.type == "system":
+        tracker.session_id = event.session_id
+    elif event.type == "tool_result":
+        tracker.tool_calls.append(event.tool_name)
+    elif event.type == "result":
+        tracker.update_from_result(event)
+
+print(tracker.report())
+```
+
+#### Streaming with Timeout
+
+```python
+import asyncio
+
+async def stream_with_timeout(prompt: str, timeout_seconds: float = 300.0) -> str:
+    """Run a streaming session with a wall-clock timeout."""
+    client = anthropic.Anthropic()
+    output_parts: list[str] = []
+
+    async def _run() -> None:
+        with client.beta.claude_code.sessions.stream(
+            model="claude-sonnet-4-6",
+            max_turns=10,
+            max_budget_usd=2.00,
+            tools=["Read", "Bash"],
+            initial_message=prompt,
+        ) as stream:
+            for event in stream:
+                if event.type == "assistant":
+                    for block in event.message.content:
+                        if block.type == "text":
+                            output_parts.append(block.text)
+
+    try:
+        await asyncio.wait_for(_run(), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        raise TimeoutError(
+            f"Session exceeded {timeout_seconds}s wall-clock limit. "
+            f"Partial output: {len(output_parts)} chunks collected."
+        )
+
+    return "".join(output_parts)
+```
+
+#### Pool Management for Concurrent Sessions
+
+```python
+import asyncio
+from collections import deque
+
+class SessionPool:
+    """Bounded pool of concurrent Claude Code sessions."""
+
+    def __init__(self, max_sessions: int = 5):
+        self._semaphore = asyncio.Semaphore(max_sessions)
+        self._total_cost = 0.0
+        self._completed = 0
+        self._lock = asyncio.Lock()
+
+    async def run(self, task: str, **session_kwargs) -> dict:
+        """Run a session, respecting pool concurrency limit."""
+        async with self._semaphore:
+            result = {}
+            client = anthropic.Anthropic()
+            with client.beta.claude_code.sessions.stream(
+                initial_message=task,
+                **session_kwargs,
+            ) as stream:
+                for event in stream:
+                    if event.type == "result":
+                        result = {
+                            "subtype": event.subtype,
+                            "cost_usd": getattr(event, "total_cost_usd", 0.0),
+                        }
+
+            async with self._lock:
+                self._total_cost += result.get("cost_usd", 0.0)
+                self._completed += 1
+
+            return result
+
+    @property
+    def total_cost_usd(self) -> float:
+        return self._total_cost
+
+    @property
+    def completed_sessions(self) -> int:
+        return self._completed
+
+# Usage
+async def main():
+    pool = SessionPool(max_sessions=4)
+    tasks = [
+        pool.run(f"Review service {i}", model="claude-haiku-4-5", max_turns=5, max_budget_usd=0.50, tools=["Read"])
+        for i in range(10)
+    ]
+    results = await asyncio.gather(*tasks)
+    print(f"Ran {pool.completed_sessions} sessions, total cost: ${pool.total_cost_usd:.4f}")
+
+asyncio.run(main())
+```

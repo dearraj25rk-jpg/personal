@@ -196,3 +196,290 @@ claude plugin install /workspace/my-plugin --link
 | `mcp-servers` | Auto-registered | No | Disabled via settings |
 
 → Full reference: [Plugins Guide](./plugins-guide)
+
+---
+
+## Plugins Deep Reference
+
+### All 10 Plugin Component Types — Expanded Directory Layout
+
+A fully-featured plugin may include any combination of the 10 component types. Only `plugin.json` is required.
+
+```
+my-plugin/
+├── plugin.json          ← manifest (required)
+├── CLAUDE.md            ← component 1: project memory — injected into context
+├── rules/               ← component 2: path-scoped rules (conditional loading)
+│   ├── standards.md           # applies globally
+│   └── typescript.md          # frontmatter: paths: ["**/*.ts","**/*.tsx"]
+├── skills/              ← component 3: auto-invokable skills
+│   └── my-skill/
+│       └── SKILL.md           # skill description, trigger phrases, body
+├── commands/            ← component 4: slash commands
+│   └── my-command.md          # invoked with /plugin-name:my-command
+├── output-styles/       ← component 5: response styles
+│   └── concise.md             # selected via /config → Output Style
+├── hooks/               ← component 6: lifecycle hooks
+│   └── hooks.json             # PreBash, PostBash, PreFileWrite, PostFileWrite...
+├── mcp-servers/         ← component 7: MCP server configs
+│   └── servers.json           # auto-registered with session
+├── agents/              ← component 8: subagent definitions
+│   └── specialist.md          # invoked via Task tool with subagent_type
+├── memory/              ← component 9: persistent memory
+│   └── MEMORY.md              # survives compaction; plugin-specific memory
+├── monitors/            ← component 10: background monitors
+│   └── build-watcher.json     # watches paths, fires events on change
+└── themes/              ← bonus: color themes (not counted in 10)
+    └── my-theme.json          # selected with /theme plugin-name:my-theme
+```
+
+### plugin.json Manifest — Full Schema
+
+The manifest declares plugin identity, version constraints, user-configurable settings, and requested permissions. All fields except `name` and `version` are optional.
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "What this plugin does — shown in claude plugin list",
+  "author": "Your Name <you@example.com>",
+  "homepage": "https://github.com/you/my-plugin",
+  "license": "MIT",
+  "minClaudeCodeVersion": "2.1.100",
+  "maxClaudeCodeVersion": "3.0.0",
+  "engines": {
+    "claude-code": ">=2.1.0 <3.0.0",
+    "node": ">=20.0.0"
+  },
+  "keywords": ["security", "audit", "owasp"],
+  "userConfig": {
+    "apiKey": {
+      "type": "string",
+      "description": "API key for the external service",
+      "secret": true,
+      "required": true
+    },
+    "region": {
+      "type": "string",
+      "description": "AWS/GCP region for the service",
+      "default": "us-east-1",
+      "enum": ["us-east-1", "us-west-2", "eu-west-1"]
+    },
+    "enableAuditLog": {
+      "type": "boolean",
+      "description": "Log all tool calls to SIEM",
+      "default": false
+    },
+    "maxConcurrency": {
+      "type": "number",
+      "description": "Max parallel subagent sessions",
+      "default": 3,
+      "minimum": 1,
+      "maximum": 10
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Read",
+      "Edit",
+      "WebFetch(https://api.your-service.com:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(sudo*)"
+    ],
+    "hooks": ["PreBash", "PostBash", "PreFileWrite"]
+  },
+  "files": {
+    "commands": "commands/",
+    "hooks": "hooks/hooks.json",
+    "mcpServers": "mcp-servers/servers.json"
+  }
+}
+```
+
+### CLAUDE_PLUGIN_ROOT vs CLAUDE_PLUGIN_DATA
+
+These two environment variables control separate aspects of plugin storage:
+
+| Variable | Controls | Default location | Contains |
+|----------|---------|-----------------|---------|
+| `CLAUDE_PLUGIN_ROOT` | Plugin **installation** directory | `~/.claude/plugins/` (user) or `.claude/plugins/` (project) | Plugin code: `plugin.json`, commands, hooks, skills, agents |
+| `CLAUDE_PLUGIN_DATA` | Plugin **data and config** directory | `~/.claude/plugin-data/<plugin-name>/` | User configuration values, plugin state, generated files, local cache |
+
+**Key distinction:** `CLAUDE_PLUGIN_ROOT` is where Claude Code looks for the plugin's _code_. `CLAUDE_PLUGIN_DATA` is where the plugin _writes_ its runtime state, user config values, and persistent data. Plugins should never write into their own `PLUGIN_ROOT` — that directory should be treated as read-only after installation.
+
+**Usage example in a hook script:**
+
+```bash
+#!/usr/bin/env bash
+# hooks/post-bash.sh
+# Read user config from PLUGIN_DATA; write logs to PLUGIN_DATA
+
+CONFIG_FILE="${CLAUDE_PLUGIN_DATA}/config.json"
+LOG_FILE="${CLAUDE_PLUGIN_DATA}/audit.log"
+
+API_KEY=$(jq -r '.apiKey' "$CONFIG_FILE")
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) BASH: $CLAUDE_TOOL_INPUT" >> "$LOG_FILE"
+```
+
+**Override for enterprise deployments:**
+
+```bash
+# Force all plugins to use a shared network location
+export CLAUDE_PLUGIN_ROOT=/mnt/shared/claude-plugins
+export CLAUDE_PLUGIN_DATA=/var/lib/claude-plugin-data/$USER
+```
+
+### Installation Scopes — Full Detail
+
+Plugins can be installed at four scopes. Inner scopes override outer scopes for same-named components.
+
+| Scope | Installation path | Who sees it | Override priority |
+|-------|-----------------|-------------|------------------|
+| **User** | `~/.claude/plugins/<name>/` | You, all your projects | 2 (overrides managed) |
+| **Project** | `.claude/plugins/<name>/` | Everyone on this project | 3 (overrides user) |
+| **Local** | `.claude/plugins/<name>.local/` | You, this project only | 4 (highest — overrides all) |
+| **Managed** | MDM/enterprise policy path | All org users | 1 (lowest — base layer) |
+
+**Install commands by scope:**
+
+```bash
+# User scope (default)
+claude plugin install @myorg/claude-standards
+
+# Project scope (committed to .claude/plugins/ for whole team)
+claude plugin install @myorg/claude-standards --scope project
+
+# Local scope (you only, not committed)
+claude plugin install /path/to/my-dev-plugin --scope local
+
+# Check effective scope of all installed plugins
+claude plugin list --verbose
+```
+
+**Local `--plugin-dir` flag** overrides all scope discovery for a single session:
+
+```bash
+# Test a plugin under development without installing it
+claude --plugin-dir /workspace/my-plugin-dev "Run my custom command"
+```
+
+### Plugin Discovery Order and Namespace Resolution
+
+When Claude Code starts, it discovers and loads plugins in this order:
+
+```
+1. Managed plugins (enterprise MDM path)
+       ↓
+2. User plugins  (~/.claude/plugins/*)
+       ↓
+3. Project plugins  (.claude/plugins/*)
+       ↓
+4. Local plugins  (.claude/plugins/*.local/)
+       ↓
+5. --plugin-dir override (CLI flag, session-only)
+```
+
+Later stages override earlier stages for **same-named components**. For example, if both the user plugin and project plugin define a `/my-plugin:deploy` command, the project plugin's version wins.
+
+**Namespace rules:**
+
+- All plugin components are namespaced by plugin name: `/plugin-name:command`
+- Accessing without namespace (e.g., `/deploy`) resolves to the closest-scope plugin that provides it
+- Conflicts (two plugins providing `/deploy`) are reported on startup with `claude plugin list --conflicts`
+- Skills are auto-invoked without namespace; if two plugins have matching trigger phrases, priority follows discovery order (project > user)
+
+**Inspecting the resolved plugin state:**
+
+```bash
+# List all installed plugins with scope and version
+claude plugin list
+
+# Show which plugin wins for each command/skill/hook
+claude plugin list --resolve
+
+# Check for namespace conflicts
+claude plugin list --conflicts
+
+# Reload plugins without restarting Claude Code
+/reload-plugins
+```
+
+### Building and Distributing Plugins
+
+**Step 1: Create the plugin structure**
+
+```bash
+mkdir my-plugin && cd my-plugin
+cat > plugin.json <<'EOF'
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "description": "My Claude Code plugin",
+  "author": "You <you@example.com>",
+  "license": "MIT",
+  "minClaudeCodeVersion": "2.1.100"
+}
+EOF
+mkdir -p commands skills/my-skill hooks
+```
+
+**Step 2: Test locally before publishing**
+
+```bash
+# Install as a local plugin (you only, not committed)
+claude plugin install . --scope local
+
+# Or use --plugin-dir for a one-off session test
+claude --plugin-dir . "Test my plugin's /my-plugin:greet command"
+
+# Reload after edits (no restart needed)
+/reload-plugins
+```
+
+**Step 3: Publish to npm (public or private registry)**
+
+```bash
+# package.json is optional but recommended for npm compatibility
+cat > package.json <<'EOF'
+{
+  "name": "@myorg/claude-my-plugin",
+  "version": "1.0.0",
+  "description": "My Claude Code plugin",
+  "files": ["plugin.json", "commands/", "skills/", "hooks/", "agents/"]
+}
+EOF
+
+# Publish to public npm registry
+npm publish --access public
+
+# Or publish to private org registry
+npm publish --registry https://npm.company.com
+
+# Users install via:
+# claude plugin install @myorg/claude-my-plugin
+```
+
+**Step 4: Git-based distribution (for teams)**
+
+```bash
+# Tag a release
+git tag v1.0.0 && git push origin v1.0.0
+
+# Users install via:
+# claude plugin install github:myorg/my-plugin#v1.0.0
+# claude plugin install gitlab:myorg/my-plugin#v1.0.0
+
+# Pin to SHA for production stability:
+# claude plugin install github:myorg/my-plugin#a3f2c1d
+```
+
+**Step 5: Submit to Claude Code marketplace** (when available)
+
+The Claude Code marketplace (in development as of v2.1.126) will allow discovery, ratings, and automatic updates. Prepare by:
+- Including a comprehensive `README.md`
+- Adding `"homepage"` and `"keywords"` to `plugin.json`
+- Tagging releases with semantic versioning
+- Providing a `CHANGELOG.md`

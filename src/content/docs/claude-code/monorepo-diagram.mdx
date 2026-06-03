@@ -80,3 +80,401 @@ Service-specific `.mcp.json` in `services/api/`:
 Claude Code merges both — root servers plus service servers are all active.
 
 → Full guide: [Monorepo & Multi-Service Guide](./monorepo-guide)
+
+---
+
+## CLAUDE.md Hierarchy for a 5-Service Monorepo
+
+All CLAUDE.md files load bottom-up: root first, then each parent toward the working directory. More-specific files win on conflicting instructions.
+
+```
+/repo-root/
+├── CLAUDE.md                         ← root-level: loaded for every service, always
+├── .claude/
+│   ├── settings.json                 ← shared tool permissions for all services
+│   └── rules/
+│       ├── shared-standards.md       ← coding standards: applies to all services
+│       ├── no-secrets.md             ← secret scanning rules: applies everywhere
+│       └── ts-style.md              ← paths: ["**/*.ts"] — TS files only
+├── services/
+│   ├── auth/
+│   │   ├── CLAUDE.md                 ← auth service context: JWT, OAuth patterns
+│   │   └── .claude/
+│   │       ├── settings.json         ← auth-specific tool permissions
+│   │       └── rules/
+│   │           └── auth-patterns.md  ← paths: ["services/auth/**"]
+│   ├── payments/
+│   │   ├── CLAUDE.md                 ← payments context: PCI-DSS rules, Stripe SDK
+│   │   └── .claude/
+│   │       └── rules/
+│   │           └── pci-rules.md      ← paths: ["services/payments/**"]
+│   ├── api-gateway/
+│   │   ├── CLAUDE.md                 ← gateway context: rate limiting, routing
+│   │   └── .claude/
+│   │       └── rules/
+│   │           └── gateway-rules.md  ← paths: ["services/api-gateway/**"]
+│   ├── worker/
+│   │   └── CLAUDE.md                 ← worker context: async jobs, queues
+│   └── frontend/
+│       ├── CLAUDE.md                 ← frontend context: React, a11y, i18n
+│       └── .claude/
+│           └── rules/
+│               └── react-rules.md    ← paths: ["services/frontend/**/*.tsx"]
+└── packages/
+    └── shared/
+        └── CLAUDE.md                 ← shared lib context: API contracts, types
+```
+
+When Claude works in `services/payments/src/checkout.ts`, it loads:
+1. `/repo-root/CLAUDE.md`
+2. `/repo-root/.claude/rules/shared-standards.md`
+3. `/repo-root/.claude/rules/no-secrets.md`
+4. `/repo-root/.claude/rules/ts-style.md` (path match: `**/*.ts`)
+5. `/repo-root/services/payments/CLAUDE.md`
+6. `/repo-root/services/payments/.claude/rules/pci-rules.md` (path match: `services/payments/**`)
+
+`services/auth/CLAUDE.md` and `auth-patterns.md` are **not loaded** — zero tokens consumed.
+
+---
+
+## Path-Scoped Rules for Domain Isolation
+
+Path-scoped rules let you attach domain-specific instructions to file patterns without loading them for unrelated work.
+
+### Syntax
+
+```yaml
+# .claude/rules/pci-rules.md
+---
+description: PCI-DSS compliance rules for payments service
+paths:
+  - "services/payments/**"
+  - "packages/billing/**"
+---
+
+## PCI-DSS Compliance Rules
+
+- Never log full card numbers; mask as `****-****-****-1234`
+- Card data must only transit through the `payments` service — never the gateway or frontend
+- All card-related fields must use the `SensitiveString` type wrapper
+- Stripe SDK calls must use idempotency keys on all charge operations
+- Any new endpoint handling card data requires a comment: `# PCI: <reason>`
+```
+
+### Multiple path patterns per rule file
+
+```yaml
+---
+paths:
+  - "**/*.test.ts"
+  - "**/*.spec.ts"
+  - "**/__tests__/**"
+---
+
+## Testing Standards
+
+- Use `describe`/`it` block structure — never flat `test()` at top level
+- Every `it` block must have exactly one `expect` assertion unless testing multiple aspects of one operation
+- Mock external services using `vi.mock()` — never make real network calls in unit tests
+- Test files must import from `@/test-utils` not from testing library directly
+```
+
+### Domain isolation example
+
+```yaml
+# .claude/rules/infra-rules.md
+---
+paths:
+  - "infra/**"
+  - "terraform/**"
+  - ".github/workflows/**"
+---
+
+## Infrastructure Rules
+
+- Never hardcode AWS account IDs — use `var.account_id`
+- All S3 buckets must have `force_destroy = false` in production modules
+- GitHub Actions workflows must pin action versions to a full SHA, not a tag
+- Terraform modules must include `description` on every variable
+```
+
+When Claude edits `services/frontend/Button.tsx`, `infra-rules.md` contributes zero tokens to the context window.
+
+---
+
+## Shared vs Service-Scoped MCP Server Architecture
+
+### Root `.mcp.json` — servers available to all services
+
+```json
+{
+  "servers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-github"],
+      "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
+    },
+    "linear": {
+      "command": "npx",
+      "args": ["-y", "@linear/mcp-server"],
+      "env": { "LINEAR_API_KEY": "${LINEAR_API_KEY}" }
+    },
+    "datadog": {
+      "command": "npx",
+      "args": ["-y", "@datadog/mcp-server"],
+      "env": { "DD_API_KEY": "${DD_API_KEY}", "DD_APP_KEY": "${DD_APP_KEY}" }
+    }
+  }
+}
+```
+
+### Service-scoped `.mcp.json` — only active when working in that service
+
+```json
+// services/auth/.mcp.json
+{
+  "servers": {
+    "auth0": {
+      "command": "npx",
+      "args": ["-y", "@auth0/mcp-server"],
+      "env": { "AUTH0_DOMAIN": "${AUTH0_DOMAIN}", "AUTH0_CLIENT_SECRET": "${AUTH0_CLIENT_SECRET}" }
+    }
+  }
+}
+```
+
+```json
+// services/payments/.mcp.json
+{
+  "servers": {
+    "stripe": {
+      "command": "npx",
+      "args": ["-y", "@stripe/mcp-server"],
+      "env": { "STRIPE_SECRET_KEY": "${STRIPE_SECRET_KEY}" }
+    },
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-postgres"],
+      "env": { "DATABASE_URL": "${PAYMENTS_DATABASE_URL}" }
+    }
+  }
+}
+```
+
+Claude Code merges root + service `.mcp.json` files. When working in `services/payments/`, the active MCP servers are: `github`, `linear`, `datadog`, `stripe`, `postgres`. When working in `services/frontend/`, only `github`, `linear`, `datadog` are active — no payment or auth credentials are exposed.
+
+| Scope | Use for | Example servers |
+|-------|---------|----------------|
+| Root `.mcp.json` | Cross-cutting tools every service needs | GitHub, Linear, Datadog, Slack |
+| Service `.mcp.json` | Service-specific datastores or external APIs | Postgres (per DB), Stripe, Auth0 |
+| Personal `~/.claude/.mcp.json` | Developer tools not committed to repo | Local DB GUI, personal Notion |
+
+---
+
+## Agent Teams Cross-Service Coordination Pattern
+
+For tasks that span multiple services (e.g., "add a new user field end-to-end"), use an orchestrator agent that spawns per-service subagents.
+
+### Orchestrator CLAUDE.md for cross-service tasks
+
+```markdown
+# Cross-Service Orchestration
+
+When a task touches more than one service directory:
+
+1. Identify all affected services from the task description
+2. For each affected service, spawn a subagent with:
+   - Working directory set to that service root
+   - The service-specific CLAUDE.md loaded automatically
+   - A clear, scoped subtask that does not overlap with other subagents
+3. Collect subtask results and verify interface contracts match across services
+4. Run integration tests from the root after all subagent tasks complete
+5. Create a single PR with all changes — do not create per-service PRs
+```
+
+### Example: adding a `displayName` field across 3 services
+
+```
+Orchestrator (root context)
+├── Subagent A: services/auth/
+│   Task: "Add displayName to UserRecord, update JWT claims, update auth tests"
+│   CLAUDE.md: auth patterns, JWT rules
+│   MCP: auth0, github
+│
+├── Subagent B: services/api-gateway/
+│   Task: "Expose displayName in /users endpoint response, update OpenAPI spec"
+│   CLAUDE.md: gateway routing rules
+│   MCP: github
+│
+└── Subagent C: services/frontend/
+    Task: "Display displayName in ProfileHeader component, add Storybook story"
+    CLAUDE.md: React/a11y rules
+    MCP: github
+
+Orchestrator (after subagents complete):
+  → Verify auth JWT claims match gateway response schema
+  → Run: npm run test:integration
+  → Create single PR: feat(user): add displayName across auth, gateway, frontend
+```
+
+### Subagent invocation pattern
+
+```
+You are working in the `services/auth` directory of a monorepo.
+Your task is narrowly scoped to this service only.
+
+Task: Add `displayName` field to `UserRecord` interface in `src/types/user.ts`,
+update `buildJwtClaims()` in `src/auth/jwt.ts` to include it,
+and update the corresponding unit tests.
+
+Do not touch any files outside `services/auth/`.
+When done, report: files changed, tests passing, and any interface changes
+that downstream services must adapt to.
+```
+
+---
+
+## CI/CD Matrix Build with Change Detection
+
+Only build and test the services that actually changed. This keeps CI fast in large monorepos.
+
+```yaml
+# .github/workflows/ci.yml
+name: Monorepo CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      auth: ${{ steps.filter.outputs.auth }}
+      payments: ${{ steps.filter.outputs.payments }}
+      api-gateway: ${{ steps.filter.outputs.api-gateway }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      worker: ${{ steps.filter.outputs.worker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            auth:
+              - 'services/auth/**'
+              - 'packages/shared/**'
+            payments:
+              - 'services/payments/**'
+              - 'packages/shared/**'
+            api-gateway:
+              - 'services/api-gateway/**'
+              - 'packages/shared/**'
+            frontend:
+              - 'services/frontend/**'
+              - 'packages/shared/**'
+            worker:
+              - 'services/worker/**'
+              - 'packages/shared/**'
+
+  build-auth:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.auth == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude Code — Auth service review and test
+        working-directory: services/auth
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_PERMISSION_MODE: bypassPermissions
+        run: |
+          claude --print "$(cat .claude/commands/ci-check.md)" \
+            --output-format stream-json \
+            | tee /tmp/claude-auth.jsonl
+
+  build-payments:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.payments == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude Code — Payments service review and test
+        working-directory: services/payments
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_PERMISSION_MODE: bypassPermissions
+        run: |
+          claude --print "$(cat .claude/commands/ci-check.md)" \
+            --output-format stream-json \
+            | tee /tmp/claude-payments.jsonl
+
+  build-frontend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude Code — Frontend review and test
+        working-directory: services/frontend
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_PERMISSION_MODE: bypassPermissions
+        run: |
+          claude --print "$(cat .claude/commands/ci-check.md)" \
+            --output-format stream-json \
+            | tee /tmp/claude-frontend.jsonl
+```
+
+> Note: `packages/shared/**` is included in every service filter because a change to shared types may require all services to be validated.
+
+---
+
+## Per-Service Model Selection
+
+Different services have different complexity profiles. Match the model to the task to control cost and latency.
+
+```json
+// services/worker/.claude/settings.json
+{
+  "model": "claude-haiku-4-5",
+  "env": {
+    "ANTHROPIC_MODEL": "claude-haiku-4-5"
+  }
+}
+```
+
+```json
+// services/payments/.claude/settings.json
+{
+  "model": "claude-sonnet-4-6",
+  "env": {
+    "ANTHROPIC_MODEL": "claude-sonnet-4-6"
+  }
+}
+```
+
+```json
+// services/auth/.claude/settings.json
+{
+  "model": "claude-opus-4-5",
+  "env": {
+    "ANTHROPIC_MODEL": "claude-opus-4-5"
+  }
+}
+```
+
+### Model selection guide by service type
+
+| Service type | Recommended model | Rationale |
+|---|---|---|
+| Simple CRUD worker / job processor | `claude-haiku-4-5` | Low complexity, high throughput, lowest cost |
+| REST API / GraphQL service | `claude-sonnet-4-6` | Balanced — handles schemas, validation, tests well |
+| Auth / security-critical service | `claude-sonnet-4-6` or `claude-opus-4-5` | Security reasoning benefits from stronger models |
+| Payments / PCI-DSS service | `claude-opus-4-5` | Compliance reasoning, complex financial logic |
+| Frontend / UI components | `claude-sonnet-4-6` | Component patterns, accessibility, responsive design |
+| Infra / Terraform / IaC | `claude-sonnet-4-6` or `claude-opus-4-5` | Infrastructure mistakes are expensive to reverse |
+| Data pipeline / analytics | `claude-sonnet-4-6` | SQL, data transforms, schema migrations |
+
+The model set in a service's `.claude/settings.json` applies to all Claude Code sessions opened from within that directory tree. Root `settings.json` sets the fallback for any service without its own model preference.

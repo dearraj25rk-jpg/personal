@@ -75,3 +75,295 @@ Claude Code uses OS-level sandboxing:
 The sandbox is applied to **Bash tool executions** when sandbox mode is enabled. File tools (Read, Write, Edit) are controlled via the allowlist, not the OS sandbox.
 
 → Full guide: [Permissions & Security](./permissions-security)
+
+---
+
+## Permission Modes — Precise Definitions
+
+### `normal` (default)
+
+Claude prompts the user before using any tool that is not explicitly allowed in the `permissions.allow` list. Read-only operations (Read, Glob, Grep) are permitted without a prompt. All write and execute operations require interactive approval unless pre-listed.
+
+**When to use:** Interactive development sessions where the developer reviews each action. The safest default for any environment where a human is present.
+
+```bash
+claude                           # normal mode (default)
+claude --permission-mode normal  # explicit
+```
+
+### `autoAccept` (acceptEdits)
+
+Auto-approves file edits (Write, Edit, MultiEdit) and most Bash commands. Claude still prompts for sensitive operations (network calls, git push, package installation) unless those are in the `allow` list. Equivalent to the interactive "auto-accept edits" toggle.
+
+**When to use:** Rapid iteration when you trust Claude's output and want to skip per-edit approvals. Still retains prompts for high-risk operations.
+
+```bash
+claude --permission-mode acceptEdits
+```
+
+### `bypassPermissions`
+
+Skips ALL permission checks — no prompts, no allow/deny list evaluation. Every tool call is executed unconditionally. This mode requires the `--dangerously-skip-permissions` flag acknowledgment and should only run inside a container or VM where blast radius is constrained at the infrastructure level.
+
+**When to use:** CI/CD pipelines running inside isolated Docker containers, sandboxed test environments, or ephemeral VMs. Never on a developer workstation.
+
+```bash
+claude --permission-mode bypassPermissions
+# Typically set in CI via environment instead:
+export CLAUDE_CODE_PERMISSION_MODE=bypassPermissions
+```
+
+> Managed-settings can block this mode entirely: set `disableBypassPermissionsMode: true` in `~/.claude/managed-settings.json`.
+
+### `plan`
+
+Claude can read and reason about files (Read, Glob, Grep, LS) but cannot write, edit, or execute anything. Equivalent to a "read-only audit" mode. No file is modified, no command is run.
+
+**When to use:** Code review, architecture exploration, or security auditing sessions where you want Claude's analysis without any risk of side-effects.
+
+```bash
+claude --permission-mode plan
+```
+
+---
+
+## Tool Allowlist / Blocklist — Full Syntax Reference
+
+Rules are evaluated in order: `deny` wins over `allow` when both match the same tool call.
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Read(**)",
+      "Edit(**/*.ts)",
+      "Bash(git:*)",
+      "Bash(npm test)",
+      "Bash(npm run *)"
+    ],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(git push --force*)",
+      "WebFetch",
+      "Read(**/.env*)"
+    ]
+  }
+}
+```
+
+### Pattern syntax
+
+| Pattern | Matches |
+|---------|---------|
+| `Read` | All Read calls, any path |
+| `Read(**)` | All Read calls (explicit glob) |
+| `Read(src/**)` | Reads inside `src/` only |
+| `Edit(**/*.ts)` | Edits to `.ts` files anywhere |
+| `Bash(git:*)` | Any Bash call whose command starts with `git` |
+| `Bash(npm test)` | Exactly `npm test` |
+| `Bash(npm run *)` | Any `npm run <script>` |
+| `Bash(rm -rf*)` | Any `rm -rf` invocation |
+| `WebFetch` | All WebFetch calls, any URL |
+| `WebFetch(https://api.corp.com/*)` | WebFetch to that domain only |
+| `mcp__github__*` | Any GitHub MCP tool |
+
+### Deny list best practices
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(git push --force*)",
+      "Bash(git push --force-with-lease*)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | bash*)",
+      "Bash(npm publish*)",
+      "Bash(pip install*)",
+      "WebFetch",
+      "Read(**/.env*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)"
+    ]
+  }
+}
+```
+
+---
+
+## Sandbox Architecture
+
+Claude Code uses OS-level process sandboxing to constrain what Bash tool executions can do, independent of the allowlist.
+
+### macOS — Apple Seatbelt (`sandbox-exec`)
+
+The Seatbelt profile restricts the shell process spawned by the Bash tool to a narrowly defined set of allowed operations:
+
+| Restriction | Default sandbox behavior |
+|-------------|--------------------------|
+| Filesystem reads | Allowed inside the project working directory only |
+| Filesystem writes | Blocked outside the project working directory |
+| Network | Blocked unless explicitly permitted |
+| Process spawning | Allowed for child processes within the same sandbox |
+| IPC / Mach ports | Blocked (no inter-process communication to other apps) |
+| Camera / microphone | Blocked |
+
+Enable with:
+```bash
+claude --sandbox
+# or in settings.json:
+# { "sandbox": true }
+```
+
+### Linux — bubblewrap (`bwrap`)
+
+bubblewrap creates a lightweight container around the Bash tool execution using Linux kernel namespaces:
+
+| Namespace | What it isolates |
+|-----------|-----------------|
+| Mount namespace | Hides host filesystem paths outside the project directory |
+| User namespace | Runs as unprivileged UID inside the sandbox |
+| Network namespace | No network access by default |
+| PID namespace | Process tree is isolated from host PIDs |
+| IPC namespace | No shared memory or semaphores with host processes |
+
+```bash
+# Linux sandbox requires bubblewrap installed:
+sudo apt install bubblewrap   # Debian/Ubuntu
+sudo dnf install bubblewrap   # Fedora/RHEL
+
+# Then enable:
+claude --sandbox
+```
+
+> The sandbox applies to **Bash tool executions only**. File tools (Read, Write, Edit, Glob, Grep) are controlled by the allowlist system, not the OS sandbox, because they run inside the Claude Code process itself.
+
+---
+
+## Enterprise Managed Permission Controls
+
+These settings in `~/.claude/managed-settings.json` (or MDM-pushed equivalent) override all user and project settings:
+
+| Key | Type | What it enforces |
+|-----|------|-----------------|
+| `disableBypassPermissionsMode` | `boolean` | Prevents `--permission-mode bypassPermissions` from being used on this device |
+| `allowManagedHooksOnly` | `boolean` | Blocks any hooks not deployed via MDM; only IT-approved hook scripts run |
+| `allowedMcpServers` | `string[]` | Allowlist of MCP server IDs; all others are silently blocked |
+| `permissions.deny` | `string[]` | Global deny rules applied before any project or user allow rules |
+| `permissions.allow` | `string[]` | Global allow rules that cannot be removed by project settings |
+
+### Example managed-settings.json for a regulated environment
+
+```json
+{
+  "disableBypassPermissionsMode": true,
+  "allowManagedHooksOnly": true,
+  "allowedMcpServers": ["github", "linear", "internal-jira"],
+  "permissions": {
+    "deny": [
+      "WebFetch",
+      "Bash(curl*)",
+      "Bash(wget*)",
+      "Read(**/.env*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)"
+    ]
+  }
+}
+```
+
+---
+
+## Audit Logging Flow
+
+Every tool call that Claude Code evaluates — whether permitted, denied, or user-confirmed — generates an audit event.
+
+### What gets logged
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `ts` | ISO-8601 timestamp | `"2026-06-03T14:22:11Z"` |
+| `user` | Developer identity (from auth) | `"alice@corp.com"` |
+| `session` | Session UUID | `"sess_abc123"` |
+| `tool` | Tool name | `"Bash"`, `"Edit"`, `"WebFetch"` |
+| `input` | Tool arguments | `"npm test"`, `"src/auth.ts"` |
+| `permitted` | Whether the call was allowed | `true`, `false` |
+| `mode` | Active permission mode | `"normal"`, `"bypassPermissions"` |
+| `duration_ms` | Execution time | `4201` |
+| `denied_reason` | Why it was blocked (if applicable) | `"matches deny rule: Bash(rm -rf*)"` |
+
+### Where it goes
+
+Configure `auditLogDestination` in managed-settings or project settings:
+
+```json
+{
+  "auditLogDestination": "/var/log/claude/audit.jsonl"
+}
+```
+
+| Destination type | URI format | Notes |
+|----------------|------------|-------|
+| Local file | `/absolute/path/audit.jsonl` | JSONL, one event per line |
+| Webhook / SIEM | `https://splunk.corp.com:8088/...` | JSON POST per event |
+| OpenTelemetry | `otlp+http://otel-collector:4318` | OTLP spans with Claude attributes |
+
+### OpenTelemetry integration
+
+```json
+{
+  "auditLogDestination": "otlp+http://otel-collector.infra.svc.cluster.local:4318",
+  "auditLogOtelResource": {
+    "service.name": "claude-code",
+    "deployment.environment": "production",
+    "team": "payments"
+  }
+}
+```
+
+Events flow: Claude Code → OTLP Collector → your backend (Datadog, Honeycomb, Grafana Tempo, Jaeger).
+
+Each permitted Bash execution creates a span. Denied calls generate a span with `error: true` and the deny reason in attributes. This lets you build dashboards and alerts for blocked operations in your existing observability stack.
+
+---
+
+## Trust Model
+
+Claude Code's trust model distinguishes what is trusted implicitly from what requires explicit permission grant.
+
+### Trusted by default (no prompt required)
+
+- Reading files in the current working directory tree
+- Running Glob and Grep searches within the project
+- Reading environment variables (not writing)
+- Calling MCP tools that are in the active `allowedMcpServers` list
+- Tool calls that match an `allow` rule in any active settings layer
+
+### Requires explicit user approval (prompt shown)
+
+- Writing or editing files not covered by an `allow` rule
+- Running Bash commands not covered by an `allow` rule
+- Calling WebFetch to external URLs
+- Using MCP tools not in the `allowedMcpServers` list
+- Operations where the active `deny` list matches (these are blocked outright, not prompted)
+
+### Trust model flow
+
+```
+Tool call received
+       │
+       ▼
+Does a DENY rule match?  ──yes──► Blocked immediately (logged, no prompt)
+       │ no
+       ▼
+Does an ALLOW rule match? ──yes──► Permitted immediately (logged, no prompt)
+       │ no
+       ▼
+Is permission mode bypassPermissions? ──yes──► Permitted (logged, no prompt)
+       │ no
+       ▼
+Prompt the user ──approve──► Permitted (logged, rule optionally saved)
+               └─deny──► Blocked (logged)
+```
+
+This layered evaluation means MDM-pushed deny rules always win regardless of what any project or user settings allow.

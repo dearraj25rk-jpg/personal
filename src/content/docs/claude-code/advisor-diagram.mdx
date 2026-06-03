@@ -146,3 +146,199 @@ claude --model claude-opus-4-7   # CLI flag
 ```
 
 → Full reference: [Models & Pricing](./models-pricing)
+
+---
+
+## /advisor Reference
+
+### Dual-Model Architecture — Full Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      /advisor SESSION                               │
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                  SONNET 4.6 (executor)                        │  │
+│  │                                                               │  │
+│  │  Turn 1 ──► tool calls, edits, bash commands, analysis        │  │
+│  │  Turn 2 ──► reads files, writes code, runs tests              │  │
+│  │  Turn 3 ──► refactors, debugs, explores                       │  │
+│  │  Turn N ──► [complexity threshold OR turn-count hit]          │  │
+│  │             │                                                 │  │
+│  └─────────────┼─────────────────────────────────────────────────┘  │
+│                │  Context snapshot                                   │
+│                │  [full conversation + tool results + current state] │
+│                ▼                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                  OPUS 4.7 (advisor)                           │  │
+│  │                                                               │  │
+│  │  Receives: everything Sonnet has seen so far                  │  │
+│  │  Evaluates: architectural soundness, missed edge cases,       │  │
+│  │             security implications, better patterns            │  │
+│  │  Produces: strategic guidance (NOT direct code changes)       │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                │  Opus guidance returned to Sonnet                  │
+│                ▼                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                  SONNET 4.6 (executor, cont.)                 │  │
+│  │                                                               │  │
+│  │  Turn N+1 ──► adjusts plan based on Opus guidance            │  │
+│  │  Turn N+2 ──► continues implementation, improved direction   │  │
+│  │  ...                                                          │  │
+│  │  Turn 2N  ──► [next advisor checkpoint]                       │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  Key points:                                                         │
+│  • Sonnet does ALL tool execution — Opus never runs tools directly  │
+│  • Opus sees full context snapshot — no information loss            │
+│  • Advisor fires at checkpoints — not on every turn                 │
+│  • You always interact with Sonnet — Opus is invisible              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Trigger Conditions — When Advisor Fires
+
+The advisor model fires at one of four trigger conditions, whichever comes first:
+
+| Trigger | Why advisor fires | Example scenario |
+|---------|------------------|-----------------|
+| **Ambiguous requirements** | Multiple valid interpretations exist and the executor signals uncertainty | "Make authentication better" — Sonnet flags that this could mean security hardening, UX improvement, or OAuth integration |
+| **Architectural decisions** | A pattern or structural choice will have long-term impact | "Should I use event sourcing for the order system?" — Opus evaluates trade-offs across the full codebase context |
+| **Trade-off analysis** | Competing concerns with no clear winner | "Performance vs maintainability?" — Opus reasons about the specific constraints (team size, SLA, tech debt) visible in the snapshot |
+| **Complex debugging** | Multiple hypotheses have been exhausted without resolution | Heisenbug in concurrent code — Opus applies fresh reasoning across all the debug attempts Sonnet has accumulated |
+| **Novel algorithm design** | No established patterns apply; first-principles reasoning needed | "Optimize this graph traversal for our specific data distribution" — Opus designs from scratch given the constraints |
+| **Turn-count checkpoint** | Periodic review at configured interval (default: every 10 turns) | Routine check-in even when no explicit trigger has fired |
+| **Manual force** | User runs `/advisor now` | You suspect the approach is off-track and want Opus input immediately |
+
+> **How Sonnet signals uncertainty:** When the executor model hits a decision point it is not confident about, it emits an internal complexity signal. This is model-generated, not rule-based — the threshold cannot be tuned directly, but the `--frequency` flag controls the turn-count fallback.
+
+---
+
+### Token Cost Comparison
+
+Costs are estimates for a representative 100-turn coding session on a medium-complexity feature (~500 lines touched).
+
+| Mode | Executor model | Advisor model | Approx. input tokens | Approx. cost | Quality ceiling |
+|------|---------------|--------------|---------------------|--------------|----------------|
+| **Sonnet only** (default) | Sonnet 4.6 ($3/M) | None | ~200K | ~$0.60 | Good — handles most daily work |
+| **Haiku only** (cheapest) | Haiku 4.5 ($0.80/M) | None | ~200K | ~$0.16 | Limited — simple tasks only |
+| **/advisor** (Sonnet + Opus reviews) | Sonnet 4.6 ($3/M) | Opus 4.7 ($15/M) | ~200K + ~30K per review | ~$1.50–4.00 | Better — Opus strategic guidance without Opus per-turn cost |
+| **Opus 4.7 only** | Opus 4.7 ($15/M) | None | ~200K | ~$3.00 | Best reasoning every turn |
+| **Opus 4.8 only** (newest) | Opus 4.8 ($15/M) | None | ~200K | ~$3.00 | Frontier — most capable |
+
+> **Why /advisor is cost-efficient:** A full Opus session charges $15/M on every single turn. With /advisor, you pay Opus rates only on advisor snapshots (typically 3–6 per long session), while paying Sonnet rates for all execution turns. The advisor snapshots include compressed context, not raw full-length conversation, further reducing Opus token consumption.
+
+---
+
+### /advisor vs Full Opus — Decision Guide
+
+Use this decision tree to pick the right mode for your task:
+
+```
+Is this task longer than ~30 turns OR touches architecture?
+│
+├─ NO  ──► Use Sonnet (default). /advisor overhead not worth it.
+│
+└─ YES
+    │
+    Is correctness of every decision critical (security audit,
+    irreversible production deploy, novel algorithm)?
+    │
+    ├─ YES ──► Use Opus directly (full Opus session)
+    │          Every turn gets Opus reasoning. Worth the 5× cost.
+    │
+    └─ NO
+        │
+        Does the task have clear checkpoints where strategic
+        review would catch mistakes early (refactor, greenfield)?
+        │
+        ├─ YES ──► Use /advisor
+        │          Sonnet executes, Opus reviews at key moments.
+        │          Best quality-to-cost ratio for long tasks.
+        │
+        └─ NO  ──► Use Sonnet (default)
+                   The task is probably well-defined enough that
+                   Sonnet handles it without strategic oversight.
+```
+
+**Summary table:**
+
+| Scenario | Recommended | Reason |
+|----------|------------|--------|
+| Simple bug fix (< 50 lines) | Sonnet only | Over-engineered with advisor |
+| Standard feature (50–500 lines) | Sonnet only | Sonnet is capable; advisor overhead not justified |
+| Large refactor (500+ lines) | /advisor | Catches architectural drift mid-task |
+| Security audit | Opus directly | Every decision needs Opus judgment |
+| Greenfield system design | /advisor | Periodic strategic review at key decisions |
+| Concurrency debugging | /advisor or Opus | Complex enough to benefit from Opus reasoning |
+| Formatting / docs / bulk ops | Haiku | Cheapest; no reasoning required |
+
+---
+
+### Configuring /advisor
+
+#### Toggle and frequency (in-session)
+
+```bash
+# Inside a Claude Code session:
+/advisor                     # Toggle on (uses default frequency = every 10 turns)
+/advisor --frequency 5       # Advisor every 5 turns
+/advisor --frequency 20      # Advisor every 20 turns (less frequent = cheaper)
+/advisor --model opus-4-8    # Use Opus 4.8 as advisor instead of Opus 4.7
+/advisor now                 # Force an immediate advisor consultation
+/advisor off                 # Disable advisor for the rest of this session
+```
+
+#### Persistent configuration via settings.json
+
+Set advisor behavior for all sessions in a project:
+
+```json
+// .claude/settings.json
+{
+  "advisor": {
+    "enabled": true,
+    "model": "claude-opus-4-7",
+    "frequency": 10,
+    "triggerOnComplexity": true
+  }
+}
+```
+
+#### Configuration via /config
+
+```bash
+# Open interactive config UI
+/config
+
+# Navigate to: AI Settings → Advisor → Enable
+# Set frequency and model from the dropdown menus
+```
+
+Available advisor model options (as of v2.1.126):
+- `claude-opus-4-8` — newest Opus, highest capability
+- `claude-opus-4-7` — default advisor model, 1M context
+- `claude-opus-4-6` — 1M context, stable option
+
+> **Note:** The advisor model must be an Opus model. Setting `--model` to Sonnet or Haiku for the advisor is not supported — the feature is designed around the Sonnet-executes / Opus-advises split.
+
+---
+
+### Understanding the Context Snapshot
+
+When the advisor fires, Sonnet does not pass the raw conversation verbatim. It constructs a context snapshot:
+
+```
+Advisor snapshot contents:
+┌──────────────────────────────────────────────────────┐
+│  1. Original task description / user goal            │
+│  2. Key decisions made so far (summarised)           │
+│  3. Current file state (relevant files only)         │
+│  4. Last N tool results (writes, test outputs, etc.) │
+│  5. Explicit question for Opus (why it's consulting) │
+└──────────────────────────────────────────────────────┘
+```
+
+This snapshot is optimised to fit within Opus context limits while preserving the information Opus needs for strategic guidance. Token compression is automatic — you do not need to manage it.

@@ -26,7 +26,11 @@ Is the task simple (formatting, docs, small edits)?
   YES → Use Haiku 4.5 (cheapest)
   NO  ↓
 
-Does it need deep reasoning (architecture, debugging)?
+Is it a frontier problem? (novel algorithm, complex architecture, critical system design)
+  YES → Use Opus 4.8 (alias: opus) with effort=xhigh
+  NO  ↓
+
+Does it need deep reasoning (multi-file refactoring, complex debugging)?
   YES → Use Opus 4.7 with effort=high or xhigh
   NO  ↓
 
@@ -66,10 +70,13 @@ Cache read costs: **$0.30/M** vs $3.00/M input (Sonnet 4.6) → **10x cheaper**
 
 | Model | Input | Output | Cache read | Cache write |
 |-------|-------|--------|-----------|------------|
+| **Opus 4.8** | $15/M | $75/M | $1.50/M | $3.75/M |
 | Opus 4.7 | $15/M | $75/M | $1.50/M | $3.75/M |
 | Opus 4.6 | $15/M | $75/M | $1.50/M | $3.75/M |
 | Sonnet 4.6 | $3/M | $15/M | $0.30/M | $0.75/M |
 | Haiku 4.5 | $0.80/M | $4/M | $0.08/M | $0.20/M |
+
+> **Note:** `claude-opus-4-8` is the newest and most capable Opus model (holds the `opus` alias). Opus 4.7 is the previous generation. Use Opus 4.8 for frontier reasoning tasks.
 
 ### Context Engineering Checklist
 
@@ -114,8 +121,8 @@ Use this checklist before starting any substantial session to minimise waste and
 | Single bug fix | Sonnet 4.6 | normal | 5K–20K | 500–2K |
 | Feature addition | Sonnet 4.6 | normal | 10K–50K | 2K–10K |
 | Security audit | Opus 4.7 | high | 20K–100K | 2K–8K |
-| Architecture design | Opus 4.7 | xhigh | 30K–80K | 5K–20K |
-| Full codebase refactor | Opus 4.7 + /advisor | high | 100K–500K | 20K–100K |
+| Architecture design | **Opus 4.8** | xhigh | 30K–80K | 5K–20K |
+| Full codebase refactor | **Opus 4.8** + /advisor | high | 100K–500K | 20K–100K |
 | CI PR review | Sonnet 4.6 | normal | 5K–30K | 1K–5K |
 
 ### Session Rhythm Best Practices

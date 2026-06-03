@@ -78,3 +78,265 @@ Run the deployment for the {{service}} service:
 ```
 
 → Full reference: [Slash Commands — Complete Reference](./slash-commands-reference)
+
+---
+
+## All Built-in Commands by Category
+
+### Session & Cost
+
+| Command | Description |
+|---------|-------------|
+| `/clear` | Wipe the current conversation and start a fresh context window |
+| `/compact` | Summarize the conversation into a compact context and continue |
+| `/model` | Switch the active model for this session (Haiku / Sonnet / Opus) |
+| `/fast` | Toggle fast mode — switches to the lowest-latency available model |
+| `/usage` | Show token usage and estimated cost for the current session |
+| `/context` | Display what is currently in the context window (files, rules, memory) |
+| `/rewind` | Step back to an earlier point in the conversation and branch from there |
+| `/plan` | Enter plan mode — Claude outlines steps before executing anything |
+| `/config` | Open the interactive settings editor (theme, model, permissions, etc.) |
+| `/doctor` | Run a self-diagnostic: checks API key, permissions, MCP connections |
+| `/terminal-setup` | Install shell integration (shift-enter, option-enter keybindings) |
+| `/status` | Show current session state: mode, model, cost, active rules, MCP servers |
+
+### Memory & Context
+
+| Command | Description |
+|---------|-------------|
+| `/memory` | View and edit `~/.claude/CLAUDE.md` (persistent personal memory) |
+| `/todos` | View and manage the current task list Claude is tracking |
+| `/btw` | Add a note to memory without interrupting the current task |
+| `/recap` | Ask Claude to summarize what has been done so far in the session |
+| `/rename` | Rename the current session for easier retrieval via `/resume` |
+| `/resume` | List and resume a previous session by name or recency |
+| `/branch` | Create a branch point in the session so you can explore alternatives |
+
+### Files & Navigation
+
+| Command | Description |
+|---------|-------------|
+| `/add-dir` | Add an additional directory to Claude's working context |
+| `/diff` | Show a git diff of all changes Claude has made in this session |
+| `/copy` | Copy the last assistant response to the clipboard |
+| `/env` | Display active environment variables relevant to Claude Code |
+
+### Agents, Skills & MCP
+
+| Command | Description |
+|---------|-------------|
+| `/agents` | List all active subagents and their status in the current session |
+| `/skills` | List installed skills and their trigger descriptions |
+| `/tasks` | View the current task queue when running agent loops |
+| `/mcp` | Show connected MCP servers, their tools, and connection status |
+| `/plugin` | Manage installed plugins (list, install, uninstall, info) |
+| `/reload-plugins` | Hot-reload all plugin commands and skills without restarting |
+
+### Power Features
+
+| Command | Description |
+|---------|-------------|
+| `/review` | Run a code review on the current diff or a specified PR |
+| `/security-review` | Run a security-focused review of pending changes |
+| `/think` | Ask Claude to think step-by-step before responding (extended thinking) |
+| `/ultraplan` | Generate a comprehensive multi-phase plan before any execution |
+| `/ultrareview` | Deep multi-pass code review: correctness, security, performance, style |
+| `/loop` | Run a command on a recurring interval (e.g. `/loop 5m /review`) |
+| `/simplify` | Refactor the last code change for clarity and reduced complexity |
+| `/batch` | Run the same prompt across multiple files or inputs in parallel |
+| `/team-onboarding` | Interactive walkthrough for new team members joining the project |
+| `/advisor` | Start a high-level architectural advice session with no tool execution |
+
+### Dev Tools
+
+| Command | Description |
+|---------|-------------|
+| `/debug` | Toggle debug output — shows raw tool calls and API payloads |
+| `/changelog` | Display Claude Code release notes for the current and recent versions |
+| `/keybindings` | View and edit keyboard shortcuts (`~/.claude/keybindings.json`) |
+| `/theme` | Switch the UI color theme (dark, light, high-contrast) |
+| `/voice` | Enable voice input mode for hands-free prompting |
+| `/sandbox` | Toggle the OS-level sandbox for Bash tool executions |
+| `/focus` | Enter distraction-free single-task mode (hides sidebar/status) |
+| `/schedule` | Schedule a command to run at a specific time or interval |
+| `/insights` | Show usage patterns, most-used tools, and session statistics |
+
+### Setup
+
+| Command | Description |
+|---------|-------------|
+| `/init` | Generate a `CLAUDE.md` for the current project by analyzing the codebase |
+| `/login` | Authenticate with Anthropic (or re-authenticate) |
+| `/logout` | Remove stored credentials from the current device |
+| `/setup-bedrock` | Interactive wizard for configuring AWS Bedrock as the API provider |
+| `/setup-vertex` | Interactive wizard for configuring GCP Vertex AI as the API provider |
+| `/permissions` | Show and edit active permission rules for the current project |
+| `/hooks` | View, add, and remove pre/post-tool hooks for the current project |
+
+---
+
+## Custom Command Frontmatter Reference
+
+Every custom command file (`.claude/commands/<name>.md` or `~/.claude/commands/<name>.md`) supports the following frontmatter keys:
+
+```markdown
+---
+name: my-command
+description: What this command does (shown in /help and tab completion)
+allowed-tools: [Bash(git:*), Read, Edit]
+argument-hint: [message]
+model: claude-haiku-4-5
+context: fork
+disable-model-invocation: false
+---
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `name` | string | filename | The `/name` used to invoke the command (no spaces) |
+| `description` | string | — | One-line description shown in `/help` and tab completion |
+| `allowed-tools` | list | all | Tool allowlist scoped to this command only; narrows global permissions |
+| `argument-hint` | list | — | Placeholder text shown after the command name in the UI prompt |
+| `model` | string | session default | Override the model for this command only |
+| `context` | `fork` or `inherit` | `inherit` | `fork` starts a fresh context window; `inherit` continues the current session |
+| `disable-model-invocation` | boolean | `false` | If `true`, execute as a pure prompt template — no LLM call, just expand variables |
+
+---
+
+## Special Variables Reference
+
+| Variable | What it expands to | Example |
+|----------|--------------------|---------|
+| `$ARGUMENTS` | Everything typed after the command name | `/commit "feat: add auth"` → `"feat: add auth"` |
+| `$1`, `$2`, ... | Positional arguments split by whitespace | `/greet Alice Bob` → `$1 = "Alice"`, `$2 = "Bob"` |
+| `${CLAUDE_EFFORT}` | Current effort level setting | `low`, `normal`, `high`, `xhigh` |
+| `${CLAUDE_MODEL}` | Active model ID for the session | `claude-sonnet-4-6` |
+| `@path/to/file.md` | Inline contents of the file at that path | File is read and its text is inserted at that point in the prompt |
+| `` !`shell command` `` | Output of the shell command, captured at invocation time | `` !`git log --oneline -5` `` → last 5 commit lines |
+| `{{placeholder}}` | Claude is prompted to fill this in before executing | `{{target environment}}` → Claude asks "Which environment?" |
+
+---
+
+## Command Scope Resolution Order
+
+When you type a command, Claude Code resolves it in this order (first match wins):
+
+```
+1. Plugin commands     (~/.claude/plugins/<name>/commands/)
+   └─ highest priority; plugins can override built-ins
+
+2. Project commands    (.claude/commands/<name>.md)
+   └─ committed to the repo; shared with the whole team
+
+3. Personal commands   (~/.claude/commands/<name>.md)
+   └─ your private commands; not in version control
+
+4. Built-in commands   (compiled into Claude Code binary)
+   └─ lowest priority; overridable by all above
+```
+
+This means a project-level `/review` command will shadow the built-in `/review` for everyone on that project. A personal command shadows both built-ins and is shadowed by plugins.
+
+---
+
+## Practical Custom Command Examples
+
+### Example 1: Commit with conventional message
+
+```markdown
+<!-- .claude/commands/commit.md -->
+---
+description: Stage all changes and commit with a conventional message
+allowed-tools: [Bash(git:*), Read]
+argument-hint: [scope] [message]
+---
+
+Stage and commit all uncommitted changes.
+
+Current git status:
+!`git status --short`
+
+Recent commits for style reference:
+!`git log --oneline -5`
+
+Write a conventional commit message following the pattern `type(scope): description`.
+The scope is "$1" and the message hint is "$2".
+Use the actual diff to determine the type (feat/fix/refactor/chore/docs/test).
+
+Then run:
+```bash
+git add -A && git commit -m "<your message>"
+```
+```
+
+Invoke with: `/commit auth "add JWT refresh token support"`
+
+---
+
+### Example 2: PR review checklist
+
+```markdown
+<!-- .claude/commands/pr-check.md -->
+---
+description: Review a PR branch against main and report issues
+allowed-tools: [Bash(git:*), Read, Glob, Grep]
+argument-hint: [branch-name]
+---
+
+Review the branch "$ARGUMENTS" against main.
+
+Diff to review:
+!`git diff main...$ARGUMENTS`
+
+Files changed:
+!`git diff --name-only main...$ARGUMENTS`
+
+Check for:
+1. Missing tests for any new functions or exported symbols
+2. Hardcoded secrets, tokens, or credentials (look for sk-, ghp_, AWS patterns)
+3. Any TODO or FIXME comments introduced (not pre-existing)
+4. Functions longer than 50 lines without a clear decomposition reason
+5. Missing error handling on async operations
+
+Report each issue as: `[SEVERITY] file:line — description`
+Severity: BLOCKER | MAJOR | MINOR | NIT
+```
+
+Invoke with: `/pr-check feature/add-oauth`
+
+---
+
+### Example 3: Service-scoped deployment helper
+
+```markdown
+<!-- services/payments/.claude/commands/deploy-staging.md -->
+---
+description: Deploy the payments service to staging and run smoke tests
+allowed-tools: [Bash(git:*), Bash(npm:*), Bash(docker:*), Read]
+model: claude-haiku-4-5
+context: fork
+---
+
+Deploy the payments service to staging.
+
+Pre-flight checks:
+!`git branch --show-current`
+!`npm test -- --silent 2>&1 | tail -5`
+
+If tests pass, run:
+```bash
+docker build -t payments:staging .
+docker push registry.corp.com/payments:staging
+kubectl set image deployment/payments payments=registry.corp.com/payments:staging -n staging
+kubectl rollout status deployment/payments -n staging --timeout=120s
+```
+
+After deployment completes, run the smoke test suite:
+```bash
+npm run test:smoke -- --env staging
+```
+
+Report: deployment status, rollout time, and smoke test results.
+```
+
+Invoke with: `/deploy-staging` from inside the `services/payments/` directory.

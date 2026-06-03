@@ -202,3 +202,585 @@ claude-review:
 | `--allowed-tools` restriction | Scope reduction | Only give CI the tools it needs |
 
 → Full reference: [CI/CD Integration Guide](./cicd-integration)
+
+---
+
+## CI/CD Deep Reference
+
+### Full Pipeline Flow
+
+```
+Git push / PR event / manual trigger
+    │
+    ▼
+GitHub Actions / GitLab CI / Azure DevOps trigger
+    │
+    ▼
+actions/checkout@v4  +  anthropics/claude-code-action@v1
+    │
+    ├── Auth: ANTHROPIC_API_KEY  ──────────────────────┐
+    ├── Auth: AWS Bedrock IAM role / OIDC               │
+    └── Auth: GCP Vertex AI Workload Identity (WIF)     │
+                                                         │
+    ▼                                                    │
+claude --print "task"                                    │
+      --permission-mode bypassPermissions                │
+      --bare                                             │
+      --max-turns N                                      │
+      --max-budget-usd N ◄──────────────────────────────┘
+    │
+    ├── Tool: Read (repo files, diffs)
+    ├── Tool: Bash(git *) (log, diff, blame)
+    └── Tool: WebFetch (issue tracker, docs)
+    │
+    ▼
+Agentic loop (up to --max-turns iterations)
+    │
+    ▼
+Results
+    ├── PR comment (via GitHub API)
+    ├── Commit to branch (via git push)
+    ├── Artifact upload (review.json, report.md)
+    └── Exit code 0 (success) / non-zero (failure → fail CI job)
+```
+
+### Complete GitHub Actions Workflow — All Triggers
+
+```yaml
+# .github/workflows/claude-full.yml
+# Covers: PR review, comment responder, scheduled audit, manual dispatch
+name: Claude Code CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: "0 2 * * 1"   # Weekly security audit — Mondays 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Task for Claude to run"
+        required: true
+        default: "Audit the codebase for security issues"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Job 1: PR Review ─────────────────────────────────────────────
+  pr-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: "claude-sonnet-4-6"
+          prompt: |
+            Review this pull request for:
+            1. Security vulnerabilities (OWASP Top 10)
+            2. Breaking API changes
+            3. Missing tests for new logic
+            4. Performance regressions
+            Post findings as inline PR comments referencing file + line.
+          max_turns: "15"
+          max_budget_usd: "3.00"
+          permission_mode: "default"
+          allowed_tools: "Read,Bash(git*)"
+          claude_code_flags: "--bare"
+
+  # ── Job 2: Comment Responder (/review, /fix, /explain) ───────────
+  comment-responder:
+    if: |
+      github.event_name == 'issue_comment' &&
+      (contains(github.event.comment.body, '/review') ||
+       contains(github.event.comment.body, '/fix') ||
+       contains(github.event.comment.body, '/explain'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.issue.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: "claude-sonnet-4-6"
+          prompt: |
+            A team member posted: "${{ github.event.comment.body }}"
+            Carry out that request on this PR. If it asks for /fix,
+            make the code changes and commit them. If /review or /explain,
+            post a comment with findings.
+          max_turns: "20"
+          max_budget_usd: "5.00"
+          permission_mode: "acceptEdits"
+          allowed_tools: "Read,Edit,Write,Bash(git*)"
+
+  # ── Job 3: Scheduled Weekly Audit ────────────────────────────────
+  weekly-audit:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: "claude-opus-4-6"
+          prompt: |
+            Perform a weekly security and dependency audit:
+            1. Check for known CVEs in package.json / requirements.txt
+            2. Find any hardcoded secrets or credentials
+            3. Identify deprecated API usage
+            4. Report findings as a GitHub issue titled "Weekly Audit YYYY-MM-DD"
+          max_turns: "25"
+          max_budget_usd: "10.00"
+          permission_mode: "default"
+          allowed_tools: "Read,Bash(npm audit),Bash(grep*),WebFetch"
+          claude_code_flags: "--bare"
+
+  # ── Job 4: Manual Dispatch ────────────────────────────────────────
+  manual-task:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: "claude-sonnet-4-6"
+          prompt: ${{ github.event.inputs.task }}
+          max_turns: "30"
+          max_budget_usd: "15.00"
+          permission_mode: "bypassPermissions"
+          allowed_tools: "Read,Edit,Write,Bash(git*),Bash(npm*)"
+```
+
+### GitLab CI — Full Equivalent
+
+```yaml
+# .gitlab-ci.yml
+variables:
+  ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY   # Set in GitLab CI/CD → Variables (masked)
+
+stages:
+  - review
+  - audit
+
+# ── MR Review ──────────────────────────────────────────────────────
+claude-mr-review:
+  stage: review
+  image: node:20-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  before_script:
+    - npm install -g @anthropic-ai/claude-code
+  script:
+    - |
+      claude --print \
+        --bare \
+        --max-turns 15 \
+        --max-budget-usd 3.00 \
+        --permission-mode bypassPermissions \
+        --allowed-tools "Read,Bash(git*)" \
+        --output-format json \
+        "Review the diff of MR !$CI_MERGE_REQUEST_IID.
+         Report findings as JSON: [{file, line, severity, description}]" \
+        > review.json
+    - |
+      # Post review as MR note via GitLab API
+      curl --request POST \
+        --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        --data-urlencode "body=$(cat review.json)" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
+  artifacts:
+    paths: [review.json]
+    expire_in: 7 days
+
+# ── Scheduled Audit ────────────────────────────────────────────────
+claude-weekly-audit:
+  stage: audit
+  image: node:20-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  before_script:
+    - npm install -g @anthropic-ai/claude-code
+  script:
+    - |
+      claude --print \
+        --bare \
+        --max-turns 20 \
+        --max-budget-usd 8.00 \
+        --permission-mode bypassPermissions \
+        --allowed-tools "Read,Bash(grep*),Bash(npm*)" \
+        "Run a full security and dependency audit. Output markdown report."
+  artifacts:
+    paths: [audit-report.md]
+    expire_in: 30 days
+```
+
+### Azure DevOps Pipeline Equivalent
+
+```yaml
+# azure-pipelines.yml
+trigger:
+  - main
+
+pr:
+  - main
+  - develop
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: claude-code-secrets   # Variable group containing ANTHROPIC_API_KEY
+
+stages:
+  - stage: Review
+    displayName: 'Claude Code Review'
+    jobs:
+      - job: PRReview
+        displayName: 'AI PR Review'
+        condition: eq(variables['Build.Reason'], 'PullRequest')
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '20.x'
+
+          - script: npm install -g @anthropic-ai/claude-code
+            displayName: 'Install Claude Code'
+
+          - script: |
+              claude --print \
+                --bare \
+                --max-turns 15 \
+                --max-budget-usd 3.00 \
+                --permission-mode bypassPermissions \
+                --allowed-tools "Read,Bash(git*)" \
+                "Review PR $(System.PullRequest.PullRequestId) for security, \
+                 correctness, and test coverage. Post findings as inline comments."
+            displayName: 'Run Claude Review'
+            env:
+              ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: 'review-output/'
+              artifactName: 'claude-review'
+            condition: always()
+
+  - stage: Audit
+    displayName: 'Weekly Security Audit'
+    condition: and(succeeded(), eq(variables['Build.Reason'], 'Schedule'))
+    jobs:
+      - job: SecurityAudit
+        steps:
+          - checkout: self
+
+          - script: npm install -g @anthropic-ai/claude-code
+            displayName: 'Install Claude Code'
+
+          - script: |
+              claude --print \
+                --bare \
+                --max-turns 25 \
+                --max-budget-usd 10.00 \
+                --permission-mode bypassPermissions \
+                "Audit codebase for OWASP Top 10 issues and deprecated dependencies. \
+                 Output JSON report to audit-$(Build.BuildId).json"
+            displayName: 'Run Security Audit'
+            env:
+              ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+```
+
+### AWS Bedrock — Service Tiers and IAM Configuration
+
+AWS Bedrock offers three service tiers for Claude in CI (v2.1.122+). Select the tier matching your CI workload's latency and throughput requirements.
+
+| Tier | Variable value | Use case | Characteristics |
+|------|---------------|----------|-----------------|
+| Default | `default` (or unset) | Production review jobs | Standard throughput, balanced cost |
+| Flex | `flex` | Async batch CI, audit jobs | Lower cost, higher latency acceptable |
+| Priority | `priority` | Blocking PR checks | Highest throughput, premium cost |
+
+**IAM Role for CI (OIDC — no long-lived keys):**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6-*",
+        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-*"
+      ]
+    }
+  ]
+}
+```
+
+**Trust policy (GitHub Actions OIDC):**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:YOUR_ORG/YOUR_REPO:*"
+        }
+      }
+    }
+  ]
+}
+```
+
+**Full Bedrock workflow (OIDC, flex tier for async jobs):**
+
+```yaml
+# .github/workflows/claude-bedrock.yml
+name: Claude Code via Bedrock
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  id-token: write    # Required for OIDC
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905139b6c84  # v4.1.6 SHA pin
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6542e0d4c84cc0bacbe4ceaa1  # v4 SHA pin
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ClaudeCodeCI
+          aws-region: us-east-1
+
+      - uses: anthropics/claude-code-action@v1
+        env:
+          CLAUDE_CODE_USE_BEDROCK: "1"
+          AWS_REGION: us-east-1
+          CLAUDE_CODE_BEDROCK_SERVICE_TIER: "flex"   # Lower cost for async CI
+        with:
+          model: "claude-sonnet-4-6"
+          prompt: "Review this PR for bugs and security issues."
+          max_turns: "15"
+          max_budget_usd: "3.00"
+          permission_mode: "default"
+          claude_code_flags: "--bare"
+          # No anthropic_api_key needed — uses AWS IAM role
+```
+
+### GCP Vertex AI — Workload Identity Federation (v2.1.121+)
+
+WIF lets GitHub Actions authenticate to GCP without storing a service account key. The GitHub Actions OIDC token is exchanged for a short-lived GCP access token.
+
+**Setup (one-time, via gcloud):**
+
+```bash
+# 1. Create Workload Identity Pool
+gcloud iam workload-identity-pools create "github-actions" \
+  --project="YOUR_PROJECT_ID" \
+  --location="global" \
+  --display-name="GitHub Actions Pool"
+
+# 2. Create OIDC Provider
+gcloud iam workload-identity-pools providers create-oidc "github" \
+  --project="YOUR_PROJECT_ID" \
+  --location="global" \
+  --workload-identity-pool="github-actions" \
+  --display-name="GitHub OIDC Provider" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository=='YOUR_ORG/YOUR_REPO'"
+
+# 3. Bind service account
+gcloud iam service-accounts add-iam-policy-binding \
+  "claude-code-ci@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --project="YOUR_PROJECT_ID" \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github-actions/attribute.repository/YOUR_ORG/YOUR_REPO"
+```
+
+**Service account IAM roles required:**
+
+| Role | Purpose |
+|------|---------|
+| `roles/aiplatform.user` | Invoke Vertex AI models |
+| `roles/ml.admin` | (Optional) Model endpoint management |
+
+**Full Vertex AI WIF workflow:**
+
+```yaml
+# .github/workflows/claude-vertex.yml
+name: Claude Code via Vertex AI (WIF)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  id-token: write    # Required for OIDC/WIF
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905139b6c84  # v4 SHA pin
+
+      - id: auth
+        name: Authenticate to GCP via Workload Identity
+        uses: google-github-actions/auth@62cf5bd3e4211a0a0b51f2c6d6622d22b351c7a6  # v2 SHA pin
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: claude-code-ci@${{ secrets.GCP_PROJECT }}.iam.gserviceaccount.com
+
+      - uses: anthropics/claude-code-action@v1
+        env:
+          CLAUDE_CODE_USE_VERTEX: "1"
+          CLOUD_ML_REGION: "us-central1"
+          ANTHROPIC_VERTEX_PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+        with:
+          model: "claude-sonnet-4-6"
+          prompt: "Review this PR for bugs and security issues."
+          max_turns: "15"
+          max_budget_usd: "3.00"
+          permission_mode: "default"
+          claude_code_flags: "--bare"
+          # No anthropic_api_key — uses GCP service account via WIF
+```
+
+### Security Hardening Checklist
+
+| Check | Why it matters | How to implement |
+|-------|---------------|-----------------|
+| Pin actions to commit SHA | Prevents supply-chain attacks from tag mutation | `uses: actions/checkout@a5ac7e51b41094c92402da3b24376905139b6c84` instead of `@v4` |
+| Use OIDC instead of long-lived secrets | Eliminates key rotation risk; tokens expire in minutes | GitHub → AWS: `aws-actions/configure-aws-credentials` with `role-to-assume`; GCP: WIF provider |
+| Set `--max-budget-usd` | Prevents runaway cost if prompt loops | `max_budget_usd: "3.00"` — match to task complexity |
+| Use `--bare` mode | Skips non-essential steps; reduces attack surface | `claude_code_flags: "--bare"` |
+| Restrict to `bypassPermissions` only for trusted repos | Untrusted forks should not auto-accept file writes | Add `if: github.event.pull_request.head.repo.full_name == github.repository` |
+| Scope `allowed_tools` | Principle of least privilege | PR review needs only `Read,Bash(git*)` — never grant `Write` for review-only jobs |
+| Rotate API keys quarterly | Limits blast radius of leaked keys | Use GitHub secret rotation; prefer OIDC to eliminate keys entirely |
+| Enable concurrency controls | Prevents parallel CI runs from double-posting | `concurrency: group: ${{ github.workflow }}-${{ github.ref }}` |
+| Audit tool call logs | Detect unexpected tool use in CI | Enable `PostBash` hook to log all shell commands |
+| Sandbox CI runners | Prevent lateral movement if compromised | Use ephemeral `ubuntu-latest` runners; avoid self-hosted for untrusted code |
+
+```yaml
+# Minimal secure template — copy as starting point
+- uses: anthropics/claude-code-action@55e5f2e89af7fb53d9c90ee9cb85a6a1abb298c9  # v1 SHA pin
+  with:
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    model: "claude-sonnet-4-6"
+    prompt: "Your task here"
+    max_turns: "10"
+    max_budget_usd: "2.00"
+    permission_mode: "default"
+    allowed_tools: "Read,Bash(git log),Bash(git diff)"
+    claude_code_flags: "--bare"
+```
+
+### Cost Optimisation for CI
+
+**Model selection by task type:**
+
+| Task | Recommended model | Approx cost per run | Notes |
+|------|-----------------|--------------------|----|
+| Lint / format check | `claude-haiku-4-5` | $0.01–0.05 | Simple pattern matching |
+| Unit test generation | `claude-haiku-4-5` | $0.05–0.20 | Template-heavy |
+| PR security review | `claude-sonnet-4-6` | $0.50–2.00 | Default choice |
+| Full architecture review | `claude-opus-4-6` | $5.00–15.00 | Complex reasoning needed |
+| Scheduled audit | `claude-sonnet-4-6` | $2.00–8.00 | Balance quality and cost |
+
+**Set model via environment variable:**
+
+```yaml
+env:
+  CLAUDE_CODE_MODEL: "claude-haiku-4-5"   # Override for lint/format jobs
+```
+
+**Bedrock flex tier for async CI (lower cost, higher latency):**
+
+```yaml
+env:
+  CLAUDE_CODE_USE_BEDROCK: "1"
+  CLAUDE_CODE_BEDROCK_SERVICE_TIER: "flex"   # 30-40% cheaper vs default tier
+```
+
+**Prompt cache warming (75% off cached tokens):**
+
+```yaml
+# Include CLAUDE.md in first turn — same content = cache hit on repeat runs
+- uses: anthropics/claude-code-action@v1
+  with:
+    prompt: |
+      [Context from CLAUDE.md will be auto-loaded — 90%+ cache hit rate on repeat PRs]
+      Review this PR for security issues.
+```
+
+**Full cost optimisation matrix:**
+
+| Strategy | Typical saving | Trade-off |
+|----------|--------------|-----------|
+| Haiku for lint/format tasks | 20× cost reduction | Lower quality on complex tasks |
+| `--bare` flag | ~14% faster / cheaper | Minor: skips some startup steps |
+| `--max-turns N` cap | Prevents runaway loops | May not complete very complex tasks |
+| `--max-budget-usd` hard cap | Hard ceiling | Job fails if budget exceeded |
+| Prompt cache warm (CLAUDE.md) | 75% off cached tokens | Only effective for repeated prompts |
+| Bedrock flex tier | 30–40% vs default | Higher latency (batch-suitable only) |
+| `--allowed-tools` restriction | Avoids unnecessary tool calls | Must list all required tools |

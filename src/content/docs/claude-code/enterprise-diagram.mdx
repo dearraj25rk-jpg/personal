@@ -71,3 +71,305 @@ No service account keys required. Configure in CI:
 ```
 
 → Full guide: [Enterprise Deployment Guide](./enterprise-guide)
+
+---
+
+## Managed Settings Hierarchy
+
+Settings are evaluated in strict precedence order — higher layers cannot be overridden by lower ones:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  1. MDM / Platform-Enforced  (highest precedence)               │
+│     macOS: /Library/Managed Preferences/com.anthropic.claude    │
+│     Windows: HKLM\SOFTWARE\Policies\Anthropic\Claude            │
+│     Linux: /etc/claude/managed-settings.json                    │
+└─────────────────────┬───────────────────────────────────────────┘
+                      │ falls through if key absent
+┌─────────────────────▼───────────────────────────────────────────┐
+│  2. Registry / Plist (device-level, no MDM required)            │
+│     macOS: ~/Library/Preferences/com.anthropic.claude.plist     │
+│     Windows: HKCU\SOFTWARE\Anthropic\Claude                     │
+└─────────────────────┬───────────────────────────────────────────┘
+                      │ falls through if key absent
+┌─────────────────────▼───────────────────────────────────────────┐
+│  3. File-based (~/.claude/managed-settings.json)                │
+│     Any platform — useful where MDM is unavailable              │
+└─────────────────────┬───────────────────────────────────────────┘
+                      │ falls through if key absent
+┌─────────────────────▼───────────────────────────────────────────┐
+│  4. User Settings (~/.claude/settings.json)  (lowest)           │
+│     Developer-controlled; overridden by all layers above        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Keys set in layer 1 are locked — even a local `settings.json` with the same key is silently ignored.
+
+---
+
+## MDM Platform Deployment
+
+| MDM Platform | Deployment Method | Config Format | Notes |
+|---|---|---|---|
+| **JAMF Pro** | Configuration Profile → Custom Preferences payload | macOS plist | Use domain `com.anthropic.claude`; deploys to `/Library/Managed Preferences/` |
+| **Microsoft Intune** | Settings Catalog or custom OMA-URI | Windows Registry / JSON | Target `HKLM\SOFTWARE\Policies\Anthropic\Claude` for machine-wide enforcement |
+| **Kandji** | Custom Profile → Library Item | macOS plist | Same plist domain as JAMF; supports scoping by blueprint |
+| **GPO (Group Policy)** | Administrative Template (ADMX) + Registry | Windows Registry | Deploy ADMX template to `PolicyDefinitions`; scope via OU or security group |
+| **Mosyle** | Managed Preferences payload | macOS plist | Supports user-level and device-level scoping independently |
+| **Workspace ONE** | Custom XML profile | plist / Registry | Supports both macOS and Windows endpoints from single console |
+
+All platforms ultimately write to the same OS-level preference store that Claude Code reads at startup.
+
+---
+
+## managed-settings.json Key Reference
+
+| Key | What it controls | Example value | Notes |
+|---|---|---|---|
+| `ANTHROPIC_BASE_URL` | Redirect all API calls through corporate proxy | `"https://proxy.corp.com/anthropic"` | Required for air-gapped or egress-controlled networks |
+| `ANTHROPIC_API_KEY` | Pre-provision org API key; removes login prompt | `"sk-ant-..."` | Prefer IAM/Bedrock/Vertex over hardcoded keys |
+| `ANTHROPIC_MODEL` | Lock all sessions to a specific model | `"claude-sonnet-4-6"` | Prevents use of more expensive or unreleased models |
+| `DISABLE_TELEMETRY` | Block usage telemetry reporting to Anthropic | `"1"` | Required for some compliance regimes |
+| `DISABLE_UPDATES` | Prevent automatic version upgrades | `"1"` | Use with version-pinned fleet images |
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | Cap tokens per assistant turn | `"8192"` | Controls cost per interaction |
+| `CLAUDE_CODE_MAX_THINKING_TOKENS` | Cap extended thinking budget | `"10000"` | Applies when model uses chain-of-thought |
+| `HTTP_PROXY` / `HTTPS_PROXY` | Route traffic through corporate proxy | `"http://squid.corp.com:3128"` | Respected by underlying HTTP client |
+| `allowedMcpServers` | Allowlist of approved MCP server IDs | `["github", "linear"]` | Blocks unapproved MCP connections |
+| `disableBypassPermissionsMode` | Prevent `--permission-mode bypassPermissions` | `true` | Enforces permission checks even in scripts |
+| `allowManagedHooksOnly` | Block user-defined hooks; allow only MDM-pushed hooks | `true` | Prevents hook-based exfiltration |
+| `auditLogDestination` | Where to send audit events | `"https://siem.corp.com/ingest"` | Accepts file path, webhook URL, or OTLP endpoint |
+
+---
+
+## Auth Provider Comparison
+
+| Attribute | Anthropic Direct | AWS Bedrock — flex | AWS Bedrock — default | AWS Bedrock — priority | GCP Vertex AI WIF |
+|---|---|---|---|---|---|
+| **Auth mechanism** | `ANTHROPIC_API_KEY` | IAM role + `AWS_REGION` | IAM role + `AWS_REGION` | IAM role + `AWS_REGION` | Workload Identity Federation — no key |
+| **Throughput** | Standard rate limits | Lowest | Standard | Highest guaranteed | Scales with GCP quota |
+| **Cost model** | Pay-per-token | Lowest cost | Standard | Premium | Pay-per-token via GCP billing |
+| **Latency** | Low | Higher (queued) | Standard | Lowest | Low |
+| **Key rotation** | Manual / programmatic | IAM-managed, automatic | IAM-managed, automatic | IAM-managed, automatic | No keys — token-based |
+| **Best for** | Small teams, rapid start | Batch/async workloads | General enterprise | Latency-sensitive prod | GCP-native orgs, keyless CI |
+| **Compliance** | SOC 2 Type II | AWS compliance boundary | AWS compliance boundary | AWS compliance boundary | GCP compliance boundary |
+| **Flag to set tier** | N/A | `CLAUDE_CODE_BEDROCK_SERVICE_TIER=flex` | `CLAUDE_CODE_BEDROCK_SERVICE_TIER=default` | `CLAUDE_CODE_BEDROCK_SERVICE_TIER=priority` | N/A — set via WIF config |
+
+### Bedrock configuration (all tiers)
+
+```bash
+export AWS_REGION=us-east-1
+export CLAUDE_CODE_USE_BEDROCK=1
+export CLAUDE_CODE_BEDROCK_SERVICE_TIER=priority   # or default / flex
+# Credentials from IAM role, instance profile, or aws configure
+```
+
+### Vertex AI Workload Identity Federation (keyless)
+
+```yaml
+# .github/workflows/claude.yml
+- uses: google-github-actions/auth@v2
+  with:
+    workload_identity_provider: 'projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/github'
+    service_account: 'claude-code@my-gcp-project.iam.gserviceaccount.com'
+
+- name: Run Claude Code
+  env:
+    CLAUDE_CODE_USE_VERTEX: "1"
+    ANTHROPIC_VERTEX_PROJECT_ID: my-gcp-project
+    CLOUD_ML_REGION: us-central1
+  run: claude --print "$(cat task.md)"
+```
+
+No service account JSON file is ever written to disk — the OIDC token is exchanged for a short-lived access token at runtime.
+
+---
+
+## Audit Logging Destinations
+
+| Destination | Config key | Example value | Format | Retention |
+|---|---|---|---|---|
+| **Local file** | `auditLogDestination` | `"/var/log/claude/audit.jsonl"` | JSONL — one event per line | Managed by log rotation (logrotate, etc.) |
+| **Webhook / SIEM** | `auditLogDestination` | `"https://siem.corp.com/ingest"` | JSON POST body per event | Determined by SIEM backend |
+| **OpenTelemetry (OTLP)** | `auditLogDestination` | `"otlp+http://otel-collector:4318"` | OTLP spans with Claude attributes | Determined by collector export target |
+
+### File destination example
+
+```json
+// ~/.claude/managed-settings.json
+{
+  "auditLogDestination": "/var/log/claude/audit.jsonl"
+}
+```
+
+Each line written is a structured JSON event:
+```json
+{
+  "ts": "2026-06-03T14:22:11Z",
+  "user": "alice@corp.com",
+  "session": "sess_abc123",
+  "tool": "Bash",
+  "input": "npm test",
+  "permitted": true,
+  "duration_ms": 4201
+}
+```
+
+### Webhook destination example
+
+```json
+{
+  "auditLogDestination": "https://splunk.corp.com:8088/services/collector/event",
+  "auditLogHeaders": {
+    "Authorization": "Splunk abc123token"
+  }
+}
+```
+
+### OpenTelemetry destination example
+
+```json
+{
+  "auditLogDestination": "otlp+http://otel-collector.infra.svc.cluster.local:4318",
+  "auditLogOtelResource": {
+    "service.name": "claude-code",
+    "deployment.environment": "production"
+  }
+}
+```
+
+Events flow from Claude Code → OpenTelemetry Collector → your observability backend (Datadog, Honeycomb, Grafana Tempo, etc.).
+
+---
+
+## Cost Governance Configuration
+
+### Budget caps in managed-settings.json
+
+```json
+{
+  "costGovernance": {
+    "monthlyBudgetUSD": 500,
+    "dailyBudgetUSD": 25,
+    "perSessionBudgetUSD": 2,
+    "onBudgetExceeded": "warn",
+    "budgetResetDay": 1
+  }
+}
+```
+
+`onBudgetExceeded` options:
+- `"warn"` — shows in-session warning, allows continuation
+- `"block"` — disables new sessions until reset
+- `"notify"` — sends alert to `auditLogDestination`, allows continuation
+
+### Per-team limits with project settings
+
+```json
+// services/payments/.claude/settings.json
+{
+  "costGovernance": {
+    "monthlyBudgetUSD": 150,
+    "teamLabel": "payments-team",
+    "reportingWebhook": "https://finops.corp.com/team-usage"
+  }
+}
+```
+
+### Usage reporting
+
+Claude Code emits a usage event at session end containing:
+
+| Field | Description |
+|---|---|
+| `input_tokens` | Tokens sent to the model this session |
+| `output_tokens` | Tokens received from the model |
+| `cache_read_tokens` | Tokens served from prompt cache (lower cost) |
+| `cache_write_tokens` | Tokens written to prompt cache |
+| `estimated_cost_usd` | Calculated cost at current model pricing |
+| `model` | Model ID used |
+| `session_duration_s` | Wall-clock seconds |
+
+These fields are included in every audit log event when `auditLogDestination` is set.
+
+---
+
+## Phased Organizational Rollout Playbook
+
+### Phase 1 — Pilot (Week 1–2)
+
+1. Select 5–10 volunteer developers from one team
+2. Deploy Claude Code with direct `ANTHROPIC_API_KEY` (no MDM yet)
+3. Set `auditLogDestination` to a shared file or Slack webhook for visibility
+4. Collect feedback: which tools are blocked too aggressively, which are too permissive
+5. Document first-pass `allow`/`deny` rules for the project `.claude/settings.json`
+6. Identify which MCP servers the team needs
+
+### Phase 2 — Team Rollout (Week 3–4)
+
+1. Migrate auth to AWS Bedrock or GCP Vertex (remove individual API keys)
+2. Push first MDM profile with `ANTHROPIC_BASE_URL`, `DISABLE_TELEMETRY`, `ANTHROPIC_MODEL`
+3. Commit `.claude/settings.json` to the team's main repository
+4. Run a 1-hour onboarding session using `/team-onboarding`
+5. Set up SIEM/OTEL audit pipeline from `auditLogDestination`
+6. Define cost budget via `costGovernance` block
+
+### Phase 3 — Department Rollout (Week 5–8)
+
+1. Expand MDM profile to all department devices
+2. Enable `allowManagedHooksOnly` to restrict hook surface
+3. Configure `disableBypassPermissionsMode: true` for all non-CI machines
+4. Per-service `.claude/settings.json` files committed for each repo
+5. MCP server allowlist (`allowedMcpServers`) locked down in managed-settings
+6. Run cost governance review — adjust per-team budgets
+
+### Phase 4 — Org-wide (Week 9–12)
+
+1. Full MDM rollout across all engineer devices
+2. Centralized audit dashboard connected to SIEM (Splunk/Datadog/etc.)
+3. Fine-grained `allow`/`deny` rules per repository type (frontend, backend, infra)
+4. Automated compliance scanning of `.claude/settings.json` via CI lint step
+5. Quarterly review process: audit logs → rule refinement → MDM profile update
+6. Runbook published internally: how to request a new MCP server, how to appeal a blocked tool
+
+---
+
+## Security Hardening Checklist
+
+### MDM / Managed Settings
+
+- [ ] `DISABLE_TELEMETRY=1` set in managed-settings for regulated environments
+- [ ] `DISABLE_UPDATES=1` set — version pinned and tested before fleet rollout
+- [ ] `ANTHROPIC_BASE_URL` routes through DLP-inspected corporate proxy
+- [ ] `allowedMcpServers` allowlist set — no arbitrary MCP connections
+- [ ] `auditLogDestination` points to SIEM or append-only log target
+- [ ] `allowManagedHooksOnly: true` — prevents user-defined hook scripts
+
+### Authentication
+
+- [ ] No developer has a personal `ANTHROPIC_API_KEY` on managed devices
+- [ ] Bedrock: IAM roles scoped to Claude models only (`bedrock:InvokeModel` on specific ARNs)
+- [ ] Vertex: Workload Identity Federation configured — no service account JSON files
+- [ ] API key rotation policy defined (if using Direct API for any use case)
+- [ ] Key stored in secrets manager (AWS Secrets Manager / GCP Secret Manager / HashiCorp Vault), not env files
+
+### Network
+
+- [ ] Egress firewall rule: only `api.anthropic.com` (or your Bedrock/Vertex endpoints) allowed
+- [ ] TLS inspection enabled on corporate proxy for AI traffic classification
+- [ ] `HTTP_PROXY` / `HTTPS_PROXY` set in managed-settings so no traffic bypasses proxy
+- [ ] WebFetch tool blocked via `deny: ["WebFetch"]` unless explicitly needed
+
+### Permissions
+
+- [ ] `disableBypassPermissionsMode: true` on all developer machines
+- [ ] `bypassPermissions` mode enabled only in sandboxed CI containers
+- [ ] `Bash(rm:-rf*)` and `Bash(git push --force*)` in global deny list
+- [ ] `Read(**/.env*)` in deny list — prevents reading secrets files
+- [ ] Per-repo `.claude/settings.json` committed and reviewed in code review
+
+### Hooks
+
+- [ ] All pre/post-tool hooks reviewed and version-controlled
+- [ ] Hook scripts lint-checked in CI (no network calls, no exfiltration patterns)
+- [ ] `allowManagedHooksOnly` set in managed-settings if hook scripts are sensitive
+- [ ] Hook outputs logged to `auditLogDestination`

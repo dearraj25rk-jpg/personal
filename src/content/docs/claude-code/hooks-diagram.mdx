@@ -74,3 +74,451 @@ import HooksDiagram from '../../../components/interactive/HooksDiagram.jsx';
 | `3` | Block — Claude sees stdout (not user) |
 
 → Full reference: [Hooks System — Deep Dive](./hooks-deep-dive)
+
+---
+
+## Hooks Reference
+
+### Complete Event Catalogue (v2.1.126)
+
+Every hook event Claude Code emits, with its category, whether it can block execution, and the payload fields available in the environment.
+
+| Event | Category | Blockable | Fires when | Key payload |
+|-------|----------|-----------|------------|-------------|
+| `SessionStart` | Session | Yes | Before session initialises (first token) | `CLAUDE_SESSION_ID`, `CLAUDE_CWD` |
+| `PostSessionStart` | Session | No | Session fully initialised, ready for input | `CLAUDE_SESSION_ID` |
+| `Stop` | Session | Yes (exit 2 = force continue) | User/system stop request | `CLAUDE_STOP_REASON` |
+| `PostSessionEnd` | Session | No | Session terminated, cleanup phase | `CLAUDE_SESSION_ID`, `CLAUDE_EXIT_CODE` |
+| `UserPromptSubmit` | User | Yes | User prompt received, before API call | `CLAUDE_PROMPT`, `CLAUDE_TURN_COUNT` |
+| `UserPromptExpansion` | User | No | After prompt expansion/templating | `CLAUDE_EXPANDED_PROMPT` |
+| `PreToolUse` | Tool | Yes | Before any tool executes | `CLAUDE_TOOL_NAME`, `CLAUDE_TOOL_INPUT` |
+| `PermissionRequest` | Tool | Yes | Permission check before tool runs | `CLAUDE_TOOL_NAME`, `CLAUDE_PERMISSION_TYPE` |
+| `PostToolUse` | Tool | No | After tool succeeds | `CLAUDE_TOOL_NAME`, `CLAUDE_TOOL_OUTPUT` |
+| `PostToolUseFailure` | Tool | No | After tool fails/errors | `CLAUDE_TOOL_NAME`, `CLAUDE_TOOL_ERROR` |
+| `SubagentStart` | Agent | Yes | Before Task tool spawns subagent | `CLAUDE_SUBAGENT_PROMPT`, `CLAUDE_SUBAGENT_ID` |
+| `SubagentStop` | Agent | No | After Task tool subagent completes | `CLAUDE_SUBAGENT_ID`, `CLAUDE_SUBAGENT_RESULT` |
+| `PreCompact` | Session | Yes | Before context compaction runs | `CLAUDE_CONTEXT_TOKENS`, `CLAUDE_COMPACT_REASON` |
+| `PostCompact` | Session | No | After compaction, context reduced | `CLAUDE_TOKENS_BEFORE`, `CLAUDE_TOKENS_AFTER` |
+| `Notification` | Session | No | Claude sends a notification | `CLAUDE_NOTIFICATION_TEXT`, `CLAUDE_NOTIFICATION_TYPE` |
+| `Elicitation` | Session | Yes | Claude requests human input | `CLAUDE_ELICITATION_PROMPT` |
+| `ElicitationResult` | Session | No | Human responded to elicitation | `CLAUDE_ELICITATION_RESULT` |
+| `PermissionDenied` | Tool | No | Permission check rejected tool use | `CLAUDE_TOOL_NAME`, `CLAUDE_DENY_REASON` |
+| `TaskCreated` | Agent | No | New Task created in task list | `CLAUDE_TASK_ID`, `CLAUDE_TASK_DESCRIPTION` |
+| `WorktreeCreate` | Worktree | No | Git worktree created | `CLAUDE_WORKTREE_PATH`, `CLAUDE_WORKTREE_BRANCH` |
+| `WorktreeRemove` | Worktree | No | Git worktree removed | `CLAUDE_WORKTREE_PATH` |
+| `InstructionsLoaded` | Session | No | CLAUDE.md / instructions file loaded | `CLAUDE_INSTRUCTIONS_PATH` |
+| `CwdChanged` | Session | No | Working directory changed | `CLAUDE_OLD_CWD`, `CLAUDE_NEW_CWD` |
+| `FileChanged` | Tool | No | Any file written or edited | `CLAUDE_FILE_PATH`, `CLAUDE_CHANGE_TYPE` |
+| `TaskCompleted` | Agent | No | Task marked complete | `CLAUDE_TASK_ID`, `CLAUDE_TASK_RESULT` |
+| `TeammateIdle` | Agent | No | Agent Teams teammate has no work | `CLAUDE_TEAMMATE_ID` |
+| `ConfigChange` | Session | No | Settings or config file changed | `CLAUDE_CONFIG_KEY`, `CLAUDE_CONFIG_VALUE` |
+| `StopFailure` | Session | No | Stop hook itself failed | `CLAUDE_HOOK_ERROR` |
+
+> All payload fields are injected as environment variables when the handler runs. Use `$CLAUDE_TOOL_NAME` in shell scripts or reference them in prompt templates with `$VAR_NAME` syntax.
+
+---
+
+### All Five Handler Types — Config Examples
+
+Each hook event can be handled by one of five handler types. Choose based on what you need: shell execution, LLM judgment, structured integrations, or webhooks.
+
+#### 1. `command` — Shell command handler
+
+Runs a shell command. Claude waits for it to exit. Exit code determines what happens next (see exit code table below). Stdout is available for context injection.
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "handler": {
+          "type": "command",
+          "command": "npx prettier --write $CLAUDE_FILE_PATH"
+        }
+      }
+    ]
+  }
+}
+```
+
+#### 2. `prompt` — Prompt injection handler
+
+Adds text to Claude's context. The prompt string is evaluated with environment variable substitution. No blocking — purely additive.
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "handler": {
+          "type": "prompt",
+          "prompt": "Current git status:\n$(git status --short)\n\nOpen TODOs:\n$(grep -r 'TODO' src/ --include='*.ts' | head -20)"
+        }
+      }
+    ]
+  }
+}
+```
+
+#### 3. `agent` — Sub-model (LLM) handler
+
+Spawns a Claude sub-model to evaluate the hook event. Use when you need nuanced judgment that shell scripts can't provide. The agent's output is returned as the hook result.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "handler": {
+          "type": "agent",
+          "agent": "security-reviewer",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Review this bash command for security issues: $CLAUDE_TOOL_INPUT. Reply with ALLOW or BLOCK:<reason>."
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+#### 4. `http` — Webhook handler
+
+POSTs the hook payload as JSON to a URL. Useful for audit logging, Slack notifications, and external integrations. Use `allowedEnvVars` to pass secrets safely.
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "handler": {
+          "type": "http",
+          "url": "https://hooks.slack.com/services/T000/B000/xxxx",
+          "allowedEnvVars": ["SLACK_TOKEN"],
+          "headers": {
+            "Authorization": "Bearer $SLACK_TOKEN"
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+#### 5. `mcp_tool` — MCP tool handler (v2.1.118+)
+
+Calls a tool on a connected MCP server. Enables structured integrations with observability platforms, databases, and custom tooling without writing shell scripts.
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "handler": {
+          "type": "mcp_tool",
+          "server": "audit-server",
+          "tool": "log_write",
+          "arguments": {
+            "event": "tool_use",
+            "tool": "$CLAUDE_TOOL_NAME",
+            "session": "$CLAUDE_SESSION_ID"
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+### Exit Code Semantics (command handler)
+
+Exit codes from `command` handlers control whether the tool call or session action proceeds.
+
+| Exit Code | Meaning | When to use |
+|-----------|---------|-------------|
+| `0` | Allow, no context injection | Normal pass-through — hook ran, everything is fine |
+| `0` + stdout | Allow, inject stdout as context | Add git status, test results, or warnings to Claude's context |
+| `2` | Block (`PreToolUse`) / Force continue (`Stop`) | Safety gate to prevent dangerous commands; or auto-retry a stopped session |
+| `1` (or any other) | Non-blocking warning | Log errors, emit warnings — does NOT stop execution |
+
+> **`Stop` event special case:** Exit code `2` on a `Stop` handler means "do not stop — keep running". This is the mechanism for test-gate automation: if tests fail, the hook returns `2` and Claude continues fixing the code.
+
+---
+
+### Six Automation Patterns
+
+Copy-paste ready configurations for the most common hooks use cases. All examples use `.claude/settings.json` format.
+
+#### Pattern 1: Auto-format on file edit
+
+Run Prettier on every file Claude writes or edits. Zero configuration required beyond installing Prettier.
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "handler": {
+          "type": "command",
+          "command": "npx prettier --write --log-level silent \"$CLAUDE_FILE_PATH\" 2>/dev/null || true"
+        }
+      }
+    ]
+  }
+}
+```
+
+**How it works:** After each file write, Prettier reformats in place. Exit code is always `0` (the `|| true`) so formatting failures never block Claude.
+
+#### Pattern 2: Test gate on stop
+
+Block Claude from stopping until tests pass. Exit code `2` on `Stop` forces Claude to continue.
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "handler": {
+          "type": "command",
+          "command": "npm test --silent 2>&1; if [ $? -ne 0 ]; then echo 'Tests failing — fix before stopping'; exit 2; fi"
+        }
+      }
+    ]
+  }
+}
+```
+
+**How it works:** `exit 2` on a `Stop` hook tells Claude "keep going". Claude sees the stdout message and knows to fix the tests before finishing.
+
+#### Pattern 3: Audit logging (all tool use)
+
+Write a JSON log line for every tool call Claude makes. Useful for compliance, debugging long sessions, and cost attribution.
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "handler": {
+          "type": "command",
+          "command": "echo \"{\\\"ts\\\":\\\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\",\\\"tool\\\":\\\"$CLAUDE_TOOL_NAME\\\",\\\"session\\\":\\\"$CLAUDE_SESSION_ID\\\"}\" >> ~/.claude/audit.jsonl"
+        }
+      }
+    ]
+  }
+}
+```
+
+**Or use the `mcp_tool` handler for structured logging:**
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "handler": {
+          "type": "mcp_tool",
+          "server": "audit-server",
+          "tool": "log_event",
+          "arguments": {
+            "tool": "$CLAUDE_TOOL_NAME",
+            "session": "$CLAUDE_SESSION_ID",
+            "timestamp": "$CLAUDE_TIMESTAMP"
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Pattern 4: Security scan on Bash
+
+Run Semgrep on every Bash command before execution. Block dangerous patterns.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "handler": {
+          "type": "command",
+          "command": "echo \"$CLAUDE_TOOL_INPUT\" | semgrep --config=p/bash-security --stdin --quiet && exit 0 || (echo 'Semgrep blocked this command'; exit 2)"
+        }
+      }
+    ]
+  }
+}
+```
+
+**How it works:** If Semgrep finds issues, the command exits `2`, blocking the Bash tool. Claude sees the "Semgrep blocked" message and is forced to find a safer approach.
+
+#### Pattern 5: Slack notification on session complete
+
+Send a Slack message when Claude finishes a session. Uses the `http` handler with a webhook URL.
+
+```json
+{
+  "hooks": {
+    "PostSessionEnd": [
+      {
+        "handler": {
+          "type": "http",
+          "url": "https://hooks.slack.com/services/T000/B000/YOUR_WEBHOOK",
+          "allowedEnvVars": [],
+          "body": {
+            "text": "Claude Code session $CLAUDE_SESSION_ID completed. Exit: $CLAUDE_EXIT_CODE"
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+**Or use a command handler to call curl for full control:**
+
+```json
+{
+  "hooks": {
+    "PostSessionEnd": [
+      {
+        "handler": {
+          "type": "command",
+          "command": "curl -s -X POST \"$SLACK_WEBHOOK_URL\" -H 'Content-Type: application/json' -d \"{\\\"text\\\":\\\"Session $CLAUDE_SESSION_ID done — exit $CLAUDE_EXIT_CODE\\\"}\" && exit 0 || exit 0"
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Pattern 6: Context injection on session start
+
+Inject git status, open TODOs, and recent commits as context at the start of every session.
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "handler": {
+          "type": "command",
+          "command": "echo '=== Repository State ==='; git status --short 2>/dev/null; echo ''; echo '=== Recent Commits ==='; git log --oneline -5 2>/dev/null; echo ''; echo '=== Open TODOs ==='; grep -r 'TODO\\|FIXME\\|HACK' src/ --include='*.ts' --include='*.tsx' --include='*.py' -n 2>/dev/null | head -15; exit 0"
+        }
+      }
+    ]
+  }
+}
+```
+
+**How it works:** Exit code `0` with stdout causes the stdout to be injected into Claude's context as the session starts. Claude immediately knows the repo state without being asked.
+
+---
+
+### Matcher Syntax Reference
+
+The `matcher` field on a hook entry filters which tool calls trigger the handler.
+
+| Matcher | Matches | Example |
+|---------|---------|---------|
+| `"Write"` | Exact tool name | Only the Write tool |
+| `"Write\|Edit\|MultiEdit"` | Pipe-separated list (OR) | Any file-write tool |
+| `"Bash"` | The Bash tool | Shell command execution |
+| `".*"` or omitted | All tools | Every tool call |
+| `"mcp__.*"` | Regex prefix | All MCP tools |
+| `"mcp__github__.*"` | Regex prefix | All GitHub MCP tools |
+
+> Matchers use JavaScript regex syntax. Anchoring (`^`/`$`) is not required — a match anywhere in the tool name triggers the hook.
+
+---
+
+### Debugging Hooks
+
+#### Step 1: Validate JSON syntax
+
+Hooks config is in `.claude/settings.json`. Invalid JSON silently disables all hooks.
+
+```bash
+# Validate JSON syntax
+cat .claude/settings.json | python3 -m json.tool > /dev/null && echo "JSON OK" || echo "JSON INVALID"
+
+# Or with jq
+jq '.' .claude/settings.json > /dev/null && echo "JSON OK"
+```
+
+#### Step 2: Check event name spelling
+
+Event names are case-sensitive. Common mistakes:
+
+```
+# Wrong               # Correct
+PostTooluse       →   PostToolUse
+PreToolUse         →  PreToolUse        ✓
+SessionStart       →  SessionStart      ✓
+postsessionstart   →  PostSessionStart
+```
+
+Run `claude hooks list` to see all valid event names for your installed version.
+
+#### Step 3: Test the command directly in your shell
+
+Before adding a command handler, test it manually with the environment variables set:
+
+```bash
+# Simulate what Claude would run
+export CLAUDE_TOOL_NAME="Write"
+export CLAUDE_FILE_PATH="/tmp/test.ts"
+export CLAUDE_SESSION_ID="test-session-123"
+
+# Run your hook command directly
+npx prettier --write "$CLAUDE_FILE_PATH"
+echo "Exit: $?"
+```
+
+#### Step 4: Check exit code interpretation
+
+Add `set -x` to see what your script is doing:
+
+```bash
+# Debug version of a command hook
+"command": "set -x; npm test 2>&1; EXIT=$?; set +x; exit $EXIT"
+```
+
+Or redirect to a debug log:
+
+```bash
+"command": "npm test >> /tmp/claude-hooks-debug.log 2>&1; echo \"exit=$?\" >> /tmp/claude-hooks-debug.log"
+```
+
+#### Step 5: View hook execution in session logs
+
+Claude Code logs hook execution. Check the session log:
+
+```bash
+# Find recent session logs
+ls -lt ~/.claude/logs/ | head -5
+
+# Watch hook execution in real time
+tail -f ~/.claude/logs/$(ls -t ~/.claude/logs/ | head -1) | grep -i hook
+```
+
+#### Common errors and fixes
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Hook never fires | Wrong event name spelling | Check `claude hooks list` |
+| Hook fires but command not found | PATH not set in hook environment | Use full path: `/usr/local/bin/prettier` |
+| Exit code 2 not blocking | Using `PostToolUse` (not blockable) | Switch to `PreToolUse` for blocking |
+| JSON parse error on startup | Trailing comma or invalid JSON | Run `jq '.' .claude/settings.json` |
+| `$CLAUDE_TOOL_NAME` empty | Wrong handler type | Only `command` type gets env vars |

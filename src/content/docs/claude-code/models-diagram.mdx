@@ -131,3 +131,305 @@ claude-haiku-4-5@20251001
 ```
 
 → See [Models, Pricing & Effort](./models-pricing) for the complete reference including cost optimisation strategies, extended thinking deep-dive, and cloud deployment.
+
+---
+
+## Models Reference
+
+### Capability Comparison
+
+Relative capability across key dimensions. Each bar represents approximate capability on a 32-unit scale, benchmarked against coding, reasoning, and instruction-following tasks as of June 2026.
+
+```
+                         Reasoning  Coding   Speed   Context
+                         ─────────  ──────   ─────   ───────
+
+claude-opus-4-8          ████████████████████████████████  32/32  ←newest
+(frontier)               ████████████████████████████████  32/32
+                         ████████░░░░░░░░░░░░░░░░░░░░░░░░   8/32
+                         ████████████████████████████████  32/32 (1M tokens)
+
+claude-opus-4-7          ██████████████████████████████░░  30/32
+(deep reasoning)         ██████████████████████████████░░  30/32
+                         ████████░░░░░░░░░░░░░░░░░░░░░░░░   8/32
+                         ████████████████████████████████  32/32 (1M tokens)
+
+claude-opus-4-6          ████████████████████████░░░░░░░░  24/32
+(balanced Opus)          ████████████████████████░░░░░░░░  24/32
+                         ████████████░░░░░░░░░░░░░░░░░░░░  12/32
+                         ████████████████████████████████  32/32 (1M tokens)
+
+claude-sonnet-4-6        ████████████████████░░░░░░░░░░░░  20/32  ←default
+(daily driver)           ████████████████████░░░░░░░░░░░░  20/32
+                         █████████████████████████████░░░  29/32
+                         ████████████████░░░░░░░░░░░░░░░░  16/32 (200K tokens)
+
+claude-haiku-4-5         ████████████░░░░░░░░░░░░░░░░░░░░  12/32
+(cheapest)               ████████████░░░░░░░░░░░░░░░░░░░░  12/32
+                         ████████████████████████████████  32/32
+                         ████████████████░░░░░░░░░░░░░░░░  16/32 (200K tokens)
+
+Legend:  █ = relative capability    ░ = unused capacity
+Bars:    Reasoning | Coding | Speed | Context window
+```
+
+> Speed is inversely proportional to deliberation depth. Haiku is fastest because it skips extended thinking. Opus 4.8 is slowest because it applies maximum deliberation by default on hard problems.
+
+---
+
+### Model Selection Decision Tree
+
+```
+START: What is your task?
+│
+├─ Bulk operations, simple edits, CI/CD scripts, formatting?
+│   └─► HAIKU 4.5 — 10–20× cheaper than Opus, plenty of capability
+│
+├─ Standard daily work — feature development, code review, bug fix?
+│   └─► SONNET 4.6 (default) — optimal quality/cost balance
+│
+├─ Complex task (large refactor, security audit, architectural design)?
+│   │
+│   ├─ Does it fit in 200K tokens (single focused session)?
+│   │   └─► OPUS 4.7 — strong reasoning, 1M context, established model
+│   │
+│   └─ Does it need the absolute latest reasoning capability?
+│       └─► OPUS 4.8 — newest, frontier capability, same 1M context
+│
+├─ Massive document analysis or very long codebase context (>200K tokens)?
+│   └─► OPUS 4.7 or OPUS 4.8 — both have 1M context window
+│
+└─ Need Opus quality but latency matters?
+    └─► OPUS + /fast — same model, optimised for speed (see Fast Mode below)
+```
+
+**Quick mapping:**
+
+| If you are doing... | Use |
+|--------------------|-----|
+| `prettier` on 500 files | Haiku 4.5 |
+| Writing unit tests | Sonnet 4.6 |
+| Debugging a production incident | Opus 4.7 |
+| Designing a distributed system | Opus 4.8 |
+| Summarising a 300-page PDF | Opus 4.7 (1M ctx) |
+| Translating comments to Spanish | Haiku 4.5 |
+
+---
+
+### Effort Level vs Model — Interaction Matrix
+
+Effort levels and model selection are independent axes. You can combine any effort level with any model. The matrix below shows what each combination produces and its approximate relative cost (1× = Haiku normal effort):
+
+```
+                   low        normal       high       xhigh
+                ─────────   ─────────   ─────────   ─────────
+Haiku 4.5       1×          1.3×        2×          n/a *
+                fast,       balanced    deeper       —
+                simple      cheap       analysis
+
+Sonnet 4.6      5×          6.5×        10×         20×
+                quick       DEFAULT     complex      arch
+                edits       session     features     design
+
+Opus 4.7        19×         25×         38×         75×
+                Opus-fast   balanced    deep         max
+                (use /fast) Opus        reasoning    reasoning
+
+Opus 4.8        19×         25×         38×         75×
+                Opus-fast   balanced    deep         frontier
+                (use /fast) Opus        reasoning    reasoning
+```
+
+> `*` Haiku does not support `xhigh` effort (extended thinking) as of v2.1.126.
+> Cost multipliers are approximate. Actual cost depends on prompt length, output length, and cache hit rate.
+
+**Set effort level:**
+
+```bash
+# CLI flag
+claude --effort high
+claude --effort xhigh
+
+# In session
+/effort high
+
+# In settings.json
+{ "effort": "xhigh" }
+```
+
+---
+
+### /fast Mode — Opus Speed Optimisation
+
+Fast Mode delivers faster output from Opus models without switching to a smaller, less capable model:
+
+```
+Standard Opus session:              /fast Opus session:
+──────────────────────              ───────────────────
+Opus 4.8                            Opus 4.8
+Full deliberation before            Optimised token generation
+each token batch                    Reduced inter-token latency
+Slower responses                    Faster responses (~2–3× faster)
+Deeper per-step reasoning           Same overall reasoning quality
+                                    Same model weights
+```
+
+**When to use /fast:**
+
+| Situation | Use /fast? | Why |
+|-----------|-----------|-----|
+| Interactive session (you are waiting) | Yes | Reduces perceived latency |
+| Unattended overnight run | No | Speed doesn't matter; quality does |
+| CI pipeline with time limit | Yes | Avoids timeout on long Opus tasks |
+| Security audit requiring thoroughness | No | Prioritise deliberation over speed |
+| Rapid prototyping with Opus | Yes | Good quality + responsive feel |
+
+**Activating Fast Mode:**
+
+```bash
+# Toggle inside a session
+> /fast
+# Output: Fast Mode enabled — Opus 4.8 optimised for speed
+
+# Start session with Fast Mode pre-enabled
+# .claude/settings.json:
+{
+  "model": "claude-opus-4-8",
+  "fastMode": true
+}
+
+# CLI: no direct --fast flag; use settings.json or /fast in session
+```
+
+> Fast Mode is available for Opus 4.8, 4.7, and 4.6. It is not applicable to Sonnet or Haiku — those models are already optimised for low latency. Cost is identical to the standard Opus rate.
+
+---
+
+### Real-World Cost Examples
+
+Costs computed at standard pricing (no caching). Actual cost with prompt caching (reads at 0.1× input rate after first cache miss) is typically 40–70% lower for repeated sessions on the same codebase.
+
+#### Example 1: Small bug fix
+
+```
+Task: Fix null-pointer exception in user service (20 lines changed)
+Model: Sonnet 4.6
+
+Estimated tokens:
+  Input:  ~8,000  (prompt + context)
+  Output: ~1,000  (fix + explanation)
+
+Cost:
+  Input:  8,000  × $3.00/1M  = $0.024
+  Output: 1,000  × $15.00/1M = $0.015
+  Total:  ~$0.04
+
+Same task on Opus 4.8:
+  Input:  8,000  × $15.00/1M = $0.12
+  Output: 1,000  × $75.00/1M = $0.075
+  Total:  ~$0.20  (5× more expensive, minimal quality gain)
+```
+
+#### Example 2: Feature implementation
+
+```
+Task: Add OAuth2 login (new route, middleware, tests — ~300 lines)
+Model: Sonnet 4.6 (default)
+
+Estimated tokens:
+  Input:  ~60,000  (multi-turn, reading existing files)
+  Output: ~15,000  (code + tests)
+
+Cost:
+  Input:  60,000  × $3.00/1M  = $0.18
+  Output: 15,000  × $15.00/1M = $0.225
+  Total:  ~$0.41
+
+With prompt caching (files cached after first read):
+  Cache:  45,000  × $0.30/1M  = $0.014  (reads same files multiple turns)
+  New:    15,000  × $3.00/1M  = $0.045
+  Output: 15,000  × $15.00/1M = $0.225
+  Total:  ~$0.28  (32% cheaper with caching)
+```
+
+#### Example 3: Large refactor with /advisor
+
+```
+Task: Refactor authentication module (500 lines, 50-turn session)
+Mode: /advisor (Sonnet executor + 5 Opus advisor checkpoints)
+
+Sonnet execution (50 turns):
+  Input:  ~200,000 tokens × $3.00/1M  = $0.60
+  Output: ~50,000  tokens × $15.00/1M = $0.75
+
+Opus advisor (5 × ~10K token snapshots):
+  Input:  ~50,000  tokens × $15.00/1M = $0.75
+  Output: ~10,000  tokens × $75.00/1M = $0.75
+
+Total /advisor: ~$2.85
+
+Comparison:
+  Sonnet only:   ~$1.35  (cheaper, but may miss architectural issues)
+  /advisor:      ~$2.85  (2× cost, strategic Opus guidance at checkpoints)
+  Opus 4.7 only: ~$12.50 (9× cost, every turn gets Opus reasoning)
+```
+
+#### Example 4: Bulk CI/CD task
+
+```
+Task: Add copyright header to 200 TypeScript files
+Model: Haiku 4.5
+
+Estimated tokens per file:
+  Input:  ~500 tokens (file content + instruction)
+  Output: ~50  tokens (just the header line)
+
+200 files total:
+  Input:  100,000 × $0.80/1M  = $0.08
+  Output: 10,000  × $4.00/1M  = $0.04
+  Total:  ~$0.12
+
+Same task on Sonnet: ~$0.50  (4× more, no quality benefit)
+Same task on Opus:   ~$1.60  (13× more, no quality benefit)
+```
+
+---
+
+### Pricing Quick Reference Card
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               CLAUDE CODE MODEL PRICING (June 2026)             │
+│                                                                 │
+│  Model              Input      Output    Cache    Context       │
+│  ─────────────────  ─────────  ────────  ───────  ───────────   │
+│  claude-opus-4-8    $15.00/M   $75.00/M  $1.50/M  1,000,000    │
+│  claude-opus-4-7    $15.00/M   $75.00/M  $1.50/M  1,000,000    │
+│  claude-opus-4-6    $15.00/M   $75.00/M  $1.50/M  1,000,000    │
+│  claude-sonnet-4-6   $3.00/M   $15.00/M  $0.30/M    200,000    │
+│  claude-haiku-4-5    $0.80/M    $4.00/M  $0.08/M    200,000    │
+│                                                                 │
+│  Cache = prompt cache read rate (10% of input rate)             │
+│  Output tokens are always 5× the input rate per model           │
+│                                                                 │
+│  Rules of thumb:                                                │
+│  • 1,000 tokens ≈ 750 words ≈ one page of code                 │
+│  • A typical 30-min coding session ≈ 50K–200K tokens total     │
+│  • Prompt caching cuts repeated-read costs by ~70-90%          │
+│  • /fast mode: same price, faster output for Opus models       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Cost ratio summary (relative to Haiku input):**
+
+```
+Haiku 4.5 input:      1×   ($0.80/M)
+Sonnet 4.6 input:     3.75×  ($3.00/M)
+Opus 4.x input:      18.75×  ($15.00/M)
+
+Haiku 4.5 output:     1×   ($4.00/M)
+Sonnet 4.6 output:    3.75×  ($15.00/M)
+Opus 4.x output:     18.75×  ($75.00/M)
+```
+
+> All pricing is per million tokens and subject to change. Check [anthropic.com/pricing](https://anthropic.com/pricing) for current rates. Enterprise agreements may have negotiated rates that differ from list price.

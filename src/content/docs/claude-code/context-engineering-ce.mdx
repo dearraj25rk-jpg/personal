@@ -209,3 +209,397 @@ Each compaction costs **100–200K tokens** to execute. Run `/compact` proactive
 | Running 10 MCP servers for every project | 26,500 extra tokens every session | Connect only servers needed for current task via .claude/.mcp.json.local |
 
 → Full reference: [Context, Cost & Token Efficiency](./claude-code-efficiency-reference)
+
+---
+
+## Context Engineering Deep Reference
+
+### Strategy 1: CLAUDE.md Design
+
+CLAUDE.md is the highest-priority persistent context in Claude Code. Because it loads on every session start, every token in it costs money on every API call for the lifetime of the project. Design it for signal density.
+
+**What belongs in CLAUDE.md (high-signal, low-token content):**
+
+- Project purpose (1–3 sentences max)
+- Tech stack and language versions (e.g., "Python 3.12, FastAPI 0.111, PostgreSQL 16")
+- Repo structure (1 paragraph or short tree — not exhaustive)
+- Build and test commands (exact commands, not explanations)
+- Team conventions that apply to _every_ file (naming conventions, import order, error handling patterns)
+- Pointers to path-scoped rules: "See `rules/typescript.md` for TS-specific conventions"
+
+**What does NOT belong in CLAUDE.md (lazy-load via rules or @import):**
+
+- Framework-specific conventions that only apply to certain files (→ path-scoped rules)
+- Long explanations or tutorials (→ linked docs or @import)
+- Anything read less than 50% of sessions (→ @import on demand)
+- Database schemas or API specs (→ reference files, read selectively)
+- CI/CD setup details (→ link to CICD.md)
+
+**Token budget targets by CLAUDE.md scope:**
+
+| Scope | Max lines | Target tokens | Enforcement |
+|-------|----------|--------------|-------------|
+| Enterprise root (org-wide) | 50 lines | < 3,000 tokens | MDM policy |
+| User root (`~/.claude/CLAUDE.md`) | 80 lines | < 5,000 tokens | Self-discipline |
+| Project root | 200 lines | < 12,000 tokens | `/context` monitor |
+| Subtree (`src/CLAUDE.md`, `tests/CLAUDE.md`) | 100 lines | < 6,000 tokens | Path-scoped auto-load |
+
+Check your CLAUDE.md token cost with `/context` → look at "system" token breakdown.
+
+**@import chain pattern for modular CLAUDE.md:**
+
+```markdown
+<!-- Project root CLAUDE.md — keep this under 100 lines -->
+# My Project
+
+Stack: TypeScript 5.4, Node 22, PostgreSQL 16, Redis 7
+
+## Build & Test
+npm run build   # tsc + bundle
+npm test        # vitest
+npm run lint    # eslint + prettier
+
+## Key Conventions
+- All errors extend AppError (src/errors/base.ts)
+- Use Result<T, E> pattern — never throw from services
+- See rules/ for language-specific conventions
+
+@import rules/api-standards.md
+@import rules/database-conventions.md
+```
+
+The `@import` directive is resolved at load time. It adds the target file's content inline but keeps your root CLAUDE.md concise. Each imported file should also be brief — the total loaded token count is the sum of all imports.
+
+### Strategy 2: Rules Scoping
+
+Path-scoped rules load only when Claude opens a matching file. They are the primary tool for keeping per-language or per-directory conventions out of the root CLAUDE.md.
+
+**`paths:` frontmatter for conditional loading:**
+
+```markdown
+---
+paths:
+  - "**/*.ts"
+  - "**/*.tsx"
+  - "src/types/**"
+---
+# TypeScript Conventions
+
+- Use `interface` not `type` for object shapes
+- Export types separately from implementation files
+- All async functions return `Promise<Result<T, AppError>>`
+- Use `satisfies` operator for config objects
+- Never use `any` — use `unknown` + type guard instead
+```
+
+This rule file is **not loaded at startup**. It loads the first time Claude opens a `.ts` or `.tsx` file in the session, and stays loaded for the rest of the session.
+
+**When a rule should be in `rules/` vs `CLAUDE.md`:**
+
+| Belongs in `rules/` | Belongs in `CLAUDE.md` |
+|--------------------|----------------------|
+| TypeScript-only conventions | Universal naming conventions |
+| Test file patterns (`describe`, `it`, `expect`) | Build and test commands |
+| SQL query style | Error handling philosophy |
+| React component patterns | Folder structure |
+| API endpoint conventions | Team communication norms |
+| Database migration rules | Project-wide tool preferences |
+
+**Token savings calculation:**
+
+```
+Root CLAUDE.md without scoping:
+  Loads 500 lines of mixed conventions  →  ~30,000 tokens every session
+
+With path-scoped rules:
+  Root CLAUDE.md:   80 lines            →   ~5,000 tokens (always loaded)
+  rules/ts.md:      60 lines            →   ~3,600 tokens (TS sessions only)
+  rules/tests.md:   40 lines            →   ~2,400 tokens (test files only)
+  rules/sql.md:     30 lines            →   ~1,800 tokens (DB sessions only)
+
+  Typical session touches TS + tests:   5,000 + 3,600 + 2,400 = 11,000 tokens
+  Savings vs monolithic CLAUDE.md:     ~63% token reduction
+  On Sonnet 4.6 at $3/MTok:            ~$0.057 saved per session
+  × 100 sessions/month:                ~$5.70/month saved per developer
+```
+
+**Example: TypeScript rules only for `*.ts` files**
+
+```markdown
+---
+paths:
+  - "**/*.ts"
+  - "!**/*.test.ts"
+  - "!node_modules/**"
+---
+# TypeScript Production Code Rules
+
+Use strict TypeScript: `"strict": true` in tsconfig.json.
+Always prefer `interface` over `type` for public API shapes.
+Use `readonly` arrays for function inputs: `ReadonlyArray<T>`.
+Prefer named exports over default exports (aids tree-shaking).
+```
+
+### Strategy 3: Memory Management
+
+Effective session memory management prevents context degradation and controls costs across long sessions.
+
+**Session rhythm — the three phases:**
+
+```
+PHASE 1: Session start
+  /context        → check starting token budget (should be < 10%)
+  /effort high    → set thinking level before complex work
+  /memory         → review project memory before starting
+
+PHASE 2: During work (context grows)
+  At ~60%:  /compact "Focus on [current task name]"
+  Continue working — context now clean + focused
+  At ~60% again:  /compact "Focus on [next subtask]"
+  Save key decisions: "Update MEMORY.md: we chose JWT over sessions"
+
+PHASE 3: Session end
+  /rename my-feature-auth-refactor     → named for /resume retrieval
+  /memory                              → verify decisions were saved
+  # Or: /clear   if switching to unrelated work
+```
+
+**When to use `/compact` vs `/clear`:**
+
+| Situation | Use | Reason |
+|-----------|-----|--------|
+| Same task, context at 60-70% | `/compact "Focus on X"` | Preserves task context, cheaper than auto-compaction |
+| Switching to related sub-task | `/compact "Focus on Y, ignore X details"` | Steers what survives |
+| Task complete, new unrelated task | `/clear` | Full clean slate costs less than polluted context |
+| Mid-task context hit 83.5% | `/compact` immediately | Prevents expensive auto-compaction |
+| Need to preserve all tool results | Neither — use `/branch` | Isolated context window |
+
+**Targeted compaction with steering instruction:**
+
+```bash
+# Generic (less effective — model decides what to keep)
+/compact
+
+# Steered (much more effective — you tell model what matters)
+/compact "Focus on the auth refactor. Keep: JWT structure, middleware changes, test failures. Discard: everything about the payment module."
+
+# Task-switch compaction
+/compact "We've finished the database migration. New focus: API rate limiting implementation."
+```
+
+**MEMORY.md as compaction-proof storage:**
+
+MEMORY.md is loaded fresh after every compaction. Use it for any fact that must survive `/compact` or `/clear`:
+
+```markdown
+<!-- ~/.claude/projects/<hash>/memory/MEMORY.md -->
+## Architecture Decisions
+- [2026-06-01] Using JWT (not sessions): easier horizontal scaling. Token TTL: 1h access, 7d refresh.
+- [2026-06-02] PostgreSQL schema: users table has RLS enabled. See migrations/003_rls.sql.
+- [2026-06-03] Rate limiting: 100 req/min per user, Redis sliding window. NOT token bucket.
+
+## Known Issues
+- auth middleware currently breaks on OPTIONS preflight (bug #482, fix in progress)
+- payment service integration test is flaky — skip with SKIP_PAYMENT_TESTS=1
+
+## Current Work State
+- Auth refactor: complete ✓
+- Rate limiting: in progress — started RedisRateLimiter class in src/middleware/
+- API docs: not started
+```
+
+**Naming sessions with `/rename` for retrieval:**
+
+```bash
+# Name session before ending (enables /resume later)
+/rename auth-refactor-jwt-middleware-2026-06-03
+
+# List named sessions
+/sessions
+
+# Resume a named session
+/resume auth-refactor-jwt-middleware-2026-06-03
+```
+
+### Strategy 4: Compaction Control
+
+**Auto-compaction threshold and timing:**
+
+Auto-compaction fires at **83.5% context used** by default (v2.1.89+). At 1M token window, that's ~835K tokens. At 200K (Haiku), that's ~167K tokens.
+
+The compaction process itself consumes **100–200K tokens** to summarise the context. Running it proactively at 70% (before the auto-threshold) saves this overhead and gives you control over the summary focus.
+
+```
+Context usage over a long session:
+
+0%  ──────────────────────────────────── 100%
+│                                            │
+│    WORK           │compact│  WORK          │
+│    ──────────────►│       │──────────────► │
+│                   70%     │               83.5%
+│                   ^        │               ^
+│                   Optimal  │               Auto-fires here
+│                   compact  │               (costs more, less focused)
+│                   zone     │
+```
+
+**Circuit breaker (v2.1.89+):**
+
+If compaction fails (e.g., model unavailable, network timeout), the circuit breaker prevents the session from entering an infinite retry loop. The session pauses and reports the error rather than consuming tokens in failed compaction attempts.
+
+**Compaction survival matrix — what stays, what goes:**
+
+| Content | Survives `/compact`? | Why |
+|---------|---------------------|-----|
+| Project-root `CLAUDE.md` | Yes — full text reloaded from disk | Disk-persisted, not summarised |
+| `MEMORY.md` | Yes — full text reloaded | Disk-persisted, not summarised |
+| Path-scoped rules (matched) | Yes — reloaded on next file touch | Disk-persisted |
+| Architectural decisions (in conversation) | Partially — summarised | In summary |
+| 5 most-recently-accessed files | Yes — retained verbatim | Recent = relevant |
+| Skills (injected at session start) | Yes — re-injected up to cap | Session-level persistence |
+| `NOTES.md` / `TODO.md` (if re-read) | Yes — if Claude re-reads after compact | Must be re-read |
+| Raw bash output from completed tasks | Discarded | Not summarised |
+| Thinking token traces from prior turns | Discarded | Too expensive to retain |
+| Old conversation turns | Summarised or discarded | Core compaction target |
+| Redundant tool results | Discarded | No longer needed |
+
+**Proactive compaction at 70% (saves $0.10–0.50 per session):**
+
+```bash
+# Check current usage
+/context
+# Output shows: "Context: 142,341 / 200,000 tokens (71.2%)"
+
+# Compact now (proactive at 71%) with focus steering
+/compact "Summarise: we refactored auth to JWT. Keep: the new middleware structure, failing test names, next steps. Discard: old session/cookie implementation details."
+
+# Verify compact succeeded
+/context
+# Output shows: "Context: 38,200 / 200,000 tokens (19.1%)"
+```
+
+### Token Window Simulator Reference
+
+```
+Session token budget visualization (Sonnet 4.6, 200K window)
+
+0%   10%   20%   30%   40%   50%   60%   70%   80%   90%  100%
+│    │     │     │     │     │     │     │     │     │     │
+├────┼─────┼─────┼─────┼─────┼─────┼─────┼─────┼─────┼─────┤
+│ FX │  conversation history grows here →              │ MAX │
+└────┘                                                  └─────┘
+FX = Fixed overhead (system + CLAUDE.md + tools): ~8–21K tokens
+     ├── System prompt:          ~3,100 tokens
+     ├── Built-in tool schemas:  ~4,000 tokens (deferred tools not counted)
+     └── CLAUDE.md (200 lines):  ~12,000 tokens max
+
+MAX = Auto-compaction fires at ~83.5% = ~167K of 200K tokens used
+
+Optimal compact zone: 60-70% (saves ~$0.10-0.50 vs auto)
+Savings come from: fewer wasted tokens in summary, better focus, cheaper summary
+
+1M window (Sonnet 4.6 / Opus 4.x):
+  Fixed overhead: ~25–40K tokens (same system + CLAUDE.md + more deferred tools)
+  Auto-compact at 83.5%: ~835K tokens
+  Optimal compact zone: 60-70% = 600K–700K tokens
+  More headroom → less urgent, but still worth proactive compaction
+```
+
+### Session Rhythm Patterns by Work Type
+
+**Pattern 1: Quick task (under 30 minutes)**
+
+```bash
+/clear                          # Clean context for unrelated work
+# No compact needed — session ends before context fills
+# Just /clear between tasks in the same Claude session
+```
+
+**Pattern 2: Half-day feature (2–4 hours)**
+
+```bash
+/context                        # Check starting budget
+/effort high                    # Ensure full thinking for complex work
+
+# ... work for 1–2 hours ...
+
+/compact "Focus on [feature-name] implementation. Keep: current file changes, test failures. Discard: early exploration."
+# Continue work
+
+/rename feature-name-2026-06-03  # Name for retrieval if interrupted
+```
+
+**Pattern 3: All-day architecture session (6–8 hours)**
+
+```bash
+/context && /effort high         # Start clean
+
+# ... 2 hours of work ...
+/compact "Architecture decision: chose event-sourcing. Keep: event schema, aggregate pattern. Discard: initial CRUD exploration."
+
+# Save decisions immediately after compact
+# "Please update MEMORY.md: we chose event-sourcing for the order domain because [reasons]"
+
+# ... 2 more hours ...
+/compact "Keep: current implementation of OrderAggregate. Discard: earlier OrderService attempt."
+
+# ... end of day ...
+/rename architecture-event-sourcing-2026-06-03
+# "Please update MEMORY.md with today's decisions before I close the session"
+```
+
+**Pattern 4: Multi-day project**
+
+```bash
+# Day 1 end ritual:
+# "Summarise today's key decisions and save them to MEMORY.md"
+/rename project-auth-day1
+
+# Day 2 start:
+/resume project-auth-day1       # Optionally resume; or /clear for fresh start
+/memory                         # Review decisions saved yesterday
+/context                        # Check budget
+# "Read MEMORY.md and CLAUDE.md, then summarise where we left off"
+
+# Repeat daily — MEMORY.md is the cross-session state store
+```
+
+### CE Checklist — Printable Reference
+
+```
+CONTEXT ENGINEERING SESSION CHECKLIST
+
+CLAUDE.md Health
+□ CLAUDE.md < 200 lines (check: /context → system tokens < 15K)
+□ Use @import for sections > 30 lines that aren't always needed
+□ No full database schemas or API specs inline (→ reference files)
+□ Each path-scoped rule has correct paths: glob in frontmatter
+
+Rules Scoping
+□ Rules have paths: globs (not loaded at startup for all files)
+□ TypeScript/Python/SQL conventions in scoped rules, not root CLAUDE.md
+□ Test file patterns in rules/tests.md (paths: ["**/*.test.*"])
+□ Verify rules load: /context shows rule token counts
+
+Memory Management
+□ Run /compact at 60-70% (not just when auto fires at 83.5%)
+□ Use /compact "Focus on X" with steering instruction, not bare /compact
+□ Save architectural decisions to MEMORY.md before compacting
+□ Name sessions: /rename <descriptive-name> before ending
+□ Use /clear between unrelated tasks in the same session
+□ Keep MEMORY.md under 100 lines (prune with /memory prune)
+
+Session Hygiene
+□ Set /effort high before multi-file engineering sessions
+□ Check /context at session start (budget should be < 10%)
+□ Monitor costs with /usage — alert if session > $5 for standard work
+□ Use /branch for parallel work requiring isolated context windows
+□ Use subagents (Task tool) for independent research subtasks
+
+Cost Signals (act if any triggered)
+□ Session cost > $5: run /compact with focus steering
+□ Session cost > $10: evaluate /clear and fresh start
+□ Context > 70%: compact now
+□ CLAUDE.md > 200 lines: split into scoped rules
+□ MEMORY.md > 100 lines: prune old/stale entries
+```
