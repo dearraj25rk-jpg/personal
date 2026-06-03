@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 10
   label: Agent SDK
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 # Claude Code Agent SDK — Complete Guide

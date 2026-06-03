@@ -9,7 +9,7 @@ description: >
   MCP Spec 1.1 · Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 19
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 import MCPDiagram from '../../../components/interactive/MCPDiagram.jsx';
@@ -164,5 +164,685 @@ Good tool descriptions reduce Claude's token usage and improve accuracy:
 - [ ] Audit log all MCP tool calls via PostMCPTool hook
 - [ ] Use `CLAUDE_CODE_DISABLE_MCP_TOOLS` to blocklist dangerous tools
 - [ ] Rotate credentials; use environment variables never hardcoded in `.mcp.json`
+
+## MCP Protocol Deep Dive
+
+### JSON-RPC 2.0 Message Format
+
+MCP uses JSON-RPC 2.0 as its wire format. All messages are newline-delimited JSON objects sent over the chosen transport. There are four message types: **requests**, **responses**, **notifications**, and **errors**.
+
+**Request** (client → server, expects a response):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "query_database",
+    "arguments": {
+      "sql": "SELECT * FROM users WHERE active = true LIMIT 10",
+      "database": "production"
+    }
+  }
+}
+```
+
+**Response** (server → client, matched by `id`):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "[{\"id\":1,\"email\":\"alice@example.com\"},{\"id\":2,\"email\":\"bob@example.com\"}]"
+      }
+    ],
+    "isError": false
+  }
+}
+```
+
+**Notification** (server → client, no response expected — used for progress):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/tools/progress",
+  "params": {
+    "progressToken": "tok_abc123",
+    "progress": 42,
+    "total": 100,
+    "message": "Processing row 42 of 100..."
+  }
+}
+```
+
+**Error Response** (server → client, something went wrong):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32602,
+    "message": "Invalid params",
+    "data": {
+      "field": "sql",
+      "reason": "SQL injection pattern detected in query"
+    }
+  }
+}
+```
+
+**Standard JSON-RPC error codes:**
+
+| Code | Name | Meaning |
+|------|------|---------|
+| `-32700` | Parse error | Invalid JSON received |
+| `-32600` | Invalid request | Not a valid Request object |
+| `-32601` | Method not found | Method does not exist |
+| `-32602` | Invalid params | Invalid method parameters |
+| `-32603` | Internal error | Internal JSON-RPC error |
+| `-32000` to `-32099` | Server error | Reserved for MCP server errors |
+
+### Capability Negotiation Sequence
+
+The MCP initialize handshake lets client and server agree on supported features before any tool calls happen:
+
+```
+Client                                       Server
+  │                                             │
+  │──── initialize ────────────────────────────►│
+  │     {                                       │
+  │       "jsonrpc": "2.0",                     │
+  │       "id": 0,                              │
+  │       "method": "initialize",               │
+  │       "params": {                           │
+  │         "protocolVersion": "2024-11-05",    │
+  │         "capabilities": {                   │
+  │           "roots": {"listChanged": true},   │
+  │           "sampling": {}                    │
+  │         },                                  │
+  │         "clientInfo": {                     │
+  │           "name": "claude-code",            │
+  │           "version": "2.1.126"              │
+  │         }                                   │
+  │       }                                     │
+  │     }                                       │
+  │                                             │
+  │◄─── result ────────────────────────────────│
+  │     {                                       │
+  │       "protocolVersion": "2024-11-05",      │
+  │       "capabilities": {                     │
+  │         "tools": {"listChanged": true},     │
+  │         "resources": {"subscribe": true},   │
+  │         "prompts": {"listChanged": false},  │
+  │         "logging": {}                       │
+  │       },                                    │
+  │       "serverInfo": {                       │
+  │         "name": "my-db-server",             │
+  │         "version": "1.2.0"                  │
+  │       }                                     │
+  │     }                                       │
+  │                                             │
+  │──── notifications/initialized ─────────────►│
+  │     (client signals ready — no response)    │
+  │                                             │
+  │──── tools/list ────────────────────────────►│
+  │◄─── result: [{name, description, schema}]  │
+  │                                             │
+  │     ... normal operation begins ...         │
+```
+
+**Key capability flags:**
+
+| Capability | What it enables |
+|-----------|----------------|
+| `tools.listChanged` | Server can send `notifications/tools/list_changed` when tools update |
+| `resources.subscribe` | Client can subscribe to resource change notifications |
+| `sampling` | Server can request LLM completions from the client (advanced) |
+| `roots.listChanged` | Client exposes workspace roots (filesystem boundaries) |
+| `logging` | Server can send structured log messages to the client |
+
+---
+
+## Transport Comparison
+
+### stdio vs HTTP — When to Use Each
+
+```
+stdio transport:                    HTTP (Streamable) transport:
+────────────────                    ──────────────────────────────
+Local process spawned by host       Remote service — any host, any port
+Same machine only                   Any network-accessible endpoint
+Pipe: stdin/stdout                  HTTP POST + SSE response stream
+Process lifecycle = server lifetime Server runs independently
+~0ms overhead per message           Network latency per request
+No auth needed (process boundary)   Auth via headers (Bearer, API keys)
+```
+
+**Decision guide:**
+
+| Scenario | Transport | Reason |
+|----------|-----------|--------|
+| Local CLI tool wrapping your database | `stdio` | Simple, no network exposure |
+| Shared team server running in Kubernetes | `http` | Central, accessible to all devs |
+| Sandboxed tool in CI environment | `stdio` | Process isolation, no open ports |
+| SaaS MCP provider (e.g. Browserbase) | `http` | External network required |
+| Dev-only personal scripts | `stdio` | Zero configuration |
+| Multi-tenant enterprise deployment | `http` | One server → many users |
+
+### Latency Characteristics
+
+```
+stdio (local):
+  Spawn overhead (first call):   ~80–200ms  (process startup)
+  Per-call overhead:             ~0–2ms     (IPC, negligible)
+  Total for 100 tool calls:      ~200ms + (100 × 1ms) = ~300ms
+
+http (local, loopback):
+  Connection establishment:      ~5–10ms    (TCP + HTTP overhead)
+  Per-call overhead:             ~3–8ms     (HTTP framing)
+  Total for 100 tool calls:      ~10ms + (100 × 5ms) = ~510ms
+
+http (remote, typical cloud):
+  Connection establishment:      ~50–200ms  (TLS + network)
+  Per-call overhead:             ~20–150ms  (network RTT)
+  Total for 100 tool calls:      ~200ms + (100 × 80ms) = ~8,200ms
+```
+
+**Rule of thumb:** For interactive Claude Code sessions, keep round-trip tool calls under 500ms. Remote HTTP servers with high latency will noticeably slow down sessions.
+
+### Configuration Differences
+
+**stdio server configuration:**
+
+```json
+{
+  "mcpServers": {
+    "my-local-db": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/absolute/path/to/server/index.js", "--port", "5432"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}",
+        "NODE_ENV": "production"
+      },
+      "cwd": "/path/to/server/directory"
+    }
+  }
+}
+```
+
+**HTTP server configuration:**
+
+```json
+{
+  "mcpServers": {
+    "remote-api": {
+      "type": "http",
+      "url": "https://mcp.internal.company.com/v1",
+      "headers": {
+        "Authorization": "Bearer ${MCP_API_TOKEN}",
+        "X-Tenant-ID": "engineering"
+      },
+      "timeout": 30000
+    }
+  }
+}
+```
+
+### Authentication Options
+
+| Method | Transport | Configuration |
+|--------|-----------|--------------|
+| None (process boundary) | `stdio` | No auth config needed — OS user boundary |
+| Bearer token | `http` | `"headers": {"Authorization": "Bearer ${TOKEN}"}` |
+| API key header | `http` | `"headers": {"X-API-Key": "${API_KEY}"}` |
+| mTLS (client certificates) | `http` | Configured at HTTP client level via env |
+| OAuth 2.0 | `http` | Exchange token externally, pass as Bearer |
+| AWS SigV4 | `http` | Use AWS SDK wrapper to sign requests |
+
+**Environment variable substitution:** In `.mcp.json` files, `${VAR_NAME}` is substituted from the host process environment at load time. Never hardcode secrets directly in `.mcp.json`.
+
+---
+
+## 12 Official MCP Servers
+
+Complete configuration examples for each official server. Install via npm or npx.
+
+### 1. filesystem
+
+Read, write, move, and search files within allowed directories.
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y", "@modelcontextprotocol/server-filesystem",
+        "/home/user/projects",
+        "/home/user/documents"
+      ]
+    }
+  }
+}
+```
+
+Key tools: `read_file`, `write_file`, `list_directory`, `search_files`, `move_file`, `create_directory`, `get_file_info`
+
+### 2. github
+
+Interact with GitHub repositories, issues, PRs, and code.
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Key tools: `create_or_update_file`, `search_repositories`, `create_repository`, `get_file_contents`, `push_files`, `create_issue`, `create_pull_request`, `search_code`
+
+### 3. postgres
+
+Query and inspect PostgreSQL databases.
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y", "@modelcontextprotocol/server-postgres",
+        "${DATABASE_URL}"
+      ]
+    }
+  }
+}
+```
+
+Key tools: `query` (read-only SELECT), `list_tables`, `describe_table`  
+Note: Server enforces read-only access by default — no INSERT/UPDATE/DELETE.
+
+### 4. sqlite
+
+Query and manage SQLite databases.
+
+```json
+{
+  "mcpServers": {
+    "sqlite": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y", "@modelcontextprotocol/server-sqlite",
+        "--db-path", "/path/to/database.db"
+      ]
+    }
+  }
+}
+```
+
+Key tools: `read_query`, `write_query`, `create_table`, `list_tables`, `describe_table`, `append_insight`
+
+### 5. brave-search
+
+Web search via Brave Search API.
+
+```json
+{
+  "mcpServers": {
+    "brave-search": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+Key tools: `brave_web_search` (10 results/call), `brave_local_search` (location-aware)
+
+### 6. fetch
+
+HTTP fetch for any URL — useful for reading API docs, web pages, or REST endpoints.
+
+```json
+{
+  "mcpServers": {
+    "fetch": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "env": {
+        "ALLOWED_DOMAINS": "docs.anthropic.com,api.github.com"
+      }
+    }
+  }
+}
+```
+
+Key tools: `fetch` (GET any URL, returns markdown-converted HTML), `fetch_raw` (raw content)
+
+### 7. memory
+
+Persistent key-value knowledge graph with semantic search.
+
+```json
+{
+  "mcpServers": {
+    "memory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "env": {
+        "MEMORY_FILE_PATH": "/home/user/.claude/mcp-memory/knowledge.json"
+      }
+    }
+  }
+}
+```
+
+Key tools: `create_entities`, `create_relations`, `add_observations`, `search_nodes`, `read_graph`, `delete_entities`
+
+### 8. puppeteer
+
+Browser automation — screenshot, click, type, navigate.
+
+```json
+{
+  "mcpServers": {
+    "puppeteer": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+      "env": {
+        "PUPPETEER_HEADLESS": "true"
+      }
+    }
+  }
+}
+```
+
+Key tools: `puppeteer_navigate`, `puppeteer_screenshot`, `puppeteer_click`, `puppeteer_fill`, `puppeteer_evaluate`, `puppeteer_select`
+
+### 9. slack
+
+Read channels, post messages, manage Slack workspace.
+
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
+        "SLACK_TEAM_ID": "${SLACK_TEAM_ID}"
+      }
+    }
+  }
+}
+```
+
+Key tools: `slack_list_channels`, `slack_post_message`, `slack_reply_to_thread`, `slack_get_channel_history`, `slack_search_messages`, `slack_get_users`
+
+### 10. google-maps
+
+Geocoding, place search, directions, and distance matrix.
+
+```json
+{
+  "mcpServers": {
+    "google-maps": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-google-maps"],
+      "env": {
+        "GOOGLE_MAPS_API_KEY": "${GOOGLE_MAPS_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+Key tools: `maps_geocode`, `maps_reverse_geocode`, `maps_search_places`, `maps_get_directions`, `maps_distance_matrix`, `maps_elevation`
+
+### 11. sentry
+
+Read and triage Sentry error reports and issues.
+
+```json
+{
+  "mcpServers": {
+    "sentry": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sentry"],
+      "env": {
+        "SENTRY_AUTH_TOKEN": "${SENTRY_AUTH_TOKEN}",
+        "SENTRY_ORGANIZATION": "my-org",
+        "SENTRY_PROJECT": "my-project"
+      }
+    }
+  }
+}
+```
+
+Key tools: `get_sentry_issue`, `list_sentry_issues`, `get_sentry_event`, `resolve_sentry_issue`
+
+### 12. sequential-thinking
+
+Structured multi-step reasoning — forces Claude to break complex problems into explicit steps.
+
+```json
+{
+  "mcpServers": {
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    }
+  }
+}
+```
+
+Key tools: `sequentialthinking` — accepts a problem, returns structured step-by-step analysis. No external API key required.
+
+---
+
+## Building Your Own MCP Server
+
+### Full TypeScript Quick Start Template
+
+Complete working server with tools, resources, and error handling. Install and run in under 5 minutes.
+
+**1. Initialize project:**
+
+```bash
+mkdir my-mcp-server && cd my-mcp-server
+npm init -y
+npm install @modelcontextprotocol/sdk zod
+npm install -D typescript @types/node tsx
+npx tsc --init --target ES2022 --module NodeNext --moduleResolution NodeNext
+```
+
+**2. Create `src/index.ts`:**
+
+```typescript
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+
+// ── Server setup ─────────────────────────────────────────────────────────────
+const server = new McpServer({
+  name: "my-mcp-server",
+  version: "1.0.0",
+});
+
+// ── Tool: query orders ────────────────────────────────────────────────────────
+server.tool(
+  "get_order",
+  "Get order details by order ID. Returns null if not found.",
+  {
+    order_id: z.string().regex(/^ORD-\d+$/).describe("Order ID in format ORD-12345"),
+  },
+  async ({ order_id }) => {
+    try {
+      // Replace with real database call
+      const order = await fakeDb.getOrder(order_id);
+      if (!order) {
+        return {
+          content: [{ type: "text", text: `Order ${order_id} not found.` }],
+          isError: false,
+        };
+      }
+      return {
+        content: [{ type: "text", text: JSON.stringify(order, null, 2) }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text", text: `Database error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── Tool: list recent orders ──────────────────────────────────────────────────
+server.tool(
+  "list_recent_orders",
+  "List the N most recent orders. Max 50.",
+  {
+    limit: z.number().int().min(1).max(50).default(10).describe("Number of orders to return"),
+    status: z.enum(["all", "pending", "shipped", "delivered"]).default("all"),
+  },
+  async ({ limit, status }) => {
+    const orders = await fakeDb.listOrders({ limit, status });
+    return {
+      content: [
+        { type: "text", text: `Found ${orders.length} orders:\n${JSON.stringify(orders, null, 2)}` },
+      ],
+    };
+  }
+);
+
+// ── Resource: order schema ────────────────────────────────────────────────────
+server.resource(
+  "order-schema",
+  "schema://orders",
+  { mimeType: "application/json" },
+  async () => ({
+    contents: [{
+      uri: "schema://orders",
+      mimeType: "application/json",
+      text: JSON.stringify({
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          customer_email: { type: "string" },
+          status: { type: "string", enum: ["pending", "shipped", "delivered"] },
+          total_usd: { type: "number" },
+          created_at: { type: "string", format: "date-time" },
+        },
+      }, null, 2),
+    }],
+  })
+);
+
+// ── Prompt: order summary template ───────────────────────────────────────────
+server.prompt(
+  "summarize-order",
+  "Generate a customer-facing order summary",
+  { order_id: z.string() },
+  ({ order_id }) => ({
+    messages: [{
+      role: "user",
+      content: {
+        type: "text",
+        text: `Use the get_order tool to fetch order ${order_id}, then write a friendly customer-facing summary email. Include: status, items, estimated delivery.`,
+      },
+    }],
+  })
+);
+
+// ── Start server ──────────────────────────────────────────────────────────────
+const transport = new StdioServerTransport();
+await server.connect(transport);
+console.error("my-mcp-server running on stdio"); // stderr only — stdout is protocol
+
+// ── Fake DB (replace with real implementation) ────────────────────────────────
+const fakeDb = {
+  async getOrder(id: string) {
+    if (id === "ORD-12345") {
+      return { id, customer_email: "alice@example.com", status: "shipped", total_usd: 99.99 };
+    }
+    return null;
+  },
+  async listOrders({ limit, status }: { limit: number; status: string }) {
+    return [{ id: "ORD-12345", status: "shipped", total_usd: 99.99 }].slice(0, limit);
+  },
+};
+```
+
+**3. Add to `package.json`:**
+
+```json
+{
+  "scripts": {
+    "start": "node --import=tsx/esm src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  }
+}
+```
+
+**4. Register in `.mcp.json`:**
+
+```json
+{
+  "mcpServers": {
+    "my-mcp-server": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["--import=tsx/esm", "/absolute/path/my-mcp-server/src/index.ts"],
+      "env": { "DATABASE_URL": "${DATABASE_URL}" }
+    }
+  }
+}
+```
+
+**5. Test immediately:**
+
+```bash
+# Verify your server starts correctly
+echo '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}' | node --import=tsx/esm src/index.ts
+```
+
+**Development tips:**
+
+- Write all debug output to **stderr** — stdout is the JSON-RPC protocol channel
+- Use Zod schemas for every input — they become the tool's JSON Schema automatically
+- Keep each tool focused on one action — Claude picks tools better with narrow descriptions
+- Return `isError: true` for expected failures (not found) vs throwing for unexpected errors
 
 → Full reference: [MCP Servers — Architecture & Development](./mcp-servers-guide)

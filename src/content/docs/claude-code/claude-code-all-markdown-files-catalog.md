@@ -2,13 +2,61 @@
 title: Every Markdown File Claude Code Recognizes — Complete Catalog
 sidebar:
   order: 4
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 # Every Markdown File Claude Code Recognizes — Complete Catalog
 
-> **Last updated: June 2, 2026 — reflects Claude Code v2.1.126+**
+> **Last updated: June 3, 2026 — reflects Claude Code v2.1.126+**
 > All information sourced from official `code.claude.com` documentation.
+
+---
+
+## June 2026 Catalog Update
+
+This is the **June 2026 refresh** of the complete Claude Code markdown file type catalog. All 23 file types have been validated against Claude Code **v2.1.126** (May 19, 2026) — the current stable release.
+
+### What Changed Since the Last Refresh
+
+| Area | Change |
+|------|--------|
+| Agent frontmatter | `background: true` field now GA; `isolation: worktree` stable for all plan tiers |
+| Skill descriptions | Cap raised from 250 to 1,536 characters in `/skills` listing (v2.1.105) |
+| Subagent memory | Local scope (`agent-memory/local/`) confirmed stable |
+| Plugin Monitors | Confirmed `when: on-skill-invoke:<skill-name>` field works as documented |
+| ToolSearch | Confirmed deferred tool schemas land in conversation history, not prefix |
+| `@import` | Confirmed max depth of 5 hops; depth 6 is silently ignored (no error) |
+| MEMORY.md | Memory timestamps available since March 2026 for freshness reasoning |
+| `${CLAUDE_EFFORT}` | Available in skill content since v2.1.120; confirmed in frontmatter `description` |
+| `claude project purge` | New command in v2.1.126 — deletes all Claude Code state for a project |
+
+### Quick Coverage Summary
+
+| File # | File Type | Status in v2.1.126 |
+|--------|-----------|-------------------|
+| 1 | Enterprise CLAUDE.md | Stable — system-level, MDM-deployable |
+| 2 | User CLAUDE.md | Stable — `~/.claude/CLAUDE.md` |
+| 3 | Personal Commands | Stable — `~/.claude/commands/*.md` |
+| 4 | Personal Agents | Stable — full frontmatter reference below |
+| 5 | Personal Skills | Stable — `SKILL.md` required filename |
+| 6 | Personal Output Styles | Stable — `keep-coding-instructions` field confirmed |
+| 7 | Project CLAUDE.md | Stable — only file that auto-survives `/compact` |
+| 8 | CLAUDE.local.md | Stable — auto-gitignored on creation |
+| 9 | Rules | Stable — YAML list for `paths:` since v2.1.84 |
+| 10 | Project Commands | Stable — namespaced vs personal |
+| 11 | Project Agents | Stable — higher priority than personal agents |
+| 12 | Project Skills | Stable — auto-discovered from nested subdirs |
+| 13 | Project Output Styles | Stable |
+| 14 | Subtree CLAUDE.md | Stable — lazy on-demand loading confirmed |
+| 15 | Auto-memory MEMORY.md | Stable — 200 line / 25KB hard cap |
+| 16 | Subagent MEMORY.md | Stable — three-scope model (user/project/local) |
+| 17 | Plugin Commands | Stable — namespaced as `/plugin:command` |
+| 18 | Plugin Agents | Stable — restricted frontmatter (no hooks/mcpServers) |
+| 19 | Plugin Skills | Stable — namespaced as `/plugin:skill` |
+| 20 | Plugin Output Styles | Stable |
+| 21 | Plugin Monitors | Stable (v2.1.105+) — `when:` field confirmed |
+| 22 | Plugin Themes | Stable — `Ctrl+E` to edit a plugin theme confirmed |
+| 23 | @Imported Files | Stable — inline at load time, max 5 hops |
 
 ---
 
@@ -1911,6 +1959,378 @@ At any point during a session, run `/memory` to:
 - Open any memory file directly in your system editor
 - Open the auto-memory folder for the current project
 - Verify path-scoped rules are activating when expected
+
+---
+
+## File Type Decision Flowchart
+
+Use this ASCII decision tree when you have content and need to choose the right file type. Start at the top and follow the YES/NO branches.
+
+```
+START: "I have content/instructions/tools for Claude"
+│
+├─► Is this enforced policy that ALL users on this machine must follow?
+│   │
+│   YES ─► Enterprise CLAUDE.md (#1)
+│           Deploy via MDM/Ansible/Group Policy to system path.
+│           Add hard enforcement rules to managed-settings.json alongside it.
+│
+└─► NO (user or team-controlled content)
+    │
+    ├─► Does it apply to ME PERSONALLY across ALL my projects?
+    │   │
+    │   YES ─► User CLAUDE.md (#2)
+    │           ~/.claude/CLAUDE.md
+    │           For coding style preferences, interaction habits, personal shortcuts.
+    │
+    ├─► Does it apply to ME PERSONALLY in THIS project only?
+    │   │
+    │   YES ─► CLAUDE.local.md (#8)
+    │           ./CLAUDE.local.md (auto-gitignored)
+    │           For sandbox URLs, local DB credentials, personal workflow notes.
+    │           Note: does NOT exist across worktrees — use @import from ~/.claude/ instead.
+    │
+    └─► Does it belong to the TEAM (committed to git)?
+        │
+        ├─► Is it a multi-step WORKFLOW with scripts, templates, or supporting files?
+        │   │
+        │   YES ─► Skill (#12 project / #5 personal)
+        │           .claude/skills/<name>/SKILL.md
+        │           Invoked automatically by Claude or via /skill-name.
+        │           Good for: deploy scripts, test generation workflows, API scaffolding.
+        │
+        ├─► Is it a REUSABLE COMMAND the team invokes explicitly?
+        │   │
+        │   YES ─► Slash Command (#10 project / #3 personal)
+        │           .claude/commands/<name>.md
+        │           User types /command-name. Supports $ARGUMENTS, !shell, @file injection.
+        │
+        ├─► Is it an AUTONOMOUS AGENT with its own identity and tool set?
+        │   │
+        │   YES ─► Subagent (#11 project / #4 personal)
+        │           .claude/agents/<name>.md
+        │           Gets its own context window, model, effort level, and MEMORY.md.
+        │           Auto-delegated by Claude or @-mentioned by user.
+        │
+        ├─► Is it a CUSTOM RESPONSE FORMAT or output style?
+        │   │
+        │   YES ─► Output Style (#13 project / #6 personal)
+        │           .claude/output-styles/<name>.md
+        │           Replaces SE-specific instructions in system prompt.
+        │           Activated via /config → Output style.
+        │
+        ├─► Does it apply to SPECIFIC FILE TYPES or directories?
+        │   │
+        │   YES ─► Path-Scoped Rule (#9)
+        │           .claude/rules/<name>.md with paths: frontmatter
+        │           Loaded ONLY when Claude touches matching files — zero cost otherwise.
+        │           Example: paths: ["src/api/**/*.ts", "tests/api/**"]
+        │
+        ├─► Does it apply to ALL interactions regardless of file type?
+        │   │
+        │   YES ─► Does it apply to a SPECIFIC SUBDIRECTORY of the project?
+        │           │
+        │           YES ─► Subtree CLAUDE.md (#14)
+        │           │       src/domain/CLAUDE.md
+        │           │       Lazy-loaded when Claude enters that directory.
+        │           │
+        │           NO  ─► Is it fewer than ~20 lines?
+        │                   │
+        │                   YES ─► Project CLAUDE.md (#7)
+        │                   │       ./CLAUDE.md (root) — permanent overhead
+        │                   │
+        │                   NO  ─► Global Rule (#9, no paths: frontmatter)
+        │                           .claude/rules/<name>.md
+        │                           Permanent overhead but cleaner than a bloated CLAUDE.md
+        │
+        └─► Is it a SHARED LIBRARY distributed via plugin marketplace?
+            │
+            YES ─► Plugin Components (#17–#22)
+                    Commands, Agents, Skills, Output Styles, Monitors, Themes
+                    All namespaced as /plugin-name:component-name
+                    Install via: claude plugin install <plugin-name>
+```
+
+### Decision Tree Cheat Sheet
+
+| If you want Claude to… | Use this file type |
+|------------------------|-------------------|
+| Always follow security rules for everyone | Enterprise CLAUDE.md + managed-settings.json |
+| Always follow your personal coding style | User CLAUDE.md |
+| Know team conventions and build commands | Project CLAUDE.md |
+| Override team settings personally | CLAUDE.local.md |
+| Apply rules only in `src/api/**` | Path-scoped Rule |
+| Know DDD rules only when in `src/Domain/` | Subtree CLAUDE.md |
+| Run a deploy workflow on demand | Skill |
+| Execute `/pr-review` when typed | Slash Command |
+| Delegate reviews to a specialist agent | Subagent |
+| Format responses in a custom style | Output Style |
+| Remember things across sessions | Auto-memory MEMORY.md |
+| Agent remembers across invocations | Subagent MEMORY.md |
+| Reference a shared policy in many files | @Imported File |
+
+---
+
+## Complete Frontmatter Reference
+
+This section documents every valid frontmatter field for each file type that supports frontmatter. Fields marked `required` must be present for the file to function correctly.
+
+### Frontmatter: Slash Commands (`commands/*.md`)
+
+```yaml
+---
+description: >
+  What this command does. Shown in autocomplete, /help, and the command browser.
+  Max ~500 chars recommended; no hard limit.
+allowed-tools: Read, Grep, Glob, Bash(git diff:*), Bash(npm test:*)
+  # Allowlist of tools this command may use.
+  # Format: ToolName, or ToolName(pattern:*) for Bash with constraints.
+  # Omit field to inherit session permissions.
+model: claude-sonnet-4-6
+  # Optional model override for this command's execution.
+  # Accepts full model ID (claude-sonnet-4-6) or alias (sonnet, opus, haiku).
+---
+```
+
+**Variables available in the command body:**
+- `$ARGUMENTS` — everything typed after the command name
+- `$1`, `$2`, `$3` — individual positional arguments (space-separated)
+- `@path/to/file` — inline file content injection (resolved at invocation)
+- `` !`shell command` `` — shell command output injected inline
+
+---
+
+### Frontmatter: Subagents (`agents/*.md`)
+
+All fields except `name` and `description` are optional.
+
+```yaml
+---
+name: my-agent                    # REQUIRED. Unique identifier (kebab-case recommended).
+                                  # Max 64 chars, lowercase, hyphens, numbers.
+
+description: >                    # REQUIRED. Used for auto-delegation routing.
+  Describes what this agent does and when Claude should delegate to it.
+  Include trigger phrases: "Use when user asks for X, Y, or Z."
+  Max 1024 chars recommended for auto-discovery quality.
+
+tools: Read, Glob, Grep           # Tool ALLOWLIST — only these tools available.
+  # Omit to inherit session's tool list.
+  # Use this to restrict dangerous tools (e.g., no Bash for read-only agents).
+
+disallowedTools: Write, Edit, Bash  # Tool DENYLIST — explicitly block these.
+  # Use when you want all tools except a few specific ones.
+  # tools: and disallowedTools: are mutually exclusive; pick one approach.
+
+model: sonnet                     # Model override.
+  # Values: sonnet | opus | haiku | inherit | full model ID (claude-opus-4-7)
+  # Default: "inherit" (uses same model as main session)
+  # Override priority: CLAUDE_CODE_SUBAGENT_MODEL env var > per-invocation > frontmatter > main session
+
+effort: medium                    # Effort/thinking level for this agent.
+  # Values: low | medium | high | xhigh
+  # Default: inherits from main session
+
+maxTurns: 50                      # Max agentic loop iterations before stopping.
+  # Default: 50. Lower for simple tasks; raise for complex autonomous work.
+
+isolation: worktree               # Run agent in an isolated git worktree copy.
+  # Values: "worktree" only (no other values currently supported)
+  # The agent gets a fresh copy of the repo; changes stay isolated.
+
+background: true                  # Run as a background task (experimental).
+  # When true, agent runs asynchronously; parent session continues.
+
+skills:                           # Inject skill content into agent context at startup.
+  - code-review                   # String: name of skill to inject
+  - security-scan
+
+memory:
+  scope: user                     # user | project | local
+  # user:    ~/.claude/agent-memory/<name>/MEMORY.md (cross-project)
+  # project: .claude/agent-memory/<name>/MEMORY.md (this repo, git-tracked)
+  # local:   .claude/agent-memory/local/<name>/MEMORY.md (gitignored)
+
+permissionMode: default           # Permission mode for this agent.
+  # Values: default | plan | acceptEdits | auto | bypassPermissions
+  # NOTE: parent's bypassPermissions/acceptEdits takes precedence and CANNOT be overridden.
+
+hooks:                            # Lifecycle hooks scoped to this agent's lifetime.
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: echo "Bash about to run"
+          once: true              # "once: true" honored only in skill/agent frontmatter
+
+mcpServers:                       # MCP server configuration for this agent.
+  - name: github                  # String = reuse an already-connected server by name
+  - my-custom-server:             # Object = inline definition (scoped to this agent only)
+      command: node
+      args: ["./mcp-server.js"]
+---
+```
+
+**The markdown body** below the frontmatter becomes the **system prompt** for the subagent. The subagent receives ONLY this system prompt — NOT the full Claude Code system prompt (it is a separate, isolated context). Write it as a complete role description.
+
+**Plugin agent restrictions:** Plugin-shipped agents do NOT support `hooks:`, `mcpServers:`, or `permissionMode:` fields for security reasons. All other fields are supported.
+
+---
+
+### Frontmatter: Skills (`SKILL.md`)
+
+```yaml
+---
+name: deploy-staging              # REQUIRED. Max 64 chars; lowercase, hyphens, numbers.
+                                  # Becomes the /skill-name slash command.
+
+description: >                    # REQUIRED for auto-invocation. Max 1024 chars.
+  Deploy to staging environment with safety checks.
+  Use when user says "deploy", "push to staging", or "ship it".
+  Include capability keywords AND trigger phrases for best auto-discovery.
+  Shown in /skills listing up to 1,536 chars (cap raised v2.1.105).
+
+allowed-tools: Read, Bash(npm run *), Bash(git *)
+  # Tool allowlist when this skill runs.
+  # Same format as slash command allowed-tools.
+
+model: claude-sonnet-4-6          # Optional model override for skill execution.
+  # Accepts full model ID or alias: sonnet | opus | haiku
+
+disable-model-invocation: true    # If true, skill only runs via /name, not auto-invoked.
+  # Default: false (skill is auto-invocable by Claude when description matches)
+
+context: fork                     # Run skill in a separate subagent context.
+  # When set, skill runs in an isolated fork with its own context window.
+  # The skill body does NOT see main session conversation history.
+
+agent: Explore                    # Which subagent type to use when context: fork.
+
+effort: low                       # Effort override for this skill's execution.
+  # Values: low | medium | high | xhigh
+
+hooks:                            # Hooks that fire during this skill's execution.
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: ./scripts/pre-check.sh
+          once: true              # Runs once per session, then removed from hook list
+---
+```
+
+**Variables available in skill body:**
+- `$ARGUMENTS` — user input typed after `/skill-name`
+- `$1`, `$2`, `$3` — positional arguments
+- `${CLAUDE_SESSION_ID}` — current session identifier
+- `${CLAUDE_EFFORT}` — current session effort level (v2.1.120+)
+- `${CLAUDE_PLUGIN_ROOT}` — plugin root path (for plugin-shipped skills)
+- `` !`shell command` `` — shell output injected inline at invocation
+- `@path/to/file` — file content injected inline
+
+---
+
+### Frontmatter: Rules (`.claude/rules/*.md`)
+
+```yaml
+---
+description: >
+  Human-readable description shown in /memory and hook audit logs.
+  Not used for routing — only for documentation.
+
+paths:                            # OPTIONAL. When present, rule is path-scoped (conditional).
+  - "src/api/**/*.ts"             # Glob patterns matched against absolute file paths.
+  - "src/controllers/**/*.cs"     # Rule loads when Claude reads/edits ANY matching file.
+  - "**/*.test.ts"                # Supports YAML list (v2.1.84+) OR single string.
+  # Omit "paths:" entirely for a GLOBAL rule that loads unconditionally at session start.
+
+globs:                            # Alias for "paths:" — both are supported.
+  - "src/api/**"
+---
+```
+
+**Global vs. path-scoped rules:**
+- **No `paths:` frontmatter** → rule loads at session start for EVERY session (permanent overhead)
+- **With `paths:` frontmatter** → rule loads lazily when Claude accesses a matching file (zero cost until needed)
+- **Multiple patterns in list** → rule loads if ANY pattern matches
+- **Once loaded** → stays active for the entire session (no unloading mid-session)
+- **`InstructionsLoaded` hook** → fires with matcher `path_glob_match` when a path-scoped rule loads
+
+---
+
+### Frontmatter: Output Styles (`output-styles/*.md`)
+
+```yaml
+---
+name: My Teaching Style           # Display name shown in /config Output Style menu.
+description: >
+  Brief description shown in the style picker.
+  Helps users understand when to choose this style.
+
+keep-coding-instructions: true    # CRITICAL FIELD. Default: false.
+  # false (default): Custom style REPLACES the software-engineering instructions
+  #                  in Claude's system prompt. Claude loses its default "verify changes",
+  #                  "run tests", and "read/write files" behaviors.
+  # true:            Custom style is ADDED on top of the SE instructions.
+  #                  Claude retains all coding behaviors PLUS your custom style.
+  #                  Recommended for any coding-focused output style.
+---
+```
+
+---
+
+### Frontmatter: Plugin Manifest (`.claude-plugin/plugin.json`)
+
+This is JSON, not YAML frontmatter, but included here for completeness:
+
+```json
+{
+  "name": "my-plugin",            // REQUIRED if manifest exists. Plugin namespace.
+  "version": "2.1.0",             // Semantic version string.
+  "description": "Brief description",
+  "author": {
+    "name": "Dev Team",
+    "email": "dev@company.com"
+  },
+  "homepage": "https://docs.example.com",
+  "repository": "https://github.com/user/plugin",
+  "license": "MIT",
+  "keywords": ["deployment", "ci-cd"],
+  "minClaudeCodeVersion": "2.1.0", // Minimum required Claude Code version.
+
+  // Component path overrides (relative to plugin root):
+  "skills": "./custom/skills/",
+  "commands": ["./custom/commands/special.md"],
+  "agents": ["./custom/agents/reviewer.md"],
+  "hooks": "./config/hooks.json",
+  "mcpServers": "./mcp-config.json",
+  "outputStyles": "./styles/",
+  "themes": "./themes/",
+  "lspServers": "./.lsp.json",
+  "monitors": "./monitors.json",
+
+  // Plugin-to-plugin dependencies:
+  "dependencies": [
+    "helper-lib",
+    { "name": "secrets-vault", "version": "~2.1.0" }
+  ],
+
+  // User-configurable values exposed in /config → plugin settings:
+  "userConfig": {
+    "api_endpoint": {
+      "type": "string",
+      "title": "API endpoint",
+      "description": "Your team's API endpoint URL"
+    },
+    "api_token": {
+      "type": "string",
+      "title": "API token",
+      "description": "Authentication token",
+      "sensitive": true            // Stored in system keychain, not settings.json
+    }
+  }
+}
+```
 
 ---
 

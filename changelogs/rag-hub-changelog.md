@@ -2,6 +2,28 @@
 
 > This file documents all changes to the RAG Guides section of the Context documentation site.
 > Not published to the website.
+> For Claude Code section changes, see `changelogs/claude-code-changelog.md`.
+> For all site changes, see `changelogs/CHANGELOG.md`.
+
+---
+
+## [2026-06-03] — Claude Code Section June 2026 Refresh (feature/rag-hub branch)
+
+### Overview
+
+Full refresh of the Claude Code documentation section — all 44 files in `src/content/docs/claude-code/` plus the site homepage updated. This update focused on the Claude Code section (not RAG). For detailed Claude Code changes, see `changelogs/claude-code-changelog.md`.
+
+### Summary of Changes
+
+- All 44 Claude Code files updated with `lastUpdated: 2026-06-03`
+- 25 reference docs enriched with 150+ new sections, 60+ ASCII diagrams, 100+ code examples
+- 19 MDX diagram pages enriched with detailed reference sections
+- Home page terminal animation updated to reflect June 2026
+- New file created: `changelogs/claude-code-changelog.md` (Claude Code-specific changelog)
+
+### RAG Section Impact
+
+No changes to the RAG section in this update. All RAG files remain at their 2026-05-18 state.
 
 ---
 

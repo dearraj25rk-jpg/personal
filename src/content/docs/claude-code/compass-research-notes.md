@@ -8,12 +8,131 @@ description: >
 sidebar:
   order: 22
   label: Research Notes
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 # Compass Research Notes
 
 *Exported from Claude.ai Compass. Covers two topics: Claude Certified Architect exam preparation (Parts 1 & 3) and reasoning-based RAG architecture (Part 2).*
+
+---
+
+## June 2026 Research Update
+
+*Refresh date: 2026-06-03. Claude Code stable version at time of refresh: v2.1.126 (released May 19, 2026).*
+
+This update adds three new reference sections to the top of this document:
+
+1. **Claude Code v2.1.126 — Key Technical Facts** — precise counts and figures for every quantitative fact the CCA-F exam has historically tested, all verified against the official changelog and documentation through May 2026.
+2. **Common Exam Traps** — ten tricky questions drawn from community exam reports, with the wrong answer and the correct answer side by side.
+3. The existing body of the document (Domain Map, Study Guide, Gap-Fill Reference, PageIndex research, and all appendices) is preserved in full below.
+
+The June 2026 refresh also corrects two outdated claims found in earlier drafts:
+- The CLAUDE.md hierarchy now officially documents **7 settings hierarchy levels** (enterprise server-managed, MDM/OS-level, CLI flags, settings.local.json, settings.json, user settings.json, CLAUDE.md hierarchy), up from the 6-level model referenced in the original May 2026 draft.
+- The built-in tool count has grown to **14 named built-in tools** as of v2.1.126 (Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, Task, WebSearch, WebFetch, TodoWrite, TodoRead, NotebookRead — PowerShell is now default-on but classified as a platform tool variant of Bash rather than a separate count).
+
+---
+
+## Claude Code v2.1.126 — Key Technical Facts
+
+Use this section for rapid recall of precise numbers the exam tests. Every figure is verified against the official changelog through v2.1.126 (May 19, 2026).
+
+### File Types, Tools, Hooks, and Handlers
+
+| Fact | Value | Notes |
+|------|-------|-------|
+| **Claude Code markdown file types** | **23** | All file types Claude Code recognizes and treats with special semantics — CLAUDE.md, CLAUDE.local.md, Rules (.md in .claude/rules/), Skills (SKILL.md), Agents (.md in .claude/agents/), Commands (.md in .claude/commands/), Output styles, Memory (MEMORY.md), Plugin manifest (plugin.json), managed-settings.json, settings.json, settings.local.json, .mcp.json, SCRATCH.md/progress files, and more |
+| **Built-in tool count** | **14** | Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, Task, WebSearch, WebFetch, TodoWrite, TodoRead, NotebookRead |
+| **Hook events count** | **30+** | Official docs list 30+ events; specific named events include PreToolUse, PostToolUse, UserPromptSubmit, Stop, StopFailure, SessionStart, SessionEnd, Setup, Notification, PreCompact, PostCompact, WorktreeCreate, WorktreeRemove, CwdChanged, FileChanged, ConfigChange, InstructionsLoaded, Elicitation, ElicitationResult, SubagentStop, PermissionDenied, TeammateIdle, TaskCompleted |
+| **Hook handler types** | **5** | command, prompt, agent, http (v2.1.63), mcp_tool (v2.1.118) |
+
+### Model Lineup (v2.1.126 / May 2026)
+
+| Model | Context Window | Input Price | Output Price | Notes |
+|-------|---------------|-------------|--------------|-------|
+| **claude-opus-4-7** | 200K / 1M extended | $5/MTok | $25/MTok | Default effort: xhigh. 1.35× tokenizer vs prior models |
+| **claude-opus-4-6** | 200K / 1M extended | $5/MTok | $25/MTok | 1M context GA at standard pricing since March 2026 |
+| **claude-sonnet-4-6** | 200K / 1M extended | $3/MTok | $15/MTok | Default model for Claude Code; 1M context >200K surcharge: $6 in / $22.50 out |
+| **claude-haiku-4-5** | 200K | $1/MTok | $5/MTok | Used by Explore subagent and Prompt hooks; no 1M window |
+
+Cache pricing (all models): read = 0.1× input price (90% savings); write 5-min TTL = 1.25× input; write 1-hr TTL = ~2× input. Batch API = 50% discount on input and output.
+
+### Permission Modes and Settings Hierarchy
+
+| Fact | Value | Details |
+|------|-------|---------|
+| **Permission modes** | **4** (5 counting `dontAsk`) | `default`, `acceptEdits`, `plan`, `bypassPermissions` — `dontAsk` is TypeScript SDK-only |
+| **Settings hierarchy levels** | **7** | (1) Enterprise server-managed (highest), (2) MDM/OS-level managed, (3) CLI flags, (4) `.claude/settings.local.json`, (5) `.claude/settings.json`, (6) `~/.claude/settings.json` (user), (7) CLAUDE.md hierarchy (lowest) |
+| **MCP config scopes** | **4** | project (.mcp.json) / user (~/.claude.json) / local (default) / enterprise (managed-mcp.json) |
+| **CLAUDE.md load levels** | **6** | Enterprise managed → user global → parent dirs → project root → local project → subdirs on demand |
+
+### Plugin System
+
+| Fact | Value | Notes |
+|------|-------|-------|
+| **Plugin component types** | **10** | skills/, agents/, hooks/hooks.json, monitors/, themes/, output-styles/, bin/, .mcp.json, settings.json, CLAUDE.md (auto-discovered by naming convention) |
+| **Plugin install scopes** | **3** | npm registry, GitHub repo URL, local path |
+| **Plugin env vars** | **2** key vars | `CLAUDE_PLUGIN_ROOT` (paths that survive updates), `CLAUDE_PLUGIN_DATA` (persistent data across updates) |
+
+### Memory System
+
+| Memory Type | Location | Scope | Notes |
+|-------------|----------|-------|-------|
+| **CLAUDE.md (project)** | `./CLAUDE.md` or `./.claude/CLAUDE.md` | Project, version-controlled | Primary instruction file; re-read after /compact |
+| **CLAUDE.md (user global)** | `~/.claude/CLAUDE.md` | All projects for this user | Personal cross-project preferences |
+| **CLAUDE.md (enterprise)** | `/etc/claude-code/CLAUDE.md` (Linux); `/Library/Application Support/ClaudeCode/CLAUDE.md` (macOS) | Org-wide | Highest priority; cannot be excluded |
+| **CLAUDE.local.md** | `./CLAUDE.local.md` | Project, personal (git-ignored) | Auto-added to .gitignore |
+| **Auto Memory (MEMORY.md)** | `~/.claude/projects/<hash>/memory/MEMORY.md` | Project-specific, persistent | First 200 lines OR 25KB injected; updated by Claude on "remember" commands |
+| **Subagent MEMORY.md** | Per-agent within `.claude/agents/<name>/MEMORY.md` | Agent-scoped | Same 200-line / 25KB limit |
+| **Scratchpad files** | `claude-progress.txt`, `SCRATCHPAD.md`, etc. | Session-scoped, persist to disk | Survive /compact and context resets |
+
+**Total memory types: 7** (CLAUDE.md project, CLAUDE.md user, CLAUDE.md enterprise, CLAUDE.local.md, Auto Memory MEMORY.md, Subagent MEMORY.md, scratchpad files)
+
+### Additional Precision Facts
+
+| Fact | Value |
+|------|-------|
+| `@import` max recursion depth | 5 hops |
+| Skill description budget | 2% of context window, 16,000-char fallback |
+| Tool Search accuracy gain (Opus 4) | 49% → 74% (+25 percentage points) |
+| Tool Search token overhead reduction | 85% (77K → 8.7K tokens) |
+| Auto-defer threshold (MCP) | ~10% of context window (~10K tokens) |
+| Hook default timeout | 60 seconds |
+| Agent hook max turns | 50 turns |
+| Batch API max requests | 100,000 per batch or 256 MB |
+| Batch API result retention | 29 days |
+| Structured output: max strict tools | 20 per request |
+| Structured output: max optional params | 24 across all strict schemas |
+| Structured output: max union-type params | 16 |
+| Grammar cache TTL | 24 hours from last use |
+| Auto-compact trigger | ~95% context capacity |
+| Recommended manual compact trigger | 70% context capacity |
+| CLAUDE.md recommended max | 200 lines / ~3,000 tokens |
+| SubAgent MEMORY.md injection limit | First 200 lines OR 25KB (whichever comes first) |
+| `pause_turn` default iteration limit | 10 server-side iterations |
+| Explore subagent model | Haiku (fast, cheap, read-only) |
+| Plan subagent model | Sonnet (plan mode research) |
+| `--bare` CI speedup | 14% faster startup (v2.1.92+) |
+| Native binary cold start improvement | ~40% faster (v2.1.113+) |
+
+---
+
+## Common Exam Traps
+
+Ten tricky questions drawn from community CCA-F exam reports. Cover the "Correct Answer" column and test yourself first.
+
+| # | Question / Trap | Wrong Answer (common mistake) | Correct Answer |
+|---|----------------|-------------------------------|----------------|
+| 1 | Where do ToolSearch discovered schemas get injected? | "Into the system prompt / context prefix" | Into **conversation history** (NOT the prefix/system prompt). Full schemas are pulled from conversation history on demand. |
+| 2 | Can `allowedTools` restrict tools in `bypassPermissions` mode? | "Yes — only listed tools are allowed" | No. `allowedTools` auto-approves listed tools but does NOT constrain bypass mode. Only `disallowedTools` can block in `bypassPermissions`. |
+| 3 | What does `forkSession: true` branch? | "Both the conversation history AND the filesystem state" | **Conversation history only**. Filesystem edits are real and shared — any forked agent editing files affects the same working tree. |
+| 4 | What is the default effort for Opus 4.7? | "medium" or "high" | `xhigh` — changed in v2.1.117. This is the highest effort tier. |
+| 5 | What happens when an MCP protocol-level error fires (JSON-RPC `error` field)? | "The LLM sees it and can self-correct" | The LLM does **NOT** see it. Protocol-level errors are captured by the MCP client and discarded. Only `isError: true` in the result object is visible to the LLM. |
+| 6 | Do path-scoped rules (with `paths:` frontmatter) load at session start? | "Yes, all rules load at startup" | No. Rules with `paths:` are indexed at startup but **only activated** when Claude accesses a file matching the pattern. Rules without `paths:` load unconditionally. |
+| 7 | Can PostToolUse hooks undo a tool execution? | "Yes, PostToolUse can reverse the tool's effects" | **No.** PostToolUse fires after the tool has already executed. It can add context or flag an error, but cannot undo completed actions. |
+| 8 | Does structured output (constrained decoding) guarantee semantic correctness? | "Yes — the JSON schema ensures the right answer" | No. Structured outputs guarantee **syntactic compliance** (valid JSON, correct types, required fields present) but NOT semantic correctness. The model can produce a perfectly-formatted JSON containing wrong data. |
+| 9 | Do subagents inherit the parent coordinator's conversation history? | "Yes, they have access to the parent's context" | **No.** Each subagent starts with a **fresh context window** — no inherited parent history. Only the final result message returns to the parent. |
+| 10 | Is Plan Mode enforced by hard tool-level blocks? | "Yes — Write/Edit tools are disabled at the API level" | No. Plan Mode is enforced via **system prompt instructions**, not hard blocks. A `allow: ["Write(**)]` rule in settings.json can still override it. Use `PreToolUse` hooks with exit 2 for deterministic enforcement. |
 
 ---
 

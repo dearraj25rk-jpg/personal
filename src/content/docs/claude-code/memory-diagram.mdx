@@ -9,7 +9,7 @@ description: >
   Includes @import syntax, memory commands, and environment variables. v2.1.126 (May 2026).
 sidebar:
   order: 23
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 import MemoryDiagram from '../../../components/interactive/MemoryDiagram.jsx';
@@ -149,5 +149,219 @@ COMPACTION FIRES at ~83.5% context
 ```
 
 **Best practice:** Write important discoveries to MEMORY.md immediately after finding them: `"Remember: the legacy payment module uses synchronous I/O, never call from async context"`
+
+---
+
+## Memory Type Quick Reference
+
+Complete reference table for all 7 memory types. Use this to decide where to store information based on who needs it, how long it must last, and whether it survives compaction.
+
+| Memory Type | File Path | Scope | Who writes? | Git tracked? | Load timing | Compaction survival | Soft size limit |
+|-------------|-----------|-------|-------------|-------------|-------------|---------------------|-----------------|
+| **Enterprise CLAUDE.md** | Managed policy path | All org sessions | Admin/ops team | Managed | Session start | Survives (reloaded) | Unlimited |
+| **User CLAUDE.md** | `~/.claude/CLAUDE.md` | All projects, all sessions | You | No (home dir) | Session start | Survives (reloaded) | 50KB / ~300 lines |
+| **Project CLAUDE.md** | `<project-root>/CLAUDE.md` | This project only | Team (committed) | Yes | Session start | Survives (reloaded) | 120 lines recommended |
+| **CLAUDE.local.md** | `<project-root>/CLAUDE.local.md` | This project, this machine | You only | No (gitignored) | Session start | Survives (reloaded) | 120 lines recommended |
+| **Subtree CLAUDE.md** | `<subdir>/CLAUDE.md` | Files under `<subdir>/` | Team (committed) | Yes | On first file access in subdir | Survives (reloaded on next subdir access) | 80 lines recommended |
+| **Auto-Memory MEMORY.md** | `~/.claude/projects/<hash>/memory/MEMORY.md` | This project, per-machine | Claude (automatic) | No | Session start + after compaction | **Fully survives — reloaded from disk** | 200 lines / 25KB |
+| **Subagent MEMORY.md** | `~/.claude/agents/<agent-id>/memory/MEMORY.md` | One subagent, one session | Claude (automatic) | No | Subagent spawn | Lost when subagent ends | 200 lines / 25KB |
+
+**Key insight:** Auto-Memory (MEMORY.md) is the only memory type that both persists across sessions AND survives compaction intact — it is reloaded directly from disk after every compaction event, not summarized. This makes it uniquely suited for preserving facts discovered during long or complex sessions.
+
+---
+
+## Memory Lifecycle
+
+How memory is assembled at session start and updated throughout a session:
+
+```
+SESSION START
+═══════════════════════════════════════════════════════════════
+  1. LOAD FROM DISK (all at once, before first user message)
+     │
+     ├── Enterprise CLAUDE.md ─────────────────────┐
+     ├── ~/.claude/CLAUDE.md (User)                │
+     ├── <root>/CLAUDE.md (Project)                ├── Injected into
+     ├── <root>/CLAUDE.local.md (Local)            │   system prompt
+     └── ~/.claude/projects/<hash>/MEMORY.md ──────┘
+
+  2. DEFERRED LOADS (triggered later during session)
+     │
+     └── Subtree CLAUDE.md files — loaded when Claude first
+         reads/edits any file in that subdirectory
+
+═══════════════════════════════════════════════════════════════
+  DURING SESSION (turn-by-turn)
+  │
+  ├── Turn N: Claude reads src/auth/login.ts
+  │           → src/auth/CLAUDE.md loads (if exists) ──► added to context
+  │
+  ├── Turn N+3: User says "Remember: we decided to use PKCE not implicit"
+  │             → Claude appends to MEMORY.md ──────────► persists to disk
+  │
+  ├── Turn N+8: Context reaches 70%
+  │             → User runs /compact
+  │             → Conversation summarized (~2,000 tokens)
+  │             → All CLAUDE.md files + MEMORY.md reloaded from disk ◄── survives!
+  │             → Subtree files re-indexed (load on next access)
+  │
+  └── Turn N+12: Session ends
+                 → MEMORY.md on disk ──► available next session
+                 → Conversation history ──► gone (only summary if /compact ran)
+
+═══════════════════════════════════════════════════════════════
+  NEXT SESSION START
+  │
+  └── MEMORY.md reloaded ──► Claude remembers "use PKCE not implicit"
+      CLAUDE.md reloaded ──► Project conventions intact
+```
+
+**Lifecycle rules:**
+1. CLAUDE.md files are loaded synchronously at session start — they are always present from turn 1
+2. Subtree CLAUDE.md files load lazily — only when Claude first touches a file in that directory
+3. MEMORY.md loads at start AND reloads after every compaction — it is never summarized away
+4. Tool results, bash outputs, and file read contents are NOT reloaded after compaction
+5. Writing to MEMORY.md is an immediate disk write — crash-safe
+
+---
+
+## Compaction and Memory Survival
+
+Knowing which memory survives compaction is essential for long-running sessions.
+
+### Survival Matrix
+
+```
+                          ┌──────────────┬──────────────┐
+                          │  SURVIVES    │    LOST      │
+                          │ compaction   │ (summarized  │
+                          │  fully       │   or gone)   │
+┌─────────────────────────┼──────────────┼──────────────┤
+│ Enterprise CLAUDE.md    │      ✓       │              │
+│ User CLAUDE.md          │      ✓       │              │
+│ Project CLAUDE.md       │      ✓       │              │
+│ CLAUDE.local.md         │      ✓       │              │
+│ Subtree CLAUDE.md       │    ✓ *       │              │
+│ Auto-Memory MEMORY.md   │      ✓       │              │
+│ Subagent MEMORY.md      │              │     ✓        │
+│ Conversation history    │              │     ✓ **     │
+│ Bash command output     │              │      ✓       │
+│ File contents (read)    │              │      ✓       │
+│ Extended thinking trace │              │      ✓       │
+│ Tool call results       │              │      ✓       │
+└─────────────────────────┴──────────────┴──────────────┘
+
+* Subtree CLAUDE.md: re-indexed after compaction, re-loads on next file touch
+** Conversation history: replaced by a dense summary (~2,000 tokens)
+```
+
+### Compaction Trigger Points
+
+```
+Context window (1M model)
+─────────────────────────────────────────────────────────────────────
+0%                        70%         83.5%                      100%
+│                          │            │                           │
+│◄────── safe zone ────────►│            │                           │
+│                          │            │                           │
+│                     Run /compact      Auto-compaction fires       │
+│                     here (cheaper,    here (more expensive,       │
+│                     you control       Claude controls focus)      │
+│                     focus hint)                                   │
+```
+
+**Proactive compaction** (you run `/compact "focus on auth module changes"`):
+- Costs ~50–100K tokens
+- You control the focus instruction — better summary quality
+- Context is much lower at resumption
+
+**Auto-compaction** (fires at 83.5% automatically):
+- Costs ~100–200K tokens
+- No focus hint — more general summary
+- Less predictable what is preserved in the summary
+
+**Best practice:** Run `/compact` at 60–70% with a focus instruction. Example:
+```
+/compact Keep all decisions about the payment service refactor. Discard unrelated file reads.
+```
+
+### What to Write Before Compaction
+
+Before running `/compact`, write critical information to persistent memory:
+
+```bash
+# 1. Write discoveries to MEMORY.md (survives compaction)
+"Remember: UserService.findById() has an N+1 query bug on line 47 — do not call in loops"
+
+# 2. Write decisions to CLAUDE.md (if they belong to the project permanently)
+# Edit CLAUDE.md: add a note under ## Known Issues
+
+# 3. Write task state to a NOTES.md or TODO.md (Claude will re-read if you ask)
+# These don't auto-survive — but Claude can re-read them from disk after compaction
+```
+
+---
+
+## Memory Size Limits
+
+### Exact Limits by Type
+
+| Memory Type | Hard limit | Soft recommendation | Enforcement | What happens at limit |
+|-------------|-----------|--------------------|-----------|-----------------------|
+| Enterprise CLAUDE.md | None (policy) | — | Admin controls | Grows until admin trims |
+| User CLAUDE.md | None (technical) | 50KB / ~300 lines | None | Loads fine; every session pays token cost |
+| Project CLAUDE.md | None (technical) | 120 lines | None | Works but bloats every session's system prompt |
+| CLAUDE.local.md | None (technical) | 120 lines | None | Works but bloats personal sessions |
+| Subtree CLAUDE.md | None (technical) | 80 lines per file | None | Loads when subdir accessed; contributes to total |
+| Auto-Memory MEMORY.md | **200 lines / 25KB** | Use all of it wisely | **Hard enforced** | Oldest entries truncated from the bottom |
+| Subagent MEMORY.md | **200 lines / 25KB** | — | Hard enforced | Oldest entries truncated |
+
+### What Happens at the MEMORY.md Limit
+
+MEMORY.md is the only type with a hard enforced limit. When either limit is hit (200 lines or 25KB, whichever comes first), the oldest entries at the bottom of the file are truncated to make room for new entries added at the top.
+
+```
+MEMORY.md at 200 lines — you add a new entry:
+
+BEFORE (200 lines):                    AFTER (still 200 lines):
+─────────────────────────────          ─────────────────────────────
+# Project Memory                       # Project Memory
+[Entry added 2026-06-03] ─ newest      [Entry added 2026-06-03] ─ newest  ← NEW
+[Entry from 2026-05-28]                [Entry added 2026-06-03] ─ newest
+[Entry from 2026-05-20]                [Entry from 2026-05-28]
+[Entry from 2026-05-01]                [Entry from 2026-05-20]
+...                                    ...
+[Entry from 2025-12-01] ─ oldest  ✗   [Entry from 2025-12-15] ← was 2nd oldest, now oldest
+                                        (2025-12-01 entry TRUNCATED)
+```
+
+**Strategies for managing MEMORY.md space:**
+1. Use `/memory clear` to reset and re-add only still-relevant facts
+2. Be specific and terse — one fact per line, no prose
+3. Delete stale entries via `/memory` editor as the project evolves
+4. For structured notes, write to a project file (e.g., `NOTES.md`) instead — Claude can re-read it
+
+### Token Cost of Memory at Session Start
+
+Every CLAUDE.md and MEMORY.md byte costs tokens on every API call (they are injected into the system prompt):
+
+```
+Approximate token costs at session start:
+──────────────────────────────────────────────────────────────
+Memory type                      Size        Token cost
+──────────────────────────────────────────────────────────────
+Enterprise CLAUDE.md (typical)   2KB         ~500 tokens
+User CLAUDE.md (recommended max) 50KB        ~12,500 tokens
+Project CLAUDE.md (recommended)  ~5KB        ~1,250 tokens  ← keep tight
+CLAUDE.local.md (recommended)    ~2KB        ~500 tokens
+Auto-Memory MEMORY.md (max)      25KB        ~6,250 tokens
+MCP server schemas (×5 servers)  —           ~13,250 tokens
+──────────────────────────────────────────────────────────────
+Total fixed overhead (typical)               ~34,250 tokens
+  = ~3.4% of 1M context
+  = ~17.1% of 200K context (Haiku — significant!)
+```
+
+**On 200K models (Haiku 4.5):** Memory overhead is 5× more impactful as a percentage. Keep CLAUDE.md files lean and MEMORY.md focused to preserve working context.
 
 → Full reference: [Memory Management](./memory-management)

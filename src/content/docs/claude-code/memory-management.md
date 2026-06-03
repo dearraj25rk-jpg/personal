@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 15
   label: Memory Management
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 # Memory Management — Complete Reference
@@ -2965,3 +2965,726 @@ All team members pointing to the same NFS/SMB mount share the same MEMORY.md. Us
 - Short-lived project teams
 
 **Warning:** Concurrent writes are not protected by locking. Use this pattern only when team members take turns using Claude Code, not simultaneously.
+
+---
+
+## 25. Memory Architecture Visual — Scope, Inheritance, and Override Relationships
+
+This diagram shows all 7 memory types arranged by scope from broadest to most specific, with arrows showing inheritance (what flows down) and override (what overrides what).
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║         CLAUDE CODE MEMORY — SCOPE, INHERITANCE & OVERRIDE MAP (v2.1.126)           ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                      ║
+║  BROADEST SCOPE — Loaded first, lowest override priority                             ║
+║  ┌──────────────────────────────────────────────────────────────────────────────┐    ║
+║  │   1. ENTERPRISE CLAUDE.md                      Scope: ALL users, ALL projects│    ║
+║  │      /etc/claude-code/CLAUDE.md (Linux)         Load: session start, FIRST   │    ║
+║  │      /Library/Application Support/... (macOS)   Editable by: IT admin only   │    ║
+║  │      %PROGRAMDATA%\ClaudeCode\... (Windows)      Excludable: NO              │    ║
+║  └──────────────────────────────────────────────────────────────────────────────┘    ║
+║                      │                                                               ║
+║                      │  inherits into (enterprise context always present below)      ║
+║                      ▼                                                               ║
+║  ┌──────────────────────────────────────────────────────────────────────────────┐    ║
+║  │   2. USER CLAUDE.md                             Scope: ONE user, ALL projects│    ║
+║  │      ~/.claude/CLAUDE.md                         Load: session start, second  │    ║
+║  │      + CLAUDE_CODE_ADDITIONAL_DIRECTORIES paths  Editable by: you             │    ║
+║  │                                                  Excludable: YES              │    ║
+║  └──────────────────────────────────────────────────────────────────────────────┘    ║
+║                      │                                                               ║
+║                      │  inherits into (user prefs flow into all projects)            ║
+║                      ▼                                                               ║
+║  ┌──────────────────────────────────────────────────────────────────────────────┐    ║
+║  │   3. PROJECT CLAUDE.md                         Scope: ALL users, ONE project │    ║
+║  │      ./CLAUDE.md or ./.claude/CLAUDE.md         Load: session start, third   │    ║
+║  │      (+ @imports resolved eagerly)               Editable by: team (git)      │    ║
+║  │                                                  Compact: SURVIVES (re-read)  │    ║
+║  └──────────────────────────────────────────────────────────────────────────────┘    ║
+║                      │                                                               ║
+║                      │  inherits into (project context flows to individual devs)     ║
+║                      ▼                                                               ║
+║  ┌──────────────────────────────────────────────────────────────────────────────┐    ║
+║  │   4. CLAUDE.local.md                           Scope: ONE user, ONE project  │    ║
+║  │      ./CLAUDE.local.md or ./.claude/CLAUDE.local.md  Load: session start     │    ║
+║  │      Auto-gitignored; does NOT cross worktrees   Editable by: you             │    ║
+║  │                                                  Compact: does NOT survive    │    ║
+║  └──────────────────────────────────────────────────────────────────────────────┘    ║
+║                      │                                                               ║
+║                      │  runs alongside (auto-memory is parallel, not inherited)      ║
+║                      ▼                                                               ║
+║  ┌──────────────────────────────────────────────────────────────────────────────┐    ║
+║  │   5. AUTO-MEMORY MEMORY.md                    Scope: ONE user, ONE project   │    ║
+║  │      ~/.claude/projects/<hash>/memory/MEMORY.md  Load: first 200 lines/25KB  │    ║
+║  │      Managed by Claude automatically             Editable by: Claude + /memory│    ║
+║  │                                                  Compact: PARTIAL (re-read)   │    ║
+║  └──────────────────────────────────────────────────────────────────────────────┘    ║
+║                                                                                      ║
+║  ┌──────────────────────────────────────────────────────────────────────────────┐    ║
+║  │   6. SUBAGENT MEMORY.md                       Scope: ONE agent (3 sub-scopes)│    ║
+║  │      user:    ~/.claude/agent-memory/<agent>/    Load: at agent invocation    │    ║
+║  │      project: .claude/agent-memory/<agent>/     Editable by: the agent       │    ║
+║  │      local:   .claude/agent-memory/local/<agent>/ Compact: N/A (own session) │    ║
+║  └──────────────────────────────────────────────────────────────────────────────┘    ║
+║                                                                                      ║
+║  ┌──────────────────────────────────────────────────────────────────────────────┐    ║
+║  │   7. SUBTREE CLAUDE.md                        Scope: ONE directory, on-demand│    ║
+║  │      any/subdirectory/CLAUDE.md                 Load: LAZY (first file touch) │    ║
+║  │                                                  Compact: does NOT survive    │    ║
+║  └──────────────────────────────────────────────────────────────────────────────┘    ║
+║                                                                                      ║
+║  NARROWEST SCOPE — Loaded last, highest override priority                            ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║  OVERRIDE DIRECTION: More specific → overrides → less specific                       ║
+║                                                                                      ║
+║  Enterprise    ←overridden by→    User    ←overridden by→    Project                ║
+║  (IT mandates cannot be        (personal prefs can be      (team agrees on          ║
+║   overridden at all)            overridden per-project)     project norms)           ║
+║                                                ↓                                     ║
+║                                           Local (CLAUDE.local.md)                   ║
+║                                           (personal, per-project, machine)           ║
+║                                                ↓                                     ║
+║                                    MEMORY.md (auto-managed, temporal)                ║
+║                                    (discovered facts, session context)                ║
+║                                                                                      ║
+║  INHERITANCE: Each scope "inherits" the context of all broader scopes.              ║
+║  A project-level instruction operates on top of enterprise + user context.           ║
+║  A local override operates on top of enterprise + user + project context.            ║
+║                                                                                      ║
+║  EXCEPTION: Enterprise CLAUDE.md CANNOT be overridden by any other level.           ║
+║  If enterprise says "never do X" and project says "always do X", enterprise wins.   ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+CONTEXT WINDOW INJECTION (each turn):
+
+  [Enterprise CLAUDE.md]     ← injected first
+        ↓ + (appended below)
+  [User CLAUDE.md]           ← + additional directories
+        ↓ + (appended below)
+  [Project CLAUDE.md]        ← + all @imports resolved
+        ↓ + (appended below)
+  [CLAUDE.local.md]          ← personal overrides
+        ↓ + (appended below)
+  [MEMORY.md: first 200 lines]  ← auto-memory window
+        ↓ + (lazily appended as session progresses)
+  [Subtree CLAUDE.md files]  ← added as directories are touched
+        ↓
+  [Conversation history]
+        ↓
+  [Current message]
+```
+
+**Key relationships explained:**
+
+- **Inheritance:** Every memory level can assume the broader levels are already present. Your project CLAUDE.md doesn't need to repeat enterprise security policies — they're already injected before project content.
+- **Override:** Each level can add to or refine what came before. Local CLAUDE.md can say "ignore the project's preference for verbose logging in my dev environment" — but it cannot silence enterprise-level mandates.
+- **Parallel:** Auto-memory (MEMORY.md) and subagent memory are not part of the inheritance chain. They run alongside the CLAUDE.md hierarchy and contribute discovered/temporal facts without inheriting from or overriding it.
+- **Lazy:** Subtree CLAUDE.md files inject themselves into the middle of the context window when their directory is first accessed, not at session start. They can override subtree-specific behaviors without loading globally.
+
+---
+
+## 26. MEMORY.md — Complete Guide
+
+Auto-memory (MEMORY.md) is fundamentally different from the CLAUDE.md files. You write CLAUDE.md; Claude writes MEMORY.md. This section covers every aspect of how Claude decides what to write, the 200-line/25KB limit and what happens when it is reached, how to review and curate the file, and what information is worth persisting.
+
+### How Claude Decides What to Write
+
+Claude does not write to MEMORY.md on every turn. It writes when it judges that something is:
+
+1. **Durable** — likely to be true tomorrow, next week, or next session (not just for this turn)
+2. **Project-specific or user-specific** — something that cannot be inferred from general knowledge
+3. **Worth re-establishing** — would cost effort to rediscover if forgotten
+
+The internal heuristics Claude uses (observable from behavior):
+
+```
+HIGH probability of writing to MEMORY.md:
+  - Explicit instruction: "remember that...", "note that...", "from now on..."
+  - Package manager / build tool preference discovered from usage
+  - Non-obvious environment fact discovered during a session (local DB port, VPN requirement)
+  - Decision reached after deliberation: "we decided to use X approach"
+  - Important constraint discovered: "this function must not be changed — mobile app depends on it"
+  - Project-specific vocabulary: "'pipeline' means the Kafka stream, not CI/CD"
+
+LOW probability of writing to MEMORY.md:
+  - Universal best practices (these belong in Claude's training, not memory)
+  - Information already present in CLAUDE.md
+  - Highly transient facts ("run tests now") — no persistence value
+  - Your mood or phrasing preferences for this turn only
+```
+
+### The 200-Line / 25KB Limit — Mechanics
+
+The limit is applied at **session start**, not continuously. The exact behavior:
+
+```
+At session start:
+  1. Claude Code opens ~/.claude/projects/<hash>/memory/MEMORY.md
+  2. Counts lines
+  3. If lines ≤ 200 AND file size ≤ 25KB: inject entire file
+  4. If lines > 200 OR size > 25KB:
+       → Inject only the first 200 lines (or up to 25KB, whichever truncates first)
+       → Lines 201+ are NOT loaded — they are invisible to Claude this session
+       → NO warning is shown to you (silent truncation)
+  5. The MEMORY.md file itself is not modified — the full file remains on disk
+     Only the injection window is limited
+```
+
+**What happens when the limit is reached:**
+
+- Lines 201+ are silently ignored for this session
+- Claude still writes new entries to MEMORY.md during the session (appending to the end)
+- Those new entries may themselves be past line 200, making them invisible next session
+- Over time this creates a "dark zone" at the bottom of MEMORY.md where entries accumulate but are never seen
+
+**Diagnosis:**
+
+```
+> /memory
+
+Auto-Memory for: /home/alice/projects/widget-service
+File: ~/.claude/projects/a3f9b2c1/memory/MEMORY.md
+Status: Enabled (203 lines / 200 line limit)
+WARNING: Memory file exceeds 200-line limit.
+         Only the first 200 lines are loaded.
+         Lines 201-203 are not visible this session.
+```
+
+If `/memory` shows your line count at or near 200, prune immediately.
+
+### Reviewing and Curating MEMORY.md
+
+The `/memory edit` command opens the file directly:
+
+```
+> /memory edit
+# Opens ~/.claude/projects/<hash>/memory/MEMORY.md in $EDITOR
+```
+
+Or ask Claude to perform a guided curation:
+
+```
+> Please review the project memory and:
+  1. Delete any entries older than 60 days that are no longer relevant
+  2. Delete anything that duplicates information in CLAUDE.md
+  3. Delete entries about completed tickets or resolved issues
+  4. Consolidate any redundant entries
+  5. Ensure the most critical information is in the first 30 lines
+  6. Tell me what you removed and why
+```
+
+**Monthly curation checklist:**
+
+```
+□ Run /memory — check line count (target: under 150)
+□ Review each section heading — does it still apply?
+□ Check "Current Work" entries — are these tickets still open?
+□ Check "Discovered Facts" — are these still accurate?
+□ Check "Preferences" — have any of these changed?
+□ Remove entries where the same info now lives in CLAUDE.md
+□ Move permanent conventions to CLAUDE.md and delete from MEMORY.md
+□ Ensure "CRITICAL" or "important" entries are in the first 50 lines
+```
+
+### What Information Is Worth Persisting in MEMORY.md
+
+A useful test: "If I started a fresh session tomorrow, would I need to re-establish this fact to work effectively?"
+
+```
+WORTH PERSISTING in MEMORY.md:
+  ✓ Non-standard local environment: "local DB port 5433, not 5432"
+  ✓ Active work context: "billing refactor in progress, WGT-1892, feature flag ENABLE_NEW_BILLING=1"
+  ✓ Discovered constraints: "createOrder() in orders-v1.js must not be modified — mobile app uses it"
+  ✓ Decisions reached this sprint: "decided on JWT with Redis revocation over opaque tokens"
+  ✓ Non-obvious gotchas: "formatCurrency() is locale-sensitive, always pass 'en-US'"
+  ✓ Coordination needs: "auth-service team migrating to OAuth2 — coordinate before touching /src/auth"
+  ✓ Project-specific vocabulary: "'pipeline' = Kafka stream, not CI/CD pipeline"
+  ✓ Temporary access or workflow: "staging needs VPN, gate1.acme.internal"
+  ✓ Known broken environments: "CI test DB is flaky on Mondays — re-run if it fails once"
+
+NOT WORTH PERSISTING (belongs elsewhere):
+  ✗ Team conventions → Project CLAUDE.md (permanent, team-shared)
+  ✗ Personal cross-project style → User CLAUDE.md (permanent, cross-project)
+  ✗ Universal best practices → Already in Claude's training
+  ✗ Information that will change every day → Update it daily or skip
+  ✗ Highly sensitive data (passwords, tokens) → Never in MEMORY.md
+```
+
+### MEMORY.md Structure for Maximum Effectiveness
+
+Because only the first 200 lines are loaded, the ordering matters more than in any other file:
+
+```markdown
+# [Project] Memory
+<!-- Last curated: 2026-06-03 -->
+
+## CRITICAL — Read First
+[Most important constraints and active incidents at the very top]
+- DO NOT deploy until INC-4421 resolved (payments service degraded)
+- NEVER modify orders-v1.js — mobile app dependency
+
+## Active Work (Sprint 24)
+- WGT-1892: billing refactor; branch feat/WGT-1892-billing-v2
+- Feature flag: ENABLE_NEW_BILLING=1 enables new flow
+- Old billing code will be deleted — do not refactor it
+
+## Environment
+- Local PostgreSQL: port 5433 (docker-mapped from 5432)
+- Stripe CLI: run `stripe listen --forward-to localhost:3001/webhooks/stripe` in separate terminal
+- Redis: localhost:6379 (no auth in dev)
+- VPN required for staging access: gate1.acme.internal
+
+## Decisions Made
+- JWT auth with Redis revocation (decided 2026-05-28 — not opaque tokens)
+- zod v4 for validation (APIs differ significantly from v3)
+- Repository pattern only — no direct Prisma imports outside /repositories
+
+## Discovered Gotchas
+- formatCurrency() locale-sensitive — always pass 'en-US'
+- CI test DB flaky on Mondays — re-run failing integration tests once before investigating
+- Payment service has 30s SLA on webhook processing
+
+## Vocabulary
+- "the pipeline" = Kafka stream in us-east-1 (not CI/CD pipeline)
+- "the admin" = the internal tool at admin.widget.internal (not a user role)
+
+## Coordination
+- Auth team migrating to OAuth2 — coordinate before touching src/auth/**
+- Sarah owns the payments module — tag in PRs
+
+## Session Preferences
+- Verbose output requested for this week (debugging sprint)
+```
+
+---
+
+## 27. Memory Anti-Patterns — Complete Reference
+
+This section consolidates all known anti-patterns for the Claude Code memory system in a single reference, with precise explanations of why each is problematic and the correct alternative.
+
+### Anti-Pattern A: Putting Too Much in CLAUDE.md (Token Waste)
+
+**The problem:** CLAUDE.md content is injected on every single API call during a session. A 500-line CLAUDE.md costs roughly 1,500 tokens. Over a 50-turn session, that is 75,000 tokens of overhead from memory alone. At Sonnet 4.6 input pricing ($3/million tokens), that is $0.225 per session purely from memory overhead — before any actual work. Multiply by 500 developers × 5 sessions/week × 48 weeks = $27,000/year in memory overhead for one CLAUDE.md file that is twice as long as it should be.
+
+**The symptoms:**
+- Context window fills unusually fast
+- Claude ignores rules buried deep in a long CLAUDE.md (attention degrades over very long context)
+- Sessions are expensive even on simple tasks
+- `/context` shows System/CLAUDE.md consuming more than 5% of the context window
+
+**The pattern (wrong):**
+```markdown
+# CLAUDE.md (600 lines of everything)
+## API Conventions ... (200 lines)
+## Database Patterns ... (150 lines)
+## Frontend Rules ... (100 lines)
+## Test Requirements ... (80 lines)
+## Security ... (70 lines)
+```
+
+**The fix:**
+```markdown
+# CLAUDE.md (40 lines — thin root)
+Quick: pnpm, Node 22, Vitest, PostgreSQL
+
+## Full Reference
+@.claude/api-conventions.md       ← loaded with CLAUDE.md (always)
+@.claude/database-patterns.md     ← loaded with CLAUDE.md (always)
+
+# Move domain-specific rules to subtrees (loaded only when relevant)
+# src/frontend/CLAUDE.md          ← loaded only when Claude touches frontend
+# src/auth/CLAUDE.md              ← loaded only when Claude touches auth
+```
+
+Use `.claude/rules/` with `paths:` scoping for domain-specific rules. Rules that match only `src/api/**` cost 0 tokens when Claude is working in `src/frontend/`.
+
+### Anti-Pattern B: Mixing User and Project Concerns
+
+**The problem:** User CLAUDE.md is loaded for every project. Project-specific content in user CLAUDE.md means every project session carries irrelevant context, and it creates confusion when working on multiple projects.
+
+```markdown
+# BAD: ~/.claude/CLAUDE.md
+## Widget Service (my main project)
+- Use the WidgetRepository abstraction, not direct DB calls
+- The legacy widget_v1 table must not be written to
+- Local DB is on port 5433
+
+## Personal Style
+- Explain WHY before showing code
+```
+
+When you open an unrelated Python project, Claude still loads the Widget Service rules. The Widget-specific DB port and table restrictions are injected into every context — consuming tokens for a project that is not active and potentially causing confusion.
+
+**The fix:**
+```markdown
+# ~/.claude/CLAUDE.md — ONLY cross-project personal style
+- Explain WHY before showing code
+- Short, dense answers unless I ask for explanation
+- Flag assumptions explicitly
+
+# Widget Service rules → ./CLAUDE.md in widget-service project
+# Widget Service local DB port → ./CLAUDE.local.md (gitignored) or MEMORY.md
+```
+
+### Anti-Pattern C: Not Using @import for Modularity
+
+**The problem:** A monolithic CLAUDE.md mixes architecture, conventions, build commands, and security rules in a single flat file. This makes it hard to maintain, hard for different teams to own, and impossible to selectively exclude.
+
+```markdown
+# BAD: One giant CLAUDE.md
+## Architecture (200 lines)
+...
+## API Conventions (300 lines)
+...
+## Database Patterns (250 lines)
+...
+## Security Policy (150 lines)
+...
+## Build Commands (50 lines)
+...
+# Total: 950+ lines = ~3,000 tokens every turn
+```
+
+**The fix:** Thin root with domain imports:
+
+```markdown
+# CLAUDE.md — thin root (40 lines)
+## Quick Reference
+- pnpm | Node 22 | Vitest | PostgreSQL 16 | Prisma
+
+## Dev
+- `pnpm dev` → :3000/:3001
+- `pnpm test` → vitest full suite
+
+## Detailed Reference (eagerly loaded)
+@.claude/architecture.md
+@.claude/api-conventions.md
+
+## Domain Rules (loaded lazily by subtree CLAUDE.md files)
+# src/auth/CLAUDE.md, src/payments/CLAUDE.md, etc.
+```
+
+Each imported file can be owned by a different team, excluded independently, and updated without touching the root.
+
+### Anti-Pattern D: Over-Relying on Auto-Memory for Important Context
+
+**The problem:** MEMORY.md is managed by Claude and is machine-local. It is not in git, not shared with teammates, and subject to the 200-line truncation. Using it for permanent team conventions creates fragile, non-reproducible behavior.
+
+```
+# BAD: Relying on MEMORY.md for team conventions
+Developer A tells Claude: "Note that we use the repository pattern"
+→ Claude saves this to A's MEMORY.md
+→ Developer B starts a session → no such entry in B's MEMORY.md
+→ B and Claude are not aligned on the same convention
+→ B's code doesn't use repository pattern → code review friction
+```
+
+**The fix:** Permanent team conventions belong in project CLAUDE.md (committed to git, available to all teammates, survives compaction reliably).
+
+```
+Permanent team convention → Project CLAUDE.md (git)
+Discovered personal fact → MEMORY.md (auto-memory)
+Machine-local environment → MEMORY.md or CLAUDE.local.md
+Active sprint context → MEMORY.md
+```
+
+The decision test: "Does every developer on the team need to know this?" If yes, it belongs in project CLAUDE.md. If it's something only you discovered on your machine, it belongs in MEMORY.md.
+
+### Anti-Pattern E: Using Auto-Memory as a Task List
+
+**The problem:** MEMORY.md has only 200 lines. Using it to track task status (TODO: implement X, DONE: implement Y) wastes the limited space on transient information that should live in the `TodoWrite`/`TodoRead` tool's structured task list.
+
+```markdown
+# BAD: MEMORY.md used as task tracker
+## TODO
+- [ ] Implement webhook handler (WGT-1892)
+- [ ] Write idempotency tests
+- [ ] Update OpenAPI spec
+- [x] Extract DB connection pool
+- [x] Add email index
+```
+
+This consumes 8 lines for content that should use the TodoWrite tool, which persists separately and doesn't eat into the 200-line window.
+
+**The fix:**
+```
+> /todos  ← structured task list, managed by TodoWrite/TodoRead
+```
+
+Reserve MEMORY.md for durable facts that survive task completion — architectural decisions, gotchas, environment facts, project vocabulary.
+
+### Anti-Pattern F: Circular @import Chains
+
+**The problem:** File A imports file B which imports file A. Claude Code detects this and breaks the cycle by skipping the second occurrence of A, but it logs a warning and the import tree may not be what you intended.
+
+```markdown
+# BAD circular chain:
+# CLAUDE.md
+@.claude/standards.md
+
+# .claude/standards.md
+@.claude/shared.md
+
+# .claude/shared.md
+@CLAUDE.md     ← CIRCULAR — "CLAUDE.md" is already in the import tree
+```
+
+**Symptom:** Warning at session start: `@import cycle detected: CLAUDE.md already imported`
+
+**The fix:** Use a strict one-directional tree. Never import upward (a file should never import its own ancestor or any file that imports it).
+
+```
+VALID import tree:
+  CLAUDE.md
+    → .claude/architecture.md
+        → .claude/api-patterns.md    (leaf — no further imports)
+        → .claude/db-patterns.md     (leaf)
+    → .claude/security.md            (leaf — imports nothing)
+```
+
+### Anti-Pattern G: Committing CLAUDE.local.md to Git
+
+**The problem:** CLAUDE.local.md is designed for personal machine-local overrides — local DB ports, personal shortcuts, active ticket numbers, dev environment quirks. Committing it to git exposes your personal configuration to the whole team and may contain information that other developers' setups contradict.
+
+**Symptoms:**
+- Other developers see your personal DB port in their CLAUDE.local.md
+- Conflicting merge conflicts on personal preferences
+- Personal ticket numbers like "currently working on WGT-1892" confusing teammates
+
+**The fix:** Claude Code automatically adds CLAUDE.local.md to `.gitignore`. Verify this is in place:
+
+```bash
+grep "CLAUDE.local.md" .gitignore
+# Expected: CLAUDE.local.md is listed
+# If missing: add it manually
+echo "CLAUDE.local.md" >> .gitignore
+echo ".claude/CLAUDE.local.md" >> .gitignore
+git commit -am "chore: ensure CLAUDE.local.md is gitignored"
+```
+
+---
+
+## 28. @import Chain Syntax — Complete Reference
+
+The `@import` syntax is available in all CLAUDE.md files at all levels, in MEMORY.md satellite references, and in custom command files. This section is the authoritative reference for every supported form, resolution rule, edge case, and organizational pattern.
+
+### All Supported Path Forms
+
+```markdown
+# Form 1: Bare relative (relative to the importing file's directory)
+@api-conventions.md
+# Resolves to: <directory-of-importing-file>/api-conventions.md
+
+# Form 2: Explicit relative (identical to bare relative)
+@./api-conventions.md
+# Resolves to: <directory-of-importing-file>/api-conventions.md
+
+# Form 3: Parent directory traversal (one level up)
+@../shared/conventions.md
+# Resolves to: <parent-of-importing-file-dir>/shared/conventions.md
+
+# Form 4: Deep traversal (multiple levels)
+@../../corp/standards/security.md
+# Resolves to: two levels up + corp/standards/security.md
+
+# Form 5: Absolute path (never relative)
+@/etc/corp-policy/claude-guidelines.md
+@/home/alice/.company/enterprise-policy.md
+
+# Form 6: Home directory expansion (~ expands to $HOME)
+@~/personal-style-guide.md
+@~/.claude/shared/preferences.md
+@~/code/corp-standards/api-guide.md
+```
+
+### Path Resolution Examples
+
+Given a project at `/home/alice/projects/widget-service/` and CLAUDE.md at `/home/alice/projects/widget-service/CLAUDE.md`:
+
+```
+@.claude/api-conventions.md
+  → /home/alice/projects/widget-service/.claude/api-conventions.md
+
+@../shared/coding-standards.md
+  → /home/alice/projects/shared/coding-standards.md
+
+@../../acme-policies/security.md
+  → /home/alice/acme-policies/security.md
+
+@/home/alice/.company/enterprise-policy.md
+  → /home/alice/.company/enterprise-policy.md (absolute, no change)
+
+@~/standards/ts-guide.md
+  → /home/alice/standards/ts-guide.md ($HOME expanded)
+```
+
+Given a SUBTREE CLAUDE.md at `/home/alice/projects/widget-service/src/payments/CLAUDE.md`, the same `@` paths resolve relative to `src/payments/`:
+
+```
+@conventions.md
+  → /home/alice/projects/widget-service/src/payments/conventions.md
+
+@../shared/types.md
+  → /home/alice/projects/widget-service/src/shared/types.md
+
+@../../CLAUDE.md
+  → /home/alice/projects/widget-service/CLAUDE.md  (the project root!)
+```
+
+### Circular Import Detection
+
+Claude Code maintains an import stack during resolution. If a file appears in the import stack (i.e., it is an ancestor of the current file in the import chain), importing it again is detected as a cycle.
+
+```
+Import attempt:
+  CLAUDE.md                     ← stack: [CLAUDE.md]
+    → .claude/standards.md      ← stack: [CLAUDE.md, standards.md]
+      → .claude/shared.md       ← stack: [CLAUDE.md, standards.md, shared.md]
+        → CLAUDE.md             ← CYCLE DETECTED: CLAUDE.md already in stack
+                                   shared.md's import of CLAUDE.md is SKIPPED
+                                   Warning logged: "@import cycle detected"
+```
+
+**The result:** The cycle is broken at the second occurrence. The rest of the import tree continues to load. The warning appears at session start in Claude Code's status output.
+
+**Cycle-safe patterns:**
+
+```
+✅ VALID — linear tree, no cycles:
+CLAUDE.md → architecture.md → api-patterns.md → (no imports)
+                            → db-patterns.md  → (no imports)
+          → security.md    → (no imports)
+
+❌ INVALID — cycle (B imports A which is already in the stack when B is loaded):
+CLAUDE.md → A.md → B.md → CLAUDE.md  ← cycle back to root
+
+❌ INVALID — sibling cycle (A imports B, B imports A):
+A.md → B.md → A.md  ← cycle
+```
+
+### Import Depth Limit — 5 Hops Maximum
+
+The import chain is limited to 5 recursive levels from the original file. Level 6 imports are silently ignored (no warning).
+
+```
+Level 0: CLAUDE.md                         ← root (counted as level 0, not a hop)
+Level 1:   @.claude/architecture.md        ← hop 1
+Level 2:     @.claude/api/rest.md          ← hop 2
+Level 3:       @.claude/api/verbs.md       ← hop 3
+Level 4:         @.claude/api/status.md    ← hop 4
+Level 5:           @.claude/api/errors.md  ← hop 5 (MAXIMUM DEPTH)
+Level 6:             @.claude/api/fmt.md   ← hop 6 — SILENTLY IGNORED
+```
+
+**Practical implication:** Keep import trees shallow. Three to four levels is usually sufficient. If you need six levels, your file structure is likely over-engineered.
+
+### @import vs. Relative vs. Absolute: When to Use Which
+
+| Use case | Recommended form | Example |
+|----------|-----------------|---------|
+| Files in same directory | Bare relative | `@conventions.md` |
+| Files in a project subdirectory | Explicit relative | `@.claude/api.md` |
+| Files shared across sibling projects | Parent traversal | `@../shared/standards.md` |
+| Corporate/org-wide standards on a fixed path | Absolute | `@/etc/corp/claude-policy.md` |
+| Personal files in home directory | Home-relative | `@~/.claude/personal-style.md` |
+| Shared standards git submodule | Explicit relative | `@.claude/shared/security.md` |
+
+### Combining Imports from Multiple Files
+
+A single CLAUDE.md can import from many different locations simultaneously:
+
+```markdown
+<!--
+  Widget Platform CLAUDE.md
+  Imports from: corp standards (absolute), team shared (home), project specifics (relative)
+-->
+
+# Widget Platform
+
+## Corporate Baseline (absolute — deployed by IT)
+@/etc/corp/claude-standards/security-policy.md
+@/etc/corp/claude-standards/data-handling.md
+
+## Personal Team Additions (home-relative — my own shared standards)
+@~/code/team-standards/typescript-guide.md
+@~/code/team-standards/testing-conventions.md
+
+## Project-Specific (relative — committed in this repo)
+@.claude/architecture.md
+@.claude/api-conventions.md
+@.claude/database-patterns.md
+
+## Service-Specific (relative — per-service in monorepo)
+@services/auth/CLAUDE.md
+@services/billing/CLAUDE.md
+```
+
+All imports at the same level (directly under CLAUDE.md) are resolved concurrently. The combined content is injected in the order they appear in the file.
+
+**Total token cost of this chain:**
+```
+/etc/corp/claude-standards/security-policy.md:  400 tokens
+/etc/corp/claude-standards/data-handling.md:    300 tokens
+~/code/team-standards/typescript-guide.md:      500 tokens
+~/code/team-standards/testing-conventions.md:   350 tokens
+.claude/architecture.md:                        400 tokens
+.claude/api-conventions.md:                     300 tokens
+.claude/database-patterns.md:                   250 tokens
+services/auth/CLAUDE.md:                        200 tokens
+services/billing/CLAUDE.md:                     250 tokens
+CLAUDE.md itself (the thin root):               80 tokens
+─────────────────────────────────────────────────────────
+Total per turn: 3,030 tokens (well within budget)
+```
+
+### @import Inside Code Blocks — Not Processed
+
+The `@` import syntax is intentionally NOT processed inside fenced code blocks:
+
+````markdown
+# CLAUDE.md example
+
+This file imports our standards:
+@.claude/standards.md     ← PROCESSED: standards.md is loaded
+
+Here is an example of the syntax for documentation:
+```
+@.claude/standards.md    ← NOT PROCESSED: inside a code block
+@/absolute/path.md       ← NOT PROCESSED: inside a code block
+```
+````
+
+Use this to document the `@import` syntax itself without triggering an actual import. The same applies to inline code (backtick-wrapped text): `@file.md` written inline in backticks is not processed as an import.
+
+### @import Error Behavior
+
+If an imported file does not exist, Claude Code logs a warning at session start and skips the import. The session continues — a missing imported file does not block session startup.
+
+```
+Warning: @import target not found: .claude/api-conventions.md
+         (importing file: ./CLAUDE.md, line 12)
+         Session continues without this import.
+```
+
+If an imported file exists but is not readable (permissions):
+
+```
+Warning: @import target not readable: /etc/corp/policy.md (Permission denied)
+         Session continues without this import.
+```
+
+**Practical implication:** Missing imports fail silently (with a warning). Always verify your import tree is intact after refactoring file locations:
+
+```bash
+# Check all @imports in CLAUDE.md resolve to existing files
+grep '^@' CLAUDE.md | sed 's/^@//' | while read -r path; do
+  # Expand ~ to $HOME
+  expanded="${path/#\~/$HOME}"
+  if [ ! -f "$expanded" ]; then
+    echo "MISSING: $path → $expanded"
+  else
+    echo "OK: $path"
+  fi
+done
+```

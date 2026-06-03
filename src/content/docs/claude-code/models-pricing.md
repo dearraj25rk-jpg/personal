@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 16
   label: Models & Pricing
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 # Models, Pricing & Effort — Complete Reference

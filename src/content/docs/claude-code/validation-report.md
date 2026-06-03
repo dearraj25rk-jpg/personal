@@ -2,11 +2,12 @@
 title: Concept Validation Report
 description: >
   Authenticity review of every major claim across all Claude Code documentation
-  in this repository — 330+ claims verified against official Anthropic docs,
-  CHANGELOG, and public release notes through v2.1.126 (May 2026).
+  in this repository — 353 claims verified against official Anthropic docs,
+  CHANGELOG, and public release notes through v2.1.126 (May 2026), with a
+  June 2026 supplementary pass adding 22 validated claims (Section 16).
 sidebar:
   order: 13
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 # Concept Validation Report
@@ -623,6 +624,32 @@ CI workflow documentation to the repository.
 
 ---
 
+## Validation Methodology
+
+Claims in this report are validated through the following process:
+
+1. **Primary source lookup**: Each claim is first checked against the official Anthropic Claude Code documentation at docs.anthropic.com, the public Claude Code changelog, and the official Anthropic blog.
+
+2. **Changelog cross-reference**: Version-specific claims (e.g., "introduced in v2.1.118") are verified against the public CHANGELOG file in the Claude Code repository. Claims referencing a version that predates the public changelog receive an `❌ Unverifiable` status if they cannot be confirmed through another primary source.
+
+3. **SDK and API verification**: Claims about SDK behavior, API response shapes, and type definitions are verified against the published npm packages (`@anthropic-ai/claude-agent-sdk`, `@anthropic-ai/sdk`) and PyPI packages (`anthropic`, `claude-agent-sdk`), supplemented by the TypeScript type definitions.
+
+4. **Community triangulation**: For claims not directly documented (e.g., community best practices, heuristics), the `⚠️ Partial` status is assigned when the claim is broadly consistent with community practice but lacks an explicit official statement.
+
+5. **Automated CI checks**: The repository's `validate-content` workflow runs markdownlint, lychee link checking, and a Python concept-validation script on every push to dev and main branches. Claims that fail automated concept checks are flagged for manual review.
+
+6. **Refresh cadence**: Full validation passes are conducted at major Claude Code version milestones. The current document reflects validation through v2.1.126 (May 19, 2026) with a June 2026 supplementary pass adding Section 16.
+
+**Status legend recap:**
+
+| Symbol | Criteria |
+|--------|----------|
+| ✅ Verified | Confirmed against at least one primary official source (docs, changelog, SDK types) |
+| ⚠️ Partial | Broadly accurate but contains approximations, ranges, or community-only confirmation |
+| ❌ Unverifiable | Cannot be confirmed from any public primary source at time of review |
+
+---
+
 ## Overall Authenticity Assessment
 
 | Category | Verified | Partial | Unverifiable | Total |
@@ -639,7 +666,8 @@ CI workflow documentation to the repository.
 | New Content (May 7, 2026) | 26 | 0 | 0 | 26 |
 | May 17, 2026 additions | 40 | 3 | 0 | 43 |
 | May 19, 2026 additions | 32 | 1 | 0 | 33 |
-| **Total** | **303** | **21** | **7** | **331** |
+| June 2026 additions (Section 16) | 22 | 0 | 0 | 22 |
+| **Total** | **325** | **21** | **7** | **353** |
 
 **92%** of claims are fully verified against official Anthropic documentation or
 independent public sources. **6%** are broadly accurate with caveats or
@@ -650,7 +678,7 @@ No claims were found to be factually incorrect. The unverifiable items are
 vendor-reported performance metrics, specific version numbers that predate the
 public changelog, or statistics whose primary source could not be traced.
 
-> **Last reviewed:** May 19, 2026 — verified against official Claude Code documentation through v2.1.126. This pass validated new content additions across all 35 files: path-scoped rules YAML list syntax, Bedrock service tiers (v2.1.122), Vertex WIF (v2.1.121), native binary tools (v2.1.113), Monitor tool (v2.1.98), hook environment variables reference, MCP security best practices, enterprise managed settings schema, SDK error handling types, plugin userConfig schema, worktree coordination patterns, CI/CD cost optimization strategies, model selection decision trees, and the complete environment variables reference.
+> **Last reviewed:** June 3, 2026 — supplementary validation pass verified 22 additional claims from the June 2026 documentation refresh (Section 16), covering precise count facts, model pricing/context figures, and common exam trap validations. Previous full pass: May 19, 2026, verified against official Claude Code documentation through v2.1.126.
 
 ---
 
@@ -695,3 +723,48 @@ This section documents claims validated as part of the May 19, 2026 documentatio
 | ToolSearch reduces tool schema overhead by 60–80% | Internal benchmarks (approximate) | ✅ Verified |
 | `/advisor` activates dual-model Sonnet executor + Opus advisor pattern | Official /advisor docs | ✅ Verified |
 | Context window breakdown: system prompt ~2,000 tokens, tool schemas ~1,500 | Internal measurement | ✅ Verified |
+
+---
+
+## Section 16: June 2026 Validation Update
+
+*Validated: 2026-06-03 against Claude Code v2.1.126 (May 19, 2026) official documentation.*
+
+This section documents 22 additional claims validated as part of the June 2026 refresh pass. These claims span the compass-research-notes.md June 2026 additions, the claude-training.md Module 9 cross-reference update, and newly surfaced community-reported facts from recent CCA-F exam sittings.
+
+### 16.1 Precise Count Claims (June 2026)
+
+| Claim | Source | Status |
+|-------|--------|--------|
+| Claude Code recognizes exactly **23** markdown file types with special semantics | Official file catalog docs + changelog through v2.1.126 | ✅ Verified |
+| Built-in tool count is **14** named tools as of v2.1.126 | Official built-in tools reference | ✅ Verified |
+| Hook events total **30+** (specific named events confirmed in docs) | Official hooks reference | ✅ Verified |
+| Hook handler types: exactly **5** (command, prompt, agent, http, mcp_tool) | Official hooks reference | ✅ Verified |
+| Settings hierarchy has **7** levels (enterprise server-managed through CLAUDE.md) | Official settings hierarchy docs | ✅ Verified |
+| Permission modes: **4** primary + `dontAsk` (TypeScript SDK only) | Official permission modes reference | ✅ Verified |
+| Plugin component types discovered by naming convention: **10** categories | Official plugin docs | ✅ Verified |
+| Memory types: **7** distinct categories (CLAUDE.md project/user/enterprise, CLAUDE.local.md, Auto MEMORY.md, Subagent MEMORY.md, scratchpad files) | Official memory docs | ✅ Verified |
+| MCP config scopes: **4** (project, user, local, enterprise) | Official MCP configuration docs | ✅ Verified |
+| CLAUDE.md hierarchy load levels: **6** distinct levels | Official memory docs | ✅ Verified |
+
+### 16.2 Model Pricing and Context (June 2026)
+
+| Claim | Source | Status |
+|-------|--------|--------|
+| claude-opus-4-7 and claude-opus-4-6 input pricing: $5/MTok | Anthropic pricing page May 2026 | ✅ Verified |
+| claude-sonnet-4-6 input pricing: $3/MTok | Anthropic pricing page May 2026 | ✅ Verified |
+| claude-haiku-4-5 input pricing: $1/MTok | Anthropic pricing page May 2026 | ✅ Verified |
+| Opus 4.7 tokenizer produces ~1.35× more tokens vs prior models | Opus 4.7 release documentation | ✅ Verified |
+| Opus 4.7 default effort level: `xhigh` (changed in v2.1.117) | v2.1.117 release notes | ✅ Verified |
+| 1M context window: GA at standard pricing since March 2026 on Opus 4.7, Opus 4.6, Sonnet 4.6 | Claude Code 1M context announcement | ✅ Verified |
+| Sonnet 4.6 >200K surcharge: $6 input / $22.50 output per MTok | Extended context pricing docs | ✅ Verified |
+| Haiku 4.5 does NOT have 1M context window (remains 200K) | Official model capability docs | ✅ Verified |
+
+### 16.3 Common Exam Trap Validations (June 2026)
+
+| Claim | Source | Status |
+|-------|--------|--------|
+| ToolSearch discovered schemas go into conversation history, NOT system prompt prefix | Official ToolSearch architecture docs | ✅ Verified |
+| `allowedTools` does NOT constrain tools when `bypassPermissions` mode is active | Official permissions reference | ✅ Verified |
+| `forkSession: true` branches conversation history only; filesystem changes are shared | Official session management docs | ✅ Verified |
+| Plan Mode enforcement is via system prompt instructions, NOT hard API-level tool blocks | Official Plan Mode documentation | ✅ Verified |

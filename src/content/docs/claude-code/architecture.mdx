@@ -7,7 +7,7 @@ description: >
   shutdown. Shows file load order, scope boundaries, and precedence relationships. v2.1.126 (May 2026).
 sidebar:
   order: 11
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 import ArchDiagram from '../../../components/interactive/ArchDiagram.jsx';
@@ -328,5 +328,269 @@ Example: 50-turn refactoring session
     Total: ≈ $1.64
   With 80% cache hit: ~$0.45
 ```
+
+---
+
+## Session Lifecycle — Phase-by-Phase Breakdown
+
+This section provides a comprehensive written explanation of every phase in a Claude Code session, expanding on the diagrams above with deeper behavioral details, edge cases, and design rationale.
+
+### Init Phase — What Really Happens
+
+The init phase is deterministic and synchronous. Claude Code resolves a single merged configuration state before accepting any user input. The sequence cannot be reordered and each step is idempotent on restart.
+
+**Step 1 — Enterprise policy enforcement (t=0–5ms)**
+
+The very first action is checking for managed policy. On macOS, this is a plist under `/Library/Managed Preferences/`. On Windows, it is a registry hive under `HKCU\SOFTWARE\Anthropic\Claude`. On Linux, it is `~/.claude/managed-settings.json` deployed by MDM tooling (e.g. Jamf, Kandji, Intune).
+
+Policy keys are loaded into an immutable locked map. Every subsequent configuration merge step checks this map — any key present in the locked map is skipped during merge. This means the enterprise administrator's value is final regardless of what other files say.
+
+**Step 2 — Settings merge cascade (t=5–12ms)**
+
+Settings files are merged in precedence order from lowest to highest: user → project → local. The merge algorithm is a deep merge with last-writer-wins semantics for scalar values and array replacement (not append) for list values like `permissions.allow`. This is why local settings' `allow` list completely replaces the project `allow` list rather than extending it.
+
+**Step 3 — Context file assembly (t=15–23ms)**
+
+CLAUDE.md files are concatenated, not merged. Each file is appended as a separate block with a delimiter comment so the model can distinguish sources. The order is enterprise → user → project root → subdirectories (depth-first, shallowest parent first) → CLAUDE.local.md.
+
+`@import` directives in any CLAUDE.md file are resolved inline at parse time. An `@import ./docs/standards.md` in the project CLAUDE.md inlines that file's content at that exact position in the concatenated document. Circular imports are detected and skipped with a warning.
+
+**Step 4 — Rules indexing (t=25ms)**
+
+Rules files are NOT loaded into context. Only their frontmatter is parsed to extract `paths:` glob patterns. These patterns are compiled into a glob matcher and stored in an in-memory index keyed by rule file path. The actual rule content remains on disk until a path match triggers loading.
+
+**Step 5 — MEMORY.md load (t=30ms)**
+
+The project identity hash is computed as SHA256 of the absolute project root path. Claude Code looks up `~/.claude/projects/<hash>/memory/MEMORY.md` and loads its content into the system prompt after all CLAUDE.md files. If the file does not exist, this step is a no-op. If it exceeds 200 lines or 25KB, it is truncated from the bottom (oldest entries removed first).
+
+**Step 6 — MCP server bootstrap (t=35ms)**
+
+MCP configuration files are read in merge order: user `.mcp.json` → project `.mcp.json` → local `.claude/.mcp.json.local`. For each configured server, Claude Code either spawns a stdio subprocess or opens an HTTP/SSE connection. Tool schema fetching happens synchronously — if a server fails to respond, its tools are unavailable but the session still starts. Each successfully connected server adds ~2,650 tokens to the fixed context overhead.
+
+**Step 7 — Hook registration (t=50ms)**
+
+All `hooks` entries from the merged settings are registered. For `http` handler types, the URL is validated for reachability (a HEAD request is issued). For `command` handlers, the executable is checked for existence and execute permission. Invalid handlers are logged as warnings, not errors — the session starts regardless.
+
+### Context Assembly — Complete Sequence Diagram
+
+```
+CONTEXT ASSEMBLY ORDER (what the model actually sees)
+════════════════════════════════════════════════════════════════════
+
+[BLOCK 1] Built-in system prompt
+          ~3,100 tokens — hardcoded by Anthropic
+          Contains: core behavioral instructions, safety guidelines,
+          tool use format, thinking token instructions
+          ↓
+[BLOCK 2] Built-in tool schemas (eager)
+          ~4,800 tokens — Read, Edit, Bash, Write, Grep, Glob,
+          MultiEdit, Task, ToolSearch, WebFetch, WebSearch, Monitor
+          ↓
+[BLOCK 3] Enterprise CLAUDE.md  (if managed path configured)
+          variable — org-wide policies, locked standards
+          ↓
+[BLOCK 4] User CLAUDE.md  (~/.claude/CLAUDE.md)
+          variable — personal preferences, cross-project conventions
+          ↓
+[BLOCK 5] Project CLAUDE.md  (./CLAUDE.md)
+          variable — project architecture, team standards, stack
+          with @import contents inlined at their positions
+          ↓
+[BLOCK 6] Subdirectory CLAUDE.md chain
+          (only loaded if CWD is inside a subdirectory)
+          ./src/CLAUDE.md → ./src/api/CLAUDE.md → ...
+          most-general first, most-specific last
+          ↓
+[BLOCK 7] CLAUDE.local.md  (./CLAUDE.local.md)
+          variable — personal local dev overrides
+          ↓
+[BLOCK 8] Auto-Memory (MEMORY.md)
+          up to 25KB — durable project facts, session continuity
+          ↓
+[BLOCK 9] Conversation history
+          grows with each turn; compacted at 83.5%
+          ↓
+[BLOCK 10] Path-matched Rules  (injected on demand)
+           0 at start → ~300-800 tokens per rule on first path match
+           Injected as separate blocks after the turn that triggered them
+           ↓
+[BLOCK 11] Active skill content  (injected on /invocation)
+           0 at start → ~500-2,000 tokens on invocation
+           ↓
+[BLOCK 12] MCP tool schemas  (per connected server)
+           ~2,650 tokens per server — available throughout session
+
+════════════════════════════════════════════════════════════════════
+```
+
+---
+
+## Hook Injection Points
+
+Hooks fire at precise, named points in the lifecycle. Understanding where each event fires lets you build automation that intervenes at exactly the right moment.
+
+```
+SESSION LIFECYCLE WITH ALL HOOK INJECTION POINTS
+══════════════════════════════════════════════════════════════════
+
+  [PreSessionStart] ← fires before any init; can abort session
+         │
+    INIT PHASE (t=0–55ms)
+         │
+  [PostSessionStart] ← session is ready; cannot abort
+         │
+    ┌────▼──────────────────────────────────────────────┐
+    │  TOOL LOOP                                         │
+    │                                                    │
+    │  [PrePrompt]    ← fires before each API call      │
+    │       │                                            │
+    │  Claude thinks / generates tool calls              │
+    │       │                                            │
+    │  [PostPrompt]   ← fires after each API response   │
+    │       │                                            │
+    │  For each tool call:                               │
+    │    [PreToolUse]    ← fires before any tool        │
+    │    [PreBash]       ← fires before Bash only       │
+    │    [PreFileWrite]  ← fires before Write/Edit      │
+    │    [PreFileRead]   ← fires before Read            │
+    │    [PreWebFetch]   ← fires before WebFetch        │
+    │    [PreWebSearch]  ← fires before WebSearch       │
+    │    [PreTask]       ← fires before Task (subagent) │
+    │    [PreMCPTool]    ← fires before any MCP tool    │
+    │         │                                          │
+    │    TOOL EXECUTES                                   │
+    │         │                                          │
+    │    [PostToolUse]         ← any tool succeeded     │
+    │    [PostToolUseFailure]  ← any tool failed        │
+    │    [PostBash]            ← Bash completed         │
+    │    [PostFileWrite]       ← Write/Edit completed   │
+    │    [PostFileRead]        ← Read completed         │
+    │    [PostWebFetch]        ← WebFetch completed     │
+    │    [PostWebSearch]       ← WebSearch completed    │
+    │    [PostTask]            ← subagent completed     │
+    │    [PostMCPTool]         ← MCP tool completed     │
+    │    [PostMonitor]         ← Monitor completed      │
+    │         │                                          │
+    │    Loop back to PrePrompt                          │
+    │                                                    │
+    │  When context hits 83.5%:                          │
+    │    [PreCompact]   ← can delay or abort compaction │
+    │         │                                          │
+    │    COMPACTION RUNS                                 │
+    │         │                                          │
+    │    [PostCompact]  ← compaction done; context fresh│
+    │                                                    │
+    └──────────────────────────────────────────────────┘
+         │
+  [Stop]           ← user closes / Ctrl+C; can block
+         │
+    CLEANUP
+         │
+  [PostSessionEnd]  ← async; session is fully gone
+
+══════════════════════════════════════════════════════════════════
+```
+
+**Blockable events** (exit 2 = user sees message, exit 3 = Claude sees message):
+`PreSessionStart`, `Stop`, `PreToolUse`, `PreBash`, `PreFileWrite`, `PreWebFetch`, `PreWebSearch`, `PreTask`, `PreMCPTool`, `PrePrompt`, `PreCompact`, `PreAgentTeamMessage`
+
+**Observe-only events** (exit code ignored, cannot block):
+All `Post*` events — used for logging, alerting, and side-effect triggering only.
+
+---
+
+## Context Budget Allocation
+
+Understanding how the 1,000,000-token context window is actually allocated across a typical session helps you make informed trade-offs in project design.
+
+### Typical Token Distribution — Sonnet 4.6 (1M window)
+
+```
+CONTEXT BUDGET BREAKDOWN — Sonnet 4.6, Active Working Session
+══════════════════════════════════════════════════════════════════
+
+FIXED OVERHEAD (always consumed)
+─────────────────────────────────────────────────────────────────
+Built-in system prompt          3,100    0.31%  ████
+Built-in tool schemas           4,800    0.48%  █████
+MCP servers (2 typical)         5,300    0.53%  █████
+Enterprise CLAUDE.md              800    0.08%  █
+User CLAUDE.md                  1,500    0.15%  ██
+Project CLAUDE.md               3,000    0.30%  ████
+CLAUDE.local.md                   500    0.05%  █
+Auto-Memory MEMORY.md           2,000    0.20%  ██
+                              ──────────────────────
+Fixed overhead subtotal        21,000    2.10%
+
+COMPACTION RESERVE (held back by the runtime)
+─────────────────────────────────────────────────────────────────
+Auto-compaction buffer        165,000   16.50%  triggers at 83.5%
+
+AVAILABLE WORKING BUDGET
+─────────────────────────────────────────────────────────────────
+For conversation + tools      814,000   81.40%
+
+  Typical 50-turn session breakdown:
+    Conversation history       150,000   15.00%
+    Tool inputs (avg 3/turn)   112,500   11.25%
+    Tool outputs (avg 3/turn)   75,000    7.50%
+    Claude responses            40,000    4.00%
+    Rules loaded on demand       8,000    0.80%
+    ─────────────────────────────────────────
+    Used by work               385,500   38.55%
+    Still free after 50 turns  428,500   42.85%
+
+══════════════════════════════════════════════════════════════════
+```
+
+### Budget by Project Type
+
+Different project types have very different budget profiles. Here are typical allocations for three common patterns:
+
+**Pattern A — Large Codebase Refactor**
+```
+Fixed overhead:      21,000  (same as always)
+Rich CLAUDE.md:       8,000  (detailed architecture docs)
+3 MCP servers:        7,950  (GitHub, database, search)
+20 rules files:      12,000  (many domains, loaded over session)
+Long conversation:  300,000  (iterative back-and-forth)
+Large file reads:   200,000  (reading big source files)
+─────────────────────────────
+Total used:         548,950  (54.9% — compaction around turn 60)
+```
+
+**Pattern B — Focused Script Generation**
+```
+Fixed overhead:      21,000
+Minimal CLAUDE.md:   1,500
+0 MCP servers:           0
+2 rules files:         800
+Short conversation:  30,000
+Small outputs:       20,000
+─────────────────────────────
+Total used:          73,300  (7.3% — no compaction needed)
+```
+
+**Pattern C — Parallel Agent Workload**
+```
+Parent session fixed:  21,000
+Spawning 5 subagents:       0  (subagents have own windows)
+Parent coordination:  100,000
+Task result summaries: 50,000
+─────────────────────────────
+Parent total:          171,000  (17.1% — stays lean)
+Each subagent:         varies by task
+```
+
+### Optimizing the Budget
+
+| Strategy | Token saving | How to implement |
+|----------|-------------|-----------------|
+| Move instructions to rules | 0–12,000 per session | Use `paths:` globs instead of CLAUDE.md |
+| Trim CLAUDE.md to essentials | 1,000–5,000 per session | Audit with `/context` — delete low-value lines |
+| Limit MCP servers to needed | 2,650 per server | Use `.claude/.mcp.json.local` for server subsets |
+| Use `/compact` proactively | Saves 30–50K vs auto | Run at 70% before auto at 83.5% |
+| Use subagents for isolation | Frees parent window | Task tool with `memory: isolated` |
+| Keep MEMORY.md under 100 lines | Saves up to 15K | Run `/memory prune` periodically |
 
 → Full details: [Every Markdown File — Complete Catalog](./file-catalog)

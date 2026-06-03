@@ -9,7 +9,7 @@ description: >
   for choosing the right pattern. v2.1.126 (May 2026).
 sidebar:
   order: 20
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 import AgentTeamsDiagram from '../../../components/interactive/AgentTeamsDiagram.jsx';
@@ -179,5 +179,510 @@ Each specialist is a persistent teammate with domain context
 | Task tool (parallel) | Parallel = wall-clock win but same total cost | Independent subtasks |
 | Agent Teams | Higher (persistent overhead) | Long-running collaborative work |
 | Single Opus session | Higher per-turn but fewer turns | Simple tasks needing deep reasoning |
+
+---
+
+## Task Tool vs Agent Teams — Detailed Comparison
+
+The two multi-agent patterns differ across every architectural dimension. Use this table when deciding which pattern fits your workload.
+
+| Dimension | Task Tool | Agent Teams |
+|-----------|-----------|-------------|
+| **Stability** | Stable (GA) | Research Preview — API may change |
+| **Activation** | Default — always available | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` env var |
+| **Topology** | Strict tree: 1 orchestrator, N leaf subagents | Arbitrary mesh: any agent can message any other |
+| **Spawning** | Orchestrator calls `Task(...)` tool | `team.json` declares all agents at startup |
+| **Lifecycle** | Subagent lives for one task, then exits | Agents are persistent processes for the session |
+| **Communication direction** | One-way: orchestrator sends task, subagent returns result | Bidirectional: any agent can initiate a message |
+| **Communication channel** | In-process tool call — no disk I/O | Filesystem mailbox under `.claude/agent-teams/mailbox/` |
+| **Concurrency model** | Orchestrator fans out multiple `Task` calls in parallel | Event-driven: agents poll their inbox directory |
+| **Memory scope** | Each subagent gets isolated `MEMORY.md` unless `memory: shared` | All agents share `.claude/agent-teams/shared/state.json` |
+| **Context window** | Each subagent starts with fresh context + task prompt | Agents carry their own conversation history across tasks |
+| **Failure isolation** | One subagent failure does not crash others | Agent crashes must be handled by orchestrator logic |
+| **Cost model** | Pay per subagent turn; parallel tasks run concurrently | Pay per agent turn; persistent agents idle-cost nothing (no polling charge) |
+| **Complexity** | Low — one YAML file per agent definition | High — requires `team.json`, message schema design, error handling |
+| **Debugging** | Read subagent output in orchestrator result | Inspect mailbox JSON files on disk |
+| **Max agents** | Practical limit: ~10 parallel (context overhead) | Practical limit: ~20 (disk I/O becomes bottleneck) |
+| **Best for** | Parallelising independent subtasks in a single session | Long-running projects where agents accumulate domain knowledge |
+| **Not suitable for** | Situations requiring agents to query each other mid-task | Simple one-shot tasks — overhead not worth it |
+
+### Context Transfer Overhead
+
+Every subagent launched via `Task` receives a synthesised context snapshot. The size of this snapshot affects your total cost:
+
+```
+Orchestrator context size × number of subagents = context cost multiplier
+
+Example:
+  Orchestrator context: 50K tokens
+  4 parallel subagents, each receiving 50K token snapshot
+  = 200K tokens of input just for context transfer
+  At Sonnet pricing ($3/1M): $0.60 per fan-out cycle
+```
+
+Mitigation: Keep the orchestrator's prompt focused. Use `allowedPaths` to limit each subagent's scope, which reduces the context they need.
+
+---
+
+## Subagent YAML Frontmatter — Complete Reference
+
+Agent definition files live at `.claude/agents/<name>.md`. The YAML frontmatter controls every aspect of the subagent's behaviour.
+
+### All Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | Yes | — | Unique identifier. Used by orchestrator in `Task(description=...)` matching. Lowercase, hyphens only. |
+| `description` | string | Yes | — | Plain-text description shown to orchestrator when selecting which agent to use. Be specific — Claude uses this to route tasks. |
+| `model` | string | No | Session default | Override the model for this agent only. Useful for using Haiku on simple agents and Opus on critical ones. |
+| `tools` | string[] | No | All tools | Whitelist of tools this agent may use. Any tool not listed is blocked. |
+| `allowedPaths` | string[] | No | All paths | Glob patterns restricting which filesystem paths the agent can read/write. |
+| `blockedTools` | string[] | No | [] | Additional tool blocks, including with argument patterns e.g. `Bash(rm*)`. Applied after `tools` whitelist. |
+| `maxTurns` | integer | No | unlimited | Hard stop after N agentic turns. Prevents runaway agents. Recommended: set to 2× expected turn count. |
+| `memory` | enum | No | `isolated` | `isolated` = private MEMORY.md per agent; `shared` = reads/writes team shared state; `none` = no memory tool |
+| `effort` | enum | No | `normal` | Reasoning effort: `low` / `normal` / `high` / `xhigh`. Higher effort increases latency and cost. |
+| `temperature` | float | No | 0.5 | Sampling temperature 0.0–1.0. Lower = more deterministic. Recommended: 0.2 for code, 0.7 for creative. |
+| `systemPrompt` | string | No | — | Additional system prompt appended after the agent's markdown body. Rarely needed — prefer the markdown body. |
+| `timeout` | integer | No | 300 | Max wall-clock seconds before agent is forcibly stopped. Default 5 minutes. |
+
+### Annotated Full Example
+
+```yaml
+---
+name: frontend-specialist
+description: >
+  Implements UI components in React/TypeScript. Handles CSS, accessibility,
+  Storybook stories, and Jest/RTL tests for frontend code. Does NOT touch
+  backend, database, or infrastructure files.
+model: claude-sonnet-4-6          # Cost-efficient for predictable frontend tasks
+tools:
+  - Read
+  - Write
+  - Edit
+  - Bash                          # Needed for npm run test, eslint
+  - MultiEdit
+allowedPaths:
+  - src/components/**             # Can only touch component files
+  - src/styles/**
+  - src/stories/**
+  - "*.test.tsx"
+blockedTools:
+  - Bash(rm*)                     # Never delete files
+  - Bash(git push*)               # Never push directly
+maxTurns: 25                      # Frontend tasks rarely need more
+memory: isolated                  # Each task starts fresh — no cross-task state
+effort: normal                    # Normal reasoning sufficient for UI work
+temperature: 0.3                  # Slightly deterministic — code quality matters
+timeout: 180                      # 3 minutes max per invocation
+---
+
+You are a senior frontend engineer specialising in React 18 and TypeScript 5.
+Your goal is always to write accessible, testable, performant components.
+Follow the project's ESLint config exactly. Never use `any` type.
+```
+
+### Model Selection per Agent Type
+
+| Agent role | Recommended model | Reasoning |
+|------------|------------------|-----------|
+| Researcher / explorer | `claude-haiku-4-5` | Read-only, high volume — cheapest viable model |
+| Code writer | `claude-sonnet-4-6` | Balanced quality and cost for generation tasks |
+| Security auditor | `claude-opus-4-7` | Subtle vulnerabilities need deep reasoning |
+| Architect / planner | `claude-opus-4-7` | Strategic decisions benefit from Opus |
+| Test writer | `claude-sonnet-4-6` | Predictable patterns — Sonnet sufficient |
+| Documentation writer | `claude-haiku-4-5` | Repetitive, low-stakes — Haiku sufficient |
+
+---
+
+## Filesystem Mailbox Protocol
+
+The Agent Teams filesystem mailbox is the communication backbone for persistent peer-to-peer agent coordination. All messages are JSON files written atomically to a well-known directory structure.
+
+### Directory Layout
+
+```
+.claude/agent-teams/
+├── team.json                              ← Team manifest (defines all agents)
+├── mailbox/
+│   ├── <agent-name>/
+│   │   ├── inbox/                         ← Agent reads from here
+│   │   │   └── <ISO8601>-<from>.json      ← Incoming messages (sorted by timestamp)
+│   │   └── outbox/                        ← Agent writes to here (runtime use)
+│   │       └── <ISO8601>-<to>.json
+│   └── _dead-letter/                      ← Undeliverable messages land here
+│       └── <ISO8601>-<from>-<to>.json
+└── shared/
+    ├── state.json                         ← Shared mutable state (agents must lock before writing)
+    ├── state.json.lock                    ← Advisory lock file
+    └── artifacts/                         ← Large outputs agents share (files, reports)
+        └── <agent-name>-<timestamp>/
+```
+
+### Message File Naming
+
+```
+Format:  <ISO8601-timestamp>-<sender-name>.json
+Example: 2026-06-03T14:22:01.447Z-orchestrator.json
+
+Timestamps ensure lexicographic ordering = chronological ordering.
+Agents process inbox messages in filename order (oldest first).
+```
+
+### Complete Message Schema
+
+Every message file must conform to this schema:
+
+```json
+{
+  "$schema": "https://claude.ai/agent-teams/message/v1",
+  "from": "orchestrator",
+  "to": "frontend-specialist",
+  "type": "task",
+  "correlation_id": "req-a1b2c3d4",
+  "parent_id": null,
+  "timestamp": "2026-06-03T14:22:01.447Z",
+  "priority": "normal",
+  "ttl_seconds": 300,
+  "payload": {
+    "task": "Implement the UserCard component per the spec in artifacts/usercard-spec.md",
+    "context": {
+      "branch": "feature/user-profile",
+      "related_files": ["src/components/UserCard.tsx", "src/types/User.ts"]
+    }
+  },
+  "reply_to": "orchestrator"
+}
+```
+
+### Message Type Reference
+
+| `type` | Direction | Purpose | Expected response |
+|--------|-----------|---------|-------------------|
+| `task` | Any → Any | Assign work to another agent | `result` or `error` |
+| `result` | Agent → Orchestrator | Work completed successfully | None (terminal) |
+| `status` | Agent → Orchestrator | Progress update mid-task | None (informational) |
+| `question` | Agent → Any | Agent blocks, needs input to proceed | `answer` |
+| `answer` | Any → Agent | Response to a `question` | None (unblocks agent) |
+| `error` | Agent → Orchestrator | Task failed; includes error context | `retry` or `abort` |
+| `retry` | Orchestrator → Agent | Retry the last failed task | `result` or `error` |
+| `abort` | Orchestrator → Agent | Stop current task immediately | None |
+| `ping` | Any → Any | Health check | `pong` |
+| `pong` | Any → Any | Health check response | None |
+
+### Message Payload Examples
+
+**task message** — assigning work:
+```json
+{
+  "from": "orchestrator",
+  "to": "backend-specialist",
+  "type": "task",
+  "correlation_id": "req-001",
+  "timestamp": "2026-06-03T10:00:00Z",
+  "priority": "high",
+  "ttl_seconds": 600,
+  "payload": {
+    "task": "Add rate limiting middleware to the Express API. Limit: 100 req/min per IP.",
+    "context": {
+      "entry_point": "src/server.ts",
+      "existing_middleware": ["src/middleware/auth.ts", "src/middleware/logging.ts"]
+    }
+  },
+  "reply_to": "orchestrator"
+}
+```
+
+**result message** — reporting completion:
+```json
+{
+  "from": "backend-specialist",
+  "to": "orchestrator",
+  "type": "result",
+  "correlation_id": "req-001",
+  "timestamp": "2026-06-03T10:04:33Z",
+  "payload": {
+    "summary": "Rate limiting implemented using express-rate-limit v7. Added to src/middleware/rate-limit.ts and registered in server.ts.",
+    "files_changed": ["src/middleware/rate-limit.ts", "src/server.ts", "src/server.test.ts"],
+    "tests_added": 4,
+    "artifacts": []
+  }
+}
+```
+
+**question message** — blocking on a decision:
+```json
+{
+  "from": "database-specialist",
+  "to": "orchestrator",
+  "type": "question",
+  "correlation_id": "req-001",
+  "timestamp": "2026-06-03T10:02:11Z",
+  "payload": {
+    "question": "The users table has no created_at index. Adding one will require a migration with a table lock on Postgres. Should I proceed during business hours or generate the migration for off-hours deployment?",
+    "options": ["proceed_now", "defer_migration"],
+    "blocking": true
+  },
+  "reply_to": "orchestrator"
+}
+```
+
+**error message** — reporting failure:
+```json
+{
+  "from": "test-runner",
+  "to": "orchestrator",
+  "type": "error",
+  "correlation_id": "req-002",
+  "timestamp": "2026-06-03T10:08:55Z",
+  "payload": {
+    "error_code": "TEST_FAILURE",
+    "message": "12 tests failing after the refactor. Root cause: UserService constructor signature changed.",
+    "recoverable": true,
+    "suggested_action": "Fix UserService instantiation in test fixtures before retrying."
+  }
+}
+```
+
+### Concurrency and Locking
+
+Multiple agents may attempt to write to `shared/state.json` simultaneously. The protocol uses advisory file locking:
+
+```
+Write protocol:
+1. Agent creates  shared/state.json.lock  (atomic create — fails if exists)
+2. Agent reads    shared/state.json
+3. Agent modifies state in memory
+4. Agent writes   shared/state.json  (atomic rename from temp file)
+5. Agent deletes  shared/state.json.lock
+
+If lock creation fails: wait 50ms and retry (max 20 retries, then send error to orchestrator)
+```
+
+---
+
+## Agent Team Patterns
+
+Five production-tested orchestration patterns with ASCII topology diagrams.
+
+### Pattern 1: Sequential Pipeline
+
+Each stage depends on the previous stage's output. No parallelism. Maximum correctness.
+
+```
+Use when: Each step requires the full output of the prior step.
+Example: Spec → Design → Code → Test → Document
+
+  ┌─────────────────────────────────────────────────┐
+  │                  ORCHESTRATOR                    │
+  └────────┬─────────────────────────────────────────┘
+           │ task: "Analyse requirements"
+           ▼
+  ┌─────────────────────┐
+  │  analyst-agent      │ → result: requirements.md in artifacts/
+  └─────────────────────┘
+           │ task: "Design architecture from requirements.md"
+           ▼
+  ┌─────────────────────┐
+  │  architect-agent    │ → result: architecture.md in artifacts/
+  └─────────────────────┘
+           │ task: "Implement per architecture.md"
+           ▼
+  ┌─────────────────────┐
+  │  implementer-agent  │ → result: 12 files changed
+  └─────────────────────┘
+           │ task: "Write tests for the implementation"
+           ▼
+  ┌─────────────────────┐
+  │  test-writer-agent  │ → result: 47 tests, all passing
+  └─────────────────────┘
+           │
+           ▼
+     ORCHESTRATOR reports final result to user
+```
+
+**team.json for this pattern:**
+```json
+{
+  "name": "sequential-pipeline",
+  "agents": ["analyst-agent", "architect-agent", "implementer-agent", "test-writer-agent"],
+  "orchestrator": "orchestrator",
+  "timeout_seconds": 1800
+}
+```
+
+---
+
+### Pattern 2: Parallel Fan-Out
+
+Orchestrator splits a large task into independent subtasks and runs all concurrently. Results are collected and merged.
+
+```
+Use when: Subtasks are independent (no shared mutable state).
+Example: Review 8 microservices simultaneously.
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │                        ORCHESTRATOR                          │
+  │   Splits work into N independent tasks, sends all at once    │
+  └──┬──────────┬──────────┬──────────┬──────────┬──────────────┘
+     │          │          │          │          │
+     ▼          ▼          ▼          ▼          ▼
+  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐
+  │ svc-a│  │ svc-b│  │ svc-c│  │ svc-d│  │ svc-e│
+  │audit │  │audit │  │audit │  │audit │  │audit │
+  └──────┘  └──────┘  └──────┘  └──────┘  └──────┘
+     │          │          │          │          │
+     └──────────┴──────────┴──────────┴──────────┘
+                           │
+                    All results arrive
+                           │
+                           ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │   ORCHESTRATOR merges findings into consolidated report      │
+  └─────────────────────────────────────────────────────────────┘
+```
+
+**Key constraint:** Independent subtasks only. If svc-b depends on svc-a's output, use Sequential Pipeline or Staged Fan-Out (Pattern 4) instead.
+
+**Orchestrator sends simultaneous task messages:**
+```json
+[
+  { "to": "svc-a-audit", "type": "task", "correlation_id": "batch-001-a" },
+  { "to": "svc-b-audit", "type": "task", "correlation_id": "batch-001-b" },
+  { "to": "svc-c-audit", "type": "task", "correlation_id": "batch-001-c" }
+]
+```
+
+---
+
+### Pattern 3: Specialist Pool
+
+A fixed set of domain-expert agents handle requests routed to them by an orchestrator. Each specialist is persistent and accumulates domain context.
+
+```
+Use when: Long-running project with clear domain boundaries.
+Example: Full-stack feature development team.
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │                        ORCHESTRATOR                          │
+  │   Receives user request → routes to appropriate specialist   │
+  └──────────────┬────────────────┬───────────────┬─────────────┘
+                 │                │               │
+         (UI task)       (API task)       (DB task)
+                 │                │               │
+                 ▼                ▼               ▼
+        ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+        │   frontend   │  │   backend    │  │  database    │
+        │  specialist  │  │  specialist  │  │  specialist  │
+        │              │  │              │  │              │
+        │ Knows React  │  │ Knows Express│  │ Knows schema │
+        │ component    │  │ route        │  │ & migrations │
+        │ history      │  │ patterns     │  │              │
+        └──────────────┘  └──────────────┘  └──────────────┘
+                 │                │               │
+                 └────────────────┴───────────────┘
+                                  │
+                    Results aggregated by orchestrator
+```
+
+**Advantage over Task Tool:** Each specialist retains memory of prior tasks in the session, so the backend specialist "knows" what APIs were added last hour without re-reading the codebase.
+
+---
+
+### Pattern 4: Staged Fan-Out (Hybrid)
+
+Combines sequential stages with parallel execution within each stage. Most powerful pattern for large codebases.
+
+```
+Use when: Work has phases, but within each phase tasks are independent.
+Example: Discovery → Parallel analysis → Synthesis → Parallel implementation → Integration.
+
+STAGE 1 (sequential — must complete first):
+  Orchestrator → discovery-agent → shared/state.json updated with scope
+
+STAGE 2 (parallel — all independent):
+  Orchestrator fans out to:
+    ├── auth-analyst     (reads discovery output from shared/state.json)
+    ├── api-analyst
+    ├── db-analyst
+    └── ui-analyst
+  All complete → orchestrator collects results
+
+STAGE 3 (sequential — synthesis):
+  Orchestrator → architect-agent → implementation-plan.md in artifacts/
+
+STAGE 4 (parallel — independent implementation):
+  Orchestrator fans out to:
+    ├── auth-implementer    (works on src/auth/)
+    ├── api-implementer     (works on src/api/)
+    ├── db-implementer      (works on src/db/)
+    └── ui-implementer      (works on src/ui/)
+  All complete → orchestrator triggers integration
+
+STAGE 5 (sequential):
+  Orchestrator → integration-tester → final report
+```
+
+**This is the recommended pattern for large feature work** (> 500 lines of change) as it maximises parallelism while respecting dependencies.
+
+---
+
+### Pattern 5: Peer Review Loop
+
+Two agents review each other's work iteratively until both agree the output meets quality criteria. Useful for high-stakes code that needs adversarial review.
+
+```
+Use when: Output quality is critical; a single agent's blind spots are a risk.
+Example: Security-critical authentication refactor.
+
+  ┌────────────────────────────────────────────────────────────┐
+  │                       ORCHESTRATOR                          │
+  │   Assigns task to implementer, then triggers review loop    │
+  └───────────────────────────┬────────────────────────────────┘
+                              │ task: "Implement JWT refresh token rotation"
+                              ▼
+                    ┌─────────────────────┐
+                    │   implementer-agent  │
+                    │   Writes code        │
+                    └─────────┬───────────┘
+                              │ result: implementation complete
+                              │
+              ┌───────────────┴──────────────────┐
+              │         REVIEW LOOP               │
+              │                                   │
+              ▼                                   │
+    ┌─────────────────────┐                       │
+    │  security-reviewer   │                       │
+    │  Audits for vulns    │                       │
+    └─────────┬───────────┘                       │
+              │                                   │
+     Pass? ───┤                                   │
+              │ No: sends question to implementer  │
+              │     with specific remediation      │
+              │     implementer fixes and re-submits│
+              │                                   │
+              └───────────── loops ───────────────┘
+              │ Yes (max 3 review cycles)
+              ▼
+    ┌─────────────────────┐
+    │  ORCHESTRATOR        │
+    │  Reports: approved   │
+    └─────────────────────┘
+```
+
+**Loop termination conditions:**
+- Reviewer sends `result` with `approved: true`
+- Loop count reaches `max_review_cycles` (set in team.json)
+- Any agent sends `error` with `recoverable: false`
+
+**team.json excerpt for review loop:**
+```json
+{
+  "review_loop": {
+    "max_cycles": 3,
+    "participants": ["implementer-agent", "security-reviewer"],
+    "exit_condition": "unanimous_approval"
+  }
+}
+```
 
 → Full reference: [Agent Teams & Subagents Guide](./agent-teams-guide)

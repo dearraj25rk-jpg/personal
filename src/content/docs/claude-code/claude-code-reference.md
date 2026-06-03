@@ -20,7 +20,7 @@ head:
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 > **Document scope:** All officially documented Claude Code features from February 2025 through **v2.1.126 (May 19, 2026)**. Sources: `code.claude.com/docs`, `github.com/anthropics/claude-code` (CHANGELOG.md), official Anthropic news posts, and the Agent SDK repos. Every version number cited maps to a real entry in the public CHANGELOG. Where official documentation is sparse, that is explicitly flagged.

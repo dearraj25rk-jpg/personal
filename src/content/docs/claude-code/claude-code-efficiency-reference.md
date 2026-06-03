@@ -1,7 +1,7 @@
 ---
 title: "Claude Code: Context, Cost & Token Efficiency — Reference"
 description: "Complete reference for context management, prompt caching, token budgets, model selection, effort controls, hooks, environment variables, and the advisor tool in Claude Code v2.1.126+. Covers all five CCA-F exam domains."
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 sidebar:
   order: 5
 ---

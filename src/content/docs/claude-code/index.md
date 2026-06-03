@@ -3,7 +3,7 @@ title: Claude Code
 description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles, memory management (7 types), models & pricing, slash commands, context engineering, enterprise deployment, monorepo patterns, and 19 interactive diagrams. 44 total resources. Claude Code v2.1.126 · Updated June 2026.
 sidebar:
   order: 1
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
@@ -11,31 +11,50 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 **Latest stable:** v2.1.126 (May 19, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions) · **Platforms:** macOS, Linux, WSL2, Windows native
 
 ```
-┌────────────────────────── CLAUDE CODE ECOSYSTEM ──────────────────────────┐
-│                                                                             │
-│  ┌─────────────┐    ┌──────────────┐    ┌──────────────────────────────┐  │
-│  │  CONFIGURE  │    │    EXTEND    │    │        INTEGRATE             │  │
-│  │             │    │              │    │                              │  │
-│  │ CLAUDE.md   │    │ MCP Servers  │    │  GitHub Actions              │  │
-│  │ Rules       │    │ Hooks        │    │  GitLab CI                   │  │
-│  │ Skills      │    │ Plugins      │    │  Azure DevOps                │  │
-│  │ Settings    │    │ Agent Teams  │    │  Agent SDK (Python/TS)       │  │
-│  │ Output Sty. │    │ Subagents    │    │  AWS Bedrock / GCP Vertex    │  │
-│  └─────────────┘    └──────────────┘    └──────────────────────────────┘  │
-│                                                                             │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │                     AGENTIC LOOP                                    │   │
-│  │                                                                     │   │
-│  │  Your prompt → Claude → tool_use? → Execute tool → loop            │   │
-│  │               (reads context:       Read/Edit/Bash/                 │   │
-│  │                CLAUDE.md, Rules,    Task/WebFetch/                  │   │
-│  │                Memory, Skills)      Monitor/...                    │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  MODELS: Opus 4.8 (new) · Opus 4.7 (1M ctx) · Sonnet 4.6 (default) · Haiku 4.5 │
-│  EFFORT: low · normal · high · xhigh (extended thinking)                   │
-│  MEMORY: Enterprise CLAUDE.md > User > Project > Local > Rules > Skills    │
-└────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────── CLAUDE CODE ECOSYSTEM ────────────────────────────────┐
+│                                                                                       │
+│  ┌──────────────────┐    ┌────────────────────┐    ┌─────────────────────────────┐  │
+│  │    CONFIGURE     │    │      EXTEND         │    │         INTEGRATE           │  │
+│  │                  │    │                     │    │                             │  │
+│  │  CLAUDE.md       │    │  MCP Servers        │    │  GitHub Actions             │  │
+│  │    hierarchy     │    │  (stdio / HTTP)     │    │  GitLab CI                  │  │
+│  │  23 file types   │    │  30+ hook events    │    │  Azure DevOps               │  │
+│  │  Rules (path-    │    │  5 handler types    │    │  Agent SDK (Python / TS)    │  │
+│  │    scoped)       │    │  Plugin system      │    │  AWS Bedrock (3 tiers)      │  │
+│  │  Skills          │    │  Agent Teams        │    │  GCP Vertex AI + WIF        │  │
+│  │  Output Styles   │    │  Subagents          │    │  Sandboxed / --bare mode    │  │
+│  │  Settings hier.  │    │  /advisor dual-model│    │  DISABLE_UPDATES lockdown   │  │
+│  └──────────────────┘    └────────────────────┘    └─────────────────────────────┘  │
+│                                                                                       │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐   │
+│  │                          AGENTIC LOOP (CORE ENGINE)                           │   │
+│  │                                                                               │   │
+│  │  User Prompt                                                                  │   │
+│  │      │  [UserPromptSubmit hooks — can inject context or block]                │   │
+│  │      ▼                                                                        │   │
+│  │  Claude API ──► tool_use?                                                     │   │
+│  │      │    [reads: CLAUDE.md, Rules, Memory, Skills, loaded context]           │   │
+│  │      │          YES                           NO                              │   │
+│  │      │    [PreToolUse hooks]           [Stop hooks — can force continue]      │   │
+│  │      ▼          │                              │                              │   │
+│  │  Execute tool   │                        End turn ──► return to user          │   │
+│  │  (Read/Edit/    │                                                             │   │
+│  │   Bash/Task/    │                                                             │   │
+│  │   Monitor/...)  │                                                             │   │
+│  │      │    [PostToolUse hooks — can reject result or inject context]           │   │
+│  │      │                                                                        │   │
+│  │  Append tool_result to context ──► back to Claude API (loop)                 │   │
+│  └──────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                       │
+│  MODELS (June 2026):                                                                  │
+│    Opus 4.8 (newest, `opus` alias) · Opus 4.7 (1M ctx) · Opus 4.6 · Sonnet 4.6      │
+│    (default) · Haiku 4.5                                                              │
+│  EFFORT:   low · normal · high · xhigh (extended thinking, up to ~32K think tokens)  │
+│  MEMORY:   Enterprise Managed > CLI flags > settings.local.json > settings.json >    │
+│            ~/.claude/settings.json > CLAUDE.md hierarchy > Rules > Skills            │
+│  PRICING:  Opus $15/M in · $75/M out · $1.50/M cache  |  Sonnet $3/$15/$0.30        │
+│            Haiku $0.80/$4.00/$0.08                                                    │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -44,54 +63,98 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 
 | Version | Feature | What changed |
 |---------|---------|-------------|
-| v2.1.126+ | claude-opus-4-8 | Newest Opus model added; `/fast` command for Opus speed optimization |
-| v2.1.126 | Latest stable (May 2026) | Bug fixes, stability improvements |
-| v2.1.122 | Bedrock service tiers | `default`, `flex`, `priority` tier selection via `CLAUDE_CODE_BEDROCK_SERVICE_TIER` |
-| v2.1.121 | Vertex Workload Identity Federation | WIF support for GCP auth — no service account key required |
-| v2.1.120 | `${CLAUDE_EFFORT}` in skills | Skills can read and respond to session effort level |
-| v2.1.119 | `/config` persistence | Settings saved to `~/.claude/settings.json` via the UI |
-| v2.1.118 | `DISABLE_UPDATES` + `mcp_tool` hooks | Block all updates; hooks targeting specific MCP tools |
-| v2.1.117 | Opus 4.7 default `xhigh` effort | Default effort elevated for Opus 4.7; 1M context window fixes |
-| v2.1.116 | `/terminal-setup` command | Configure scroll sensitivity, clipboard, iTerm2 integration |
-| v2.1.113 | Native binary (no Node.js) | `Glob`/`Grep` replaced with embedded `bfs`/`ugrep` — faster cold starts |
-| v2.1.108 | Cache TTL fix | 1-hour cache TTL now works for `DISABLE_TELEMETRY` users |
-| v2.1.105 | `/doctor` auto-fix | Health check with `f`-key auto-repair; plugin monitors enabled |
-| v2.1.104 | `/team-onboarding` | Generate teammate ramp-up guide from codebase analysis |
-| v2.1.98  | Monitor tool | Stream background process output line-by-line |
-| v2.1.92  | `--bare` mode | CI-optimised mode: 14% faster, skips non-essential startup steps |
-| v2.1.89  | Compaction circuit breaker | Prevents thrash loop in auto-compaction scenarios |
-| v2.1.84  | Rules `paths:` scoping | Rules load conditionally by file glob pattern; YAML list support |
-| v2.1.63  | `http` hook handler | POST event payloads to a webhook URL |
-| v2.1.32  | Agent Teams (Research Preview) | Persistent peer-to-peer multi-agent sessions via CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 |
+| v2.1.126+ | claude-opus-4-8 | Newest Opus model added as the most capable frontier model; holds the `opus` alias; same 1M context window and pricing as Opus 4.7; `/fast` toggle for Opus-speed streaming optimisation without model downgrade |
+| v2.1.126 | Latest stable (May 2026) | Bug fixes, stability improvements, minor UX polish across slash command UI |
+| v2.1.122 | Bedrock service tiers | `default`, `flex`, `priority` tier selection via `CLAUDE_CODE_BEDROCK_SERVICE_TIER`; flex lowers cost for async/CI workloads, priority reserves throughput for SLA-bound pipelines |
+| v2.1.121 | Vertex Workload Identity Federation | WIF support for GCP auth in CI — no service account key file required; works with GKE Workload Identity, Cloud Run, Cloud Functions |
+| v2.1.120 | `${CLAUDE_EFFORT}` in skills | Skills can read and respond to session effort level; enables adaptive behaviour (e.g., skip extended analysis at `low` effort) |
+| v2.1.119 | `/config` persistence | All settings changed via the `/config` UI are automatically saved to `~/.claude/settings.json`; no manual JSON editing required |
+| v2.1.118 | `DISABLE_UPDATES` + `mcp_tool` hooks | `DISABLE_UPDATES=1` freezes the Claude Code binary version for managed/enterprise environments; `mcp_tool` hook matcher targets individual MCP tool calls by tool name |
+| v2.1.117 | Opus 4.7 default `xhigh` effort | Default effort elevated to `xhigh` for Opus 4.7 sessions; 1M context window bug fixes and stability improvements |
+| v2.1.116 | `/terminal-setup` command | Configure terminal scroll sensitivity, clipboard integration, and iTerm2 Shift+Enter multiline binding from a guided UI |
+| v2.1.113 | Native binary (no Node.js) | `Glob`/`Grep` tools replaced with embedded `bfs` (file traversal) and `ugrep` (search); 30–50% faster cold starts; Node.js no longer required |
+| v2.1.108 | Cache TTL fix | 1-hour prompt cache TTL now correctly honoured for `DISABLE_TELEMETRY=1` users; previously, telemetry-disabled sessions fell back to shorter cache windows |
+| v2.1.105 | `/doctor` auto-fix | Health check with `f`-key guided auto-repair for common installation and config issues; plugin health monitors enabled |
+| v2.1.104 | `/team-onboarding` | Generate a codebase-aware teammate ramp-up guide from automated project analysis |
+| v2.1.98  | Monitor tool | Stream background process stdout line-by-line — enables real-time CI feedback loops without polling |
+| v2.1.92  | `--bare` mode | CI-optimised launch mode: 14% faster startup, skips non-essential initialisation steps (theme, telemetry prompt, update check) |
+| v2.1.89  | Compaction circuit breaker | Prevents runaway auto-compaction thrash loop in long agentic sessions; configurable hysteresis window |
+| v2.1.84  | Rules `paths:` scoping | Rules load conditionally based on file glob patterns; `paths:` frontmatter field accepts YAML list syntax |
+| v2.1.63  | `http` hook handler | POST hook event payloads to any webhook URL — enables external audit logging, Slack notifications, SIEM integration |
+| v2.1.32  | Agent Teams (Research Preview) | Persistent peer-to-peer multi-agent sessions via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` |
+
+---
+
+## June 2026 — Documentation Update
+
+This site received a comprehensive documentation refresh on **2026-06-03**, covering all Claude Code features through **v2.1.126** (the latest stable release as of May 19, 2026).
+
+**What was updated in this refresh:**
+
+- All 44 documentation files reviewed and updated for accuracy through v2.1.126
+- New ASCII flow diagrams added throughout: agentic loop detail, model decision trees, cost optimization flowcharts, MCP debugging flows, and configuration hierarchy visuals
+- Pricing tables updated to reflect current rates: Opus 4.8/4.7/4.6 at $15/$75/$1.50 per million tokens; Sonnet 4.6 at $3/$15/$0.30; Haiku 4.5 at $0.80/$4.00/$0.08
+- Extended cost optimization strategies with worked examples: prompt caching ROI, multi-model agent fleet pricing, per-sprint cost projections
+- `claude-opus-4-8` documented as the newest Opus model holding the `opus` alias, with full capability and pricing comparison against Opus 4.7
+- Bedrock service tiers (`default`, `flex`, `priority`) and Vertex AI WIF documented in detail
+- New "Common Beginner Mistakes" reference table with symptom/cause/fix format
+- New "Daily Workflow Patterns" section covering morning standup, feature implementation, debugging session, and PR review workflows
+- Extended thinking mechanics documented in depth: token economics, budget ranges by effort level, when thinking pays off vs. when it wastes budget
+- Hooks system updated with `mcp_tool` matcher and `DISABLE_UPDATES` env var documentation
+- All date references updated to June 2026
 
 ---
 
 ## Feature Map
 
 ```
-Claude Code v2.1.126 — Feature Coverage
-═══════════════════════════════════════════════════════════════
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║              Claude Code v2.1.126 — Complete Feature Coverage Map               ║
+╠══════════════════════════╦════════════════════════╦═══════════════════════════╣
+║  CONFIGURE               ║  EXTEND                ║  INTEGRATE                ║
+╠══════════════════════════╬════════════════════════╬═══════════════════════════╣
+║  CLAUDE.md hierarchy     ║  MCP Servers           ║  GitHub Actions           ║
+║    23 recognised types   ║    stdio transport     ║    (anthropics/claude-    ║
+║    session-wide context  ║    HTTP/SSE transport  ║     code-action@v1)       ║
+║  Configuration guide     ║    JSON-RPC 2.0        ║  GitLab CI                ║
+║  Rules (path-scoped,     ║    3 primitives:       ║  Azure DevOps             ║
+║    v2.1.84+)             ║    Tools/Resources/    ║  AWS Bedrock              ║
+║  Skills                  ║    Prompts             ║    3 service tiers        ║
+║    auto-invokable        ║  30+ hook events       ║    (default/flex/prio)    ║
+║  Output Styles           ║    5 handler types:    ║  GCP Vertex AI + WIF      ║
+║  Memory (7 types)        ║    command/prompt/     ║    (v2.1.121+)            ║
+║  Settings hierarchy      ║    agent/http/mcp_tool ║  Agent SDK (Python / TS)  ║
+║    7-layer precedence    ║  Plugin system (10 types)  CI non-interactive       ║
+║  /config UI persistence  ║  Agent Teams           ║  --bare mode (14% faster) ║
+║  DISABLE_UPDATES lockdown║  Subagents             ║  Sandboxed mode           ║
+║  ${CLAUDE_EFFORT} skills ║  Task tool             ║  DISABLE_UPDATES          ║
+║  claudeMdExcludes        ║  /advisor dual-model   ║  DISABLE_TELEMETRY        ║
+║  @import syntax          ║  Custom commands       ║  OpenTelemetry logging    ║
+╠══════════════════════════╬════════════════════════╬═══════════════════════════╣
+║  CORE TOOLS              ║  EFFICIENCY            ║  SECURITY                 ║
+╠══════════════════════════╬════════════════════════╬═══════════════════════════╣
+║  Read (files/images/PDFs)║  Prompt caching        ║  4 permission modes:      ║
+║  Write (full overwrite)  ║    (automatic, 90%     ║    normal / plan /        ║
+║  Edit (exact replace)    ║    cheaper cache reads)║    autoAccept /           ║
+║  MultiEdit (atomic)      ║  Effort levels (4):    ║    bypassPermissions      ║
+║  Bash (shell commands)   ║    low/normal/high/    ║  Tool allowlists          ║
+║  Monitor (v2.1.98+)      ║    xhigh               ║    (Bash(git:*) syntax)   ║
+║  Glob (bfs, v2.1.113+)   ║  Context engineering   ║  Tool blocklists          ║
+║  Grep (ugrep, v2.1.113+) ║  Auto-compaction +     ║  Enterprise managed       ║
+║  LS (directory listing)  ║    circuit breaker     ║  Sandbox filesystem       ║
+║  WebFetch (AI extract)   ║  Token budgeting       ║    (Seatbelt/bubblewrap)  ║
+║  WebSearch (AI ranked)   ║  Model selection       ║  Audit logging            ║
+║  TodoWrite / TodoRead    ║  Output style costs    ║  Secret scanning          ║
+║  Task (subagent spawn)   ║  /compact + /context   ║  Role-based access        ║
+║  Agent (SDK agent)       ║  --max-budget-usd      ║  /permissions UI          ║
+╚══════════════════════════╩════════════════════════╩═══════════════════════════╝
 
-CONFIGURE                  EXTEND                    INTEGRATE
-──────────────             ──────────────             ──────────────────
-CLAUDE.md hierarchy        MCP Servers                GitHub Actions
-  23 file types            30+ hook events            GitLab CI
-  Configuration guide      Plugin system              Azure DevOps
-  Rules (path-scoped)      Agent Teams                AWS Bedrock
-  Skills                   Subagents                  GCP Vertex AI
-  Output Styles            Task tool                  Agent SDK (Py/TS)
-  Memory (7 types)         /advisor command           CI non-interactive
-  Settings hierarchy       Custom commands            Sandboxed mode
-
-CORE TOOLS                 EFFICIENCY                 SECURITY
-──────────────             ──────────────             ──────────────────
-Read / Write / Edit        Prompt caching             4 permission modes
-MultiEdit                  Effort levels              Tool allowlists
-Bash / Monitor             Context engineering        Enterprise managed
-Glob / Grep (ugrep)        Auto-compaction            Sandbox filesystem
-WebFetch / WebSearch       Token budgeting            Audit logging
-TodoWrite / TodoRead       Model selection            Secret scanning
-Task (subagent)            Output style costs         Role-based access
+MODELS (June 2026):
+  claude-opus-4-8   alias: opus    1M ctx   $15/M in · $75/M out · $1.50/M cache
+  claude-opus-4-7   —              1M ctx   $15/M in · $75/M out · $1.50/M cache
+  claude-opus-4-6   —              200K ctx $15/M in · $75/M out · $1.50/M cache
+  claude-sonnet-4-6 alias: sonnet  200K ctx  $3/M in · $15/M out ·  $0.30/M cache
+  claude-haiku-4-5  alias: haiku   200K ctx $0.80/M in · $4/M out · $0.08/M cache
 ```
 
 ---
@@ -235,34 +298,39 @@ claude
 ### Configuration Hierarchy (Highest → Lowest Precedence)
 
 ```
-Enterprise Managed Settings  (server-managed > MDM > file-based > Windows HKCU registry)
-    │  ← cannot be overridden by anything below, including CLI flags
-    ▼
-CLI flags / environment variables
-    │
-    ▼
-.claude/settings.local.json  (project local — gitignore this)
-    │
-    ▼
-.claude/settings.json        (project — commit to git)
-    │
-    ▼
-~/.claude/settings.json      (user-global)
-    │
-    ▼
-~/.claude/CLAUDE.md          (user-global context)
-    │
-    ▼
-CLAUDE.md (project root) → subdirectory CLAUDE.md files
-    │
-    ▼
-.claude/rules/*.md           (path-scoped rules, conditional loading — v2.1.84+)
-    │
-    ▼
-Skills / Output Styles       (loaded on demand via slash commands or /config)
-    │
-    ▼
-Auto-Memory                  (~/.claude/projects/<hash>/memory/MEMORY.md — per-project)
+┌─────────────────────────────────────────────────────────────────────┐
+│  Enterprise Managed Settings                                         │
+│  (server-managed > MDM > file-based > Windows HKCU registry)        │
+│  ← cannot be overridden by anything below, including CLI flags      │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+                    CLI flags / environment variables
+                    (--model, --effort, ANTHROPIC_MODEL, etc.)
+                               │
+                               ▼
+               .claude/settings.local.json  (project local — gitignore this)
+                               │
+                               ▼
+               .claude/settings.json        (project — commit to git)
+                               │
+                               ▼
+               ~/.claude/settings.json      (user-global)
+                               │
+                               ▼
+               ~/.claude/CLAUDE.md          (user-global context)
+                               │
+                               ▼
+          CLAUDE.md (project root) → subdirectory CLAUDE.md files
+                               │
+                               ▼
+          .claude/rules/*.md   (path-scoped rules, conditional loading — v2.1.84+)
+                               │
+                               ▼
+          Skills / Output Styles  (loaded on demand via slash commands or /config)
+                               │
+                               ▼
+          Auto-Memory           (~/.claude/projects/<hash>/memory/MEMORY.md)
 ```
 
 ### Key File Types at a Glance
@@ -339,42 +407,47 @@ Auto-Memory                  (~/.claude/projects/<hash>/memory/MEMORY.md — per
 ```
 Your prompt
     │
-    ▼  Claude generates response + optional tool_use blocks
-Claude API ────────────────────────────────────────────
+    │  [UserPromptSubmit hooks may inject context or block the prompt]
+    ▼
+Claude API ─── full context: CLAUDE.md + rules + tools + conversation history
     │
-    ▼  check stop_reason (never parse text)
+    ▼  check stop_reason (never parse text — always route on stop_reason field)
 stop_reason == "tool_use"?
-    │ YES                              │ NO ("end_turn")
-    ▼                                  ▼
-Execute tools                  Session complete
-Append tool_result
-Send back to API
+    │ YES                                    │ NO ("end_turn")
+    │                                        │
+    │  [PreToolUse hooks may block/modify]   │  [Stop hooks fire]
+    ▼                                        │  [Stop hook exit 2 = force continue]
+Execute tool (Read/Edit/Bash/Task/...)       ▼
+Append tool_result to context        Session complete — control returns to user
     │
-    └───────────────────────────────────► loop
+    │  [PostToolUse hooks may reject result or inject context]
+    │
+    └──────────────────────────────────────────────────────► loop back to API
 ```
 
 **Core rule:** always route on `stop_reason`, never on parsed assistant text.
+**Safety valve:** `--max-turns N` sets a hard ceiling on iterations regardless of Claude's intent.
 
-### Models Available (May 2026)
+### Models Available (June 2026)
 
 | Model | Alias | Context | Best for | Pricing tier |
 |-------|-------|---------|---------|-------------- |
 | `claude-opus-4-8` | `opus` | 1M tokens | Frontier reasoning, hardest problems, novel design | $$$$$ |
 | `claude-opus-4-7` | — | 1M tokens | Complex reasoning, architecture, research | $$$$$ |
-| `claude-opus-4-6` | — | 1M tokens | Heavy analysis, long documents | $$$$ |
+| `claude-opus-4-6` | — | 200K tokens | Heavy analysis, long documents | $$$$ |
 | `claude-sonnet-4-6` | `sonnet` | 200K tokens | Balanced quality/speed — **default** | $$$ |
 | `claude-haiku-4-5` | `haiku` | 200K tokens | Bulk operations, CI/CD, quick edits | $ |
 
-> 1M token context for Opus 4.6 and Sonnet 4.6 is at standard pricing with no surcharge (since March 14, 2026).
+> 1M token context for Opus 4.7 and Opus 4.8 is at standard pricing with no surcharge (since March 14, 2026).
 
 ### Effort Levels
 
-| Level | Extended Thinking | Best for | Cost impact |
-|-------|------------------|---------|------------|
-| `low` | None | Simple edits, formatting, docs | Cheapest |
-| `normal` | Minimal | Standard feature work | Moderate |
-| `high` | Substantial | Complex features, debugging | Higher |
-| `xhigh` | Maximum | Architecture, critical debugging | Highest |
+| Level | Extended Thinking | Thinking Budget | Best for | Cost impact |
+|-------|------------------|-----------------|---------|------------|
+| `low` | None | 0 tokens | Simple edits, formatting, docs | Baseline cost |
+| `normal` | Minimal | ~1,000–5,000 tokens | Standard feature work | ~1.1–1.3× baseline |
+| `high` | Substantial | ~10,000–20,000 tokens | Complex features, debugging | ~1.5–2× baseline |
+| `xhigh` | Maximum | ~32,000+ tokens | Architecture, critical debugging | ~2–4× baseline |
 
 ---
 
@@ -396,6 +469,10 @@ Common issues and their solutions:
 | Hooks not firing | Wrong event name or JSON syntax error | Validate JSON with `jq`; check hook event spelling — names are case-sensitive |
 | Subagent OOM | Too many parallel subagents consuming memory | Reduce concurrency in Task calls; switch to serial Task chaining for large payloads |
 | Slow cold starts | Old Node.js-based binary installed | Upgrade to v2.1.113+ (native binary with embedded bfs/ugrep, no Node.js required) |
+| Hook fires but does nothing | Exit code 0 with no stdout | Commands must print to stdout to inject context; exit 2 to block/force-continue |
+| MCP tool hook not matching | Wrong `mcp_tool` matcher syntax | Format: `"matcher": "server-name/tool-name"` — server name prefix is required |
+| `opus` alias resolves wrong | Pinned to old Opus in CI | Use full model IDs (`claude-opus-4-8`) in CI; never pin aliases in CI/CD |
+| Context window differs | 200K vs 1M context confusion | Opus 4.7+ and Opus 4.8 have 1M; all other models are 200K |
 
 ### Diagnosing Context and Cost Issues
 
@@ -403,11 +480,29 @@ Common issues and their solutions:
 Session cost spike? Use this checklist:
 
 1. /context           → see token breakdown (system / conversation / tools)
+                         system tokens = CLAUDE.md + rules + tool schemas
+                         target: system < 15K tokens
+                         
 2. /usage             → check cache hit rate (target: >80% on system prompt)
-3. /memory            → audit CLAUDE.md size — keep under 8K tokens
+                         if cache hit < 50%, CLAUDE.md may be changing between turns
+                         
+3. /memory            → audit CLAUDE.md size — keep under 8K tokens (~6,000 words)
+                         use @import to load large sections on demand
+                         
 4. Check rules/       → path globs loading rules for every file?
+                         rules with broad globs ("**/*") load on every tool call
+                         tighten to specific subdirs or file extensions
+                         
 5. /compact           → manually compact if auto-compaction hasn't triggered
+                         add focus instruction: /compact "keep the auth refactor context"
+                         
 6. /clear             → start fresh if context is polluted with unrelated work
+                         keeps all config (CLAUDE.md, rules, settings) but resets conversation
+
+Prompt caching quick check:
+  Good: cache hit rate 80-95%, cost/turn flat or decreasing
+  Bad:  cache hit rate <50%, cost/turn growing each turn
+  Fix:  stable CLAUDE.md content, avoid mid-session edits to CLAUDE.md
 ```
 
 ### MCP Debugging Flow
@@ -418,19 +513,80 @@ MCP server not responding?
 /mcp                         → lists all configured servers + connection state
    │
    ├── Status: "error"?      → check server logs in ~/.claude/mcp-logs/
+   │                            common causes: missing binary, wrong args, port conflict
+   │
    ├── Status: "connecting"? → transport mismatch (stdio vs HTTP)?
-   └── Status: "connected"   → check tool permissions in settings.json
+   │                            stdio servers need "command" + "args" in .mcp.json
+   │                            HTTP servers need "url" in .mcp.json
+   │
+   ├── Status: "connected"   → check tool permissions in settings.json
+   │                            tool may be in permissions.deny list
+   │
+   └── No server listed?     → .mcp.json missing or malformed
+                                validate with: cat .mcp.json | jq .
 
-.mcp.json quick-check:
+.mcp.json quick-check (stdio transport):
 {
   "servers": {
     "my-server": {
-      "command": "npx",        ← stdio transport
+      "command": "npx",        ← stdio transport: run a local process
       "args": ["-y", "@my/mcp-server"],
       "env": { "API_KEY": "${MY_API_KEY}" }
     }
   }
 }
+
+.mcp.json quick-check (HTTP transport):
+{
+  "servers": {
+    "remote-server": {
+      "url": "https://my-mcp-server.example.com/sse",   ← SSE endpoint
+      "headers": { "Authorization": "Bearer ${MCP_TOKEN}" }
+    }
+  }
+}
+
+mcp_tool hook (v2.1.118+) — target specific tool calls:
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "my-server/dangerous-tool",   ← "server/tool" format
+      "hooks": [{ "type": "command", "command": "echo 'Blocked' && exit 2" }]
+    }]
+  }
+}
+```
+
+### Hooks Debugging Flow
+
+```
+Hook not firing?
+
+Step 1: Validate JSON syntax
+  cat .claude/settings.json | jq .hooks
+  → If jq errors: fix JSON syntax (trailing commas, missing quotes)
+
+Step 2: Check event name spelling (case-sensitive)
+  Valid event names:
+    UserPromptSubmit    PreToolUse     PostToolUse
+    Stop                SubagentStop   PreCompact
+    PostCompact         SessionStart   SessionEnd
+
+Step 3: Verify matcher pattern
+  "matcher": "Edit|Write|MultiEdit"    ← pipe-separated tool names
+  "matcher": "Bash"                    ← exact tool name (no wildcards)
+  "matcher": "my-mcp/tool-name"        ← mcp_tool format
+
+Step 4: Test hook command manually
+  Run the hook command in your shell:
+    echo '{"tool_name":"Edit","tool_input":{}}' | my-hook-script.sh
+  Should exit 0 to allow, exit 2 to block
+
+Step 5: Check hook output interpretation
+  exit 0 + no stdout   → allow (no context injection)
+  exit 0 + stdout JSON → allow + inject the JSON as context
+  exit 2               → block (for PreToolUse) or force-continue (for Stop)
+  exit 1               → error (logged, does not block)
 ```
 
 ---

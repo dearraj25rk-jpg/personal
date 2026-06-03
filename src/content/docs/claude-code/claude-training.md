@@ -8,7 +8,7 @@ description: >
   /advisor pattern). Targets .NET/Azure developers. Covers Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 11
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 # Elite Claude Code mastery: a complete AI Engineer training program
@@ -16,6 +16,39 @@ lastUpdated: 2026-06-02
 **This training program transforms an experienced .NET/Azure tech lead into an elite-level AI engineer** capable of orchestrating multi-agent systems, engineering production-grade RAG architectures, and leveraging Claude Code at its absolute ceiling. The curriculum spans 9 modules progressing from advanced CLI mastery through enterprise architecture patterns and the newest platform features, with every technique grounded in the latest 2025-2026 documentation and real-world production implementations.
 
 The program assumes foundational Claude Code familiarity and jumps directly into power-user territory. Each module builds on the previous one, culminating in a capstone that integrates agent teams, MCP servers, hooks, and CI/CD automation into a cohesive enterprise workflow. All code examples and configurations prioritize the .NET/Azure ecosystem.
+
+---
+
+## June 2026 Training Update
+
+*Update date: 2026-06-03. Claude Code stable version: v2.1.126 (May 19, 2026).*
+
+### What's Been Updated in This Pass
+
+| Area | Change |
+|------|--------|
+| **Module cross-references** | Added "See also" links within each module pointing to the specific documentation pages on this site (claude-code-reference, validation-report, compass-research-notes, etc.) |
+| **Module 9** | The existing Module 9 (New Features Deep Dive) has been supplemented with a more detailed treatment of the /advisor dual-model pattern and context engineering in section 9.5 |
+| **Module 10 (NEW)** | Added Module 10: Advanced Topics — Context Engineering and the /advisor Command, covering the WRITE-SELECT-COMPRESS-ISOLATE framework, dual-model patterns, token budget allocation strategies, and effort level selection |
+| **Quick Reference Cards** | Added compact one-page reference cards for each module's key concepts at the end of the document |
+| **Skill Assessment Rubric** | Updated rubric's "Prompt Engineering" row to include Context Engineering and /advisor as Elite-level capabilities |
+
+### Cross-Reference Map
+
+Each module now links to the primary documentation page where its concepts are elaborated in depth:
+
+| Module | Primary doc reference |
+|--------|----------------------|
+| Module 1: CLI Mastery | [CLI Technical Reference](./claude-code-reference) |
+| Module 2: Agent Teams | [Every Markdown File Catalog](./claude-code-all-markdown-files-catalog) |
+| Module 3: Hooks System | [CLI Technical Reference — Hooks section](./claude-code-reference#hooks) |
+| Module 4: MCP Servers | [CLI Technical Reference — MCP section](./claude-code-reference#mcp-servers) |
+| Module 5: Prompt Engineering | [Compass Research Notes — Domain 4](./compass-research-notes) |
+| Module 6: RAG Architecture | [Compass Research Notes — Part 2](./compass-research-notes) |
+| Module 7: CI/CD Integration | [CLI Technical Reference — CI/CD section](./claude-code-reference#cicd) |
+| Module 8: Architecture Patterns | [Compass Research Notes — Domain 1](./compass-research-notes) |
+| Module 9: New Features | [Concept Validation Report — Section 15](./validation-report) |
+| Module 10: Context Engineering | [Context & Cost Efficiency](./claude-code-efficiency-reference) |
 
 ---
 

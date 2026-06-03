@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 9
   label: Permissions & Security
-lastUpdated: 2026-06-02
+lastUpdated: 2026-06-03
 ---
 
 # Permissions, Sandbox & Security
@@ -144,6 +144,151 @@ CLAUDE_CODE_PERMISSION_MODE=acceptEdits  # Environment variable
 - You have reviewed the task and trust the automation
 
 **Never** use `bypassPermissions` in your local development environment.
+
+---
+
+## Permission Modes — Detailed Comparison
+
+This section provides a comprehensive view of all four permission modes showing precisely what each mode auto-accepts, what it still prompts for, the risk profile, and configuration examples.
+
+### Mode Comparison Table
+
+| Attribute | `default` | `acceptEdits` | `autoAccept` | `bypassPermissions` | `plan` |
+|-----------|-----------|---------------|--------------|---------------------|--------|
+| **File reads** (Read, Glob, Grep) | Auto | Auto | Auto | Auto | Never |
+| **File writes** (Write, Edit, MultiEdit) | Prompt | **Auto** | Auto | Auto | Never |
+| **Bash commands** | Prompt | Prompt | **Auto** | Auto | Never |
+| **Dangerous Bash** (rm -rf, sudo) | Prompt (warns) | Prompt (warns) | Prompt (warns) | **Auto** | Never |
+| **MCP tool calls** | Prompt | Prompt | Auto | Auto | Never |
+| **WebFetch / WebSearch** | Prompt | Prompt | Auto | Auto | Never |
+| **Task (spawn subagent)** | Prompt | Prompt | Auto | Auto | Never |
+| **TodoWrite** | Auto | Auto | Auto | Auto | Never |
+| **Risk level** | Low | Low-Medium | Medium-High | High | None |
+| **CI/CD suitability** | No (blocks) | Limited | Yes | Yes (sandboxed) | No |
+| **Deny rules enforced** | Yes | Yes | Yes | No | Yes |
+| **Allow rules honoured** | Yes | Yes | Yes | Ignored | Yes |
+
+### ASCII Decision Flow — Picking the Right Mode
+
+```
+  PERMISSION MODE SELECTION
+  ══════════════════════════════════════════════════════════════════
+
+  START: What environment am I in?
+         │
+         ├─ Interactive terminal on my laptop
+         │       │
+         │       ├─ Want to review every action?
+         │       │       └─ YES → default
+         │       │
+         │       ├─ Trust file edits, want to review shell?
+         │       │       └─ YES → acceptEdits
+         │       │
+         │       └─ Planning / dry-run before committing?
+         │               └─ YES → plan
+         │
+         └─ Automated pipeline / CI / script
+                 │
+                 ├─ Running inside Docker/GitHub Actions runner
+                 │   (ephemeral, sandboxed, no prod access)
+                 │       └─ bypassPermissions  ← fastest, fully automated
+                 │
+                 └─ Running on a shared/semi-trusted server
+                         └─ autoAccept  ← still runs deny list rules
+```
+
+### Per-Mode Configuration Examples
+
+#### `default` — Interactive Development
+
+```json
+// .claude/settings.json
+{
+  "defaultPermissionMode": "default",
+  "permissions": {
+    "allow": ["Read", "Glob", "Grep", "TodoWrite", "TodoRead"],
+    "deny": []
+  }
+}
+```
+
+Best for: daily interactive coding where you want to see and approve every tool call before it runs. Claude shows each tool call in a TUI prompt; you press `y` to approve or `n` to reject. Rejected calls return an error to Claude which then plans an alternative.
+
+#### `acceptEdits` — Rapid File Editing with Bash Review
+
+```json
+{
+  "defaultPermissionMode": "acceptEdits",
+  "permissions": {
+    "allow": ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"],
+    "deny": ["Bash(rm:*)", "Bash(sudo:*)", "Bash(curl:*)"]
+  }
+}
+```
+
+Best for: feature development sprints where you trust Claude to write files but want to review shell commands. File writes are accepted automatically; Bash commands are still shown for confirmation.
+
+#### `autoAccept` — Trusted Local Automation
+
+```json
+{
+  "defaultPermissionMode": "autoAccept",
+  "permissions": {
+    "allow": ["Read", "Write", "Edit", "Bash(git:*)", "Bash(npm:*)", "Bash(pytest:*)"],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(sudo:*)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | sh)"
+    ]
+  }
+}
+```
+
+Best for: automated scripts on a developer workstation (e.g., Makefile targets, git hooks) where the task is well-defined and you trust the allow/deny rules to contain any risk.
+
+#### `bypassPermissions` — Sandboxed CI/CD Only
+
+```bash
+# Only safe inside ephemeral Docker containers or GitHub Actions
+claude --permission-mode bypassPermissions \
+       --max-turns 30 \
+       --max-budget-usd 5.00 \
+       --print "Fix all failing tests and commit the result"
+```
+
+```json
+// .claude/settings.json inside Docker build context
+{
+  "defaultPermissionMode": "bypassPermissions"
+}
+```
+
+Risk level: **HIGH** — Claude accepts every tool call including dangerous shell commands. Safe ONLY when the environment is isolated (Docker container, ephemeral VM, GitHub Actions sandbox) where no production systems can be reached.
+
+#### `plan` — Dry-Run Review Before Commit
+
+```bash
+# Generate a plan without executing anything
+claude --permission-mode plan --print "Refactor all API endpoints to use async/await"
+```
+
+Best for: reviewing what Claude intends to do before allowing execution. Output is a plain-text plan describing the edits, shell commands, and rationale. Then re-run with `autoAccept` once satisfied.
+
+### Risk Level Summary
+
+```
+  RISK SPECTRUM
+  ══════════════════════════════════════════════════════════════════
+
+  plan          ████░░░░░░  No risk — nothing executes
+  default       ████░░░░░░  Low risk — every action reviewed
+  acceptEdits   ██████░░░░  Low-medium — files auto-written
+  autoAccept    ████████░░  Medium-high — all tools run, deny list active
+  bypassPermissions ████████████  High — all checks skipped
+                             ^
+                             Only safe in isolated, ephemeral environments
+```
 
 ---
 
@@ -344,6 +489,333 @@ claude --allowedTools "Read,Edit,Bash" \
 
 ---
 
+## Tool Allowlist Patterns — Comprehensive Reference
+
+This section is a production-grade reference for writing precise `permissions.allow` and `permissions.deny` patterns. Understanding glob syntax and separator conventions prevents both security gaps and over-restrictions.
+
+### How Pattern Matching Works
+
+Claude Code uses two separator styles in `Bash(...)` patterns:
+
+- **Space separator**: `Bash(git status)` — matches commands where arguments are space-delimited. The pattern `git status` matches the literal command `git status`.
+- **Colon-wildcard**: `Bash(git:*)` — matches `git` as the base command with ANY arguments following it. The colon acts as a separator that expands to "followed by any arguments."
+- **Prefix wildcard**: `Bash(npm run *)` — the `*` matches any suffix after the literal prefix `npm run `.
+
+```
+  PATTERN SYNTAX GUIDE
+  ══════════════════════════════════════════════════════════════════
+
+  Pattern                   │ Matches                    │ Does NOT match
+  ──────────────────────────┼────────────────────────────┼──────────────────────
+  Bash(git)                 │ git (no args)              │ git status, git log
+  Bash(git status)          │ git status (exact)         │ git status --short
+  Bash(git:*)               │ git, git status, git log,  │ gitk, git-lfs
+                            │ git commit -m "msg"        │
+  Bash(git *)               │ git <anything>             │ git (no args)
+  Bash(npm run *)           │ npm run test, npm run build│ npm install, npm start
+  Bash(npm:*)               │ npm, npm install, npm run  │ npx, npm-check
+  Bash(python -m pytest:*)  │ python -m pytest, with args│ pytest (direct), py.test
+  Bash(dotnet *)            │ dotnet build, dotnet test  │ dotnet-ef (hyphen)
+  Read                      │ Read any file              │ (nothing excluded)
+  Read(/home/user/proj/**)  │ Any file under /home/user/ │ /tmp/*, /etc/*
+                            │   proj/ (recursive)        │
+  WebFetch(https://api.*)   │ https://api.anything.com   │ http://* (no TLS)
+  mcp__github__get_*        │ get_file_contents, get_me  │ create_*, merge_*
+  *                         │ All tools                  │ (nothing — full access)
+```
+
+### Bash Command Allowlist — Production Examples
+
+The following patterns cover the most common production use cases:
+
+#### Git Operations
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd:*)"
+    ]
+  }
+}
+```
+
+This allows all git commands but denies destructive force-push and hard reset. Useful in team environments where history integrity matters.
+
+#### Node.js / npm Workflows
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(npm test)",
+      "Bash(npm test:*)",
+      "Bash(npm ci)",
+      "Bash(npm audit)",
+      "Bash(npx:*)"
+    ],
+    "deny": [
+      "Bash(npm publish:*)",
+      "Bash(npm deprecate:*)",
+      "Bash(npm unpublish:*)"
+    ]
+  }
+}
+```
+
+Allows installing, testing, and running scripts. Blocks publishing to the npm registry (preventing accidental public releases).
+
+#### Python / pytest Workflows
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(pip install:*)",
+      "Bash(pip install -r:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(pytest:*)",
+      "Bash(mypy:*)",
+      "Bash(black:*)",
+      "Bash(ruff:*)"
+    ],
+    "deny": [
+      "Bash(pip install --upgrade pip:*)",
+      "Bash(sudo pip:*)"
+    ]
+  }
+}
+```
+
+#### .NET / dotnet Workflows
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet run:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet format:*)",
+      "Bash(dotnet add package:*)"
+    ],
+    "deny": [
+      "Bash(dotnet publish:*)",
+      "Bash(dotnet nuget push:*)"
+    ]
+  }
+}
+```
+
+#### Docker Workflows
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker build:*)",
+      "Bash(docker run:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose down:*)"
+    ],
+    "deny": [
+      "Bash(docker rm -f:*)",
+      "Bash(docker system prune:*)",
+      "Bash(docker push:*)"
+    ]
+  }
+}
+```
+
+#### Read Path Scoping
+
+When Claude should only read certain directories:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Read(/home/user/project/src/**)",
+      "Read(/home/user/project/tests/**)",
+      "Read(/home/user/project/docs/**)",
+      "Glob",
+      "Grep"
+    ],
+    "deny": [
+      "Read(/home/user/project/.env)",
+      "Read(/home/user/project/secrets/**)",
+      "Read(/home/user/.ssh/**)",
+      "Read(/home/user/.aws/**)"
+    ]
+  }
+}
+```
+
+#### WebFetch Domain Allow-list
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(https://docs.anthropic.com/*)",
+      "WebFetch(https://api.anthropic.com/*)",
+      "WebFetch(https://docs.github.com/*)",
+      "WebFetch(https://learn.microsoft.com/*)",
+      "WebFetch(https://nvd.nist.gov/*)",
+      "WebFetch(https://cve.mitre.org/*)"
+    ],
+    "deny": [
+      "WebFetch",
+      "WebSearch"
+    ]
+  }
+}
+```
+
+Note: the final `"WebFetch"` deny rule blocks any WebFetch not matching the specific allow patterns. Because `deny` wins over `allow`, this creates a precise allowlist of domains.
+
+### Real-World Combined Examples
+
+#### Full-Stack Web Developer
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep",
+      "Bash(git:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+      "Bash(docker-compose:*)",
+      "Bash(make:*)",
+      "TodoWrite", "TodoRead", "Task",
+      "WebFetch(https://developer.mozilla.org/*)",
+      "WebFetch(https://nodejs.org/api/*)",
+      "WebFetch(https://docs.docker.com/*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(sudo:*)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | sh)",
+      "Bash(npm publish:*)",
+      "Bash(docker push:*)"
+    ]
+  }
+}
+```
+
+#### Data Science / ML Engineer
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(pip:*)",
+      "Bash(conda:*)",
+      "Bash(jupyter:*)",
+      "Bash(git:*)",
+      "Bash(dvc:*)",
+      "Bash(mlflow:*)",
+      "TodoWrite", "TodoRead", "Task",
+      "WebFetch(https://huggingface.co/api/*)",
+      "WebFetch(https://pypi.org/*)"
+    ],
+    "deny": [
+      "Bash(sudo:*)",
+      "Bash(rm -rf:*)",
+      "Bash(aws s3 rm:*)"
+    ]
+  }
+}
+```
+
+#### Platform/DevOps Engineer
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Read", "Write", "Edit", "Glob", "Grep",
+      "Bash(git:*)",
+      "Bash(terraform:*)",
+      "Bash(kubectl get:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(kubectl logs:*)",
+      "Bash(helm:*)",
+      "Bash(aws:*)",
+      "Bash(gcloud:*)",
+      "Bash(az:*)"
+    ],
+    "deny": [
+      "Bash(kubectl delete:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(aws iam delete:*)",
+      "Bash(gcloud projects delete:*)"
+    ]
+  }
+}
+```
+
+### Pattern Anti-Patterns to Avoid
+
+```
+  COMMON ALLOWLIST MISTAKES
+  ══════════════════════════════════════════════════════════════════
+
+  MISTAKE 1: Using "allow: ['*']" without a deny list
+  ─────────────────────────────────────────────────────
+  { "allow": ["*"] }
+  → Allows everything including rm -rf, dd, mkfs, sudo
+
+  FIX: Always pair "allow: ['*']" with a comprehensive deny list:
+  { "allow": ["*"], "deny": ["Bash(rm -rf:*)", "Bash(sudo:*)", ...] }
+
+  MISTAKE 2: Thinking "deny": [] blocks nothing
+  ─────────────────────────────────────────────────────
+  The empty deny list is valid — it blocks nothing.
+  The mode (default/acceptEdits) still applies on top of the empty deny list.
+
+  MISTAKE 3: Colon vs space confusion
+  ─────────────────────────────────────────────────────
+  "Bash(git:*)"   ← matches all git subcommands (colon separator)
+  "Bash(git *)"   ← also matches all git subcommands (space + wildcard)
+  These are equivalent for multi-word commands.
+
+  "Bash(git)"     ← matches ONLY bare "git" with no arguments
+  → Usually not what you want
+
+  MISTAKE 4: Forgetting path separators in Read patterns
+  ─────────────────────────────────────────────────────
+  "Read(/home/user/project/*)"   ← only top-level files in project/
+  "Read(/home/user/project/**)"  ← all files recursively (what you want)
+
+  MISTAKE 5: Allowing "Bash(npm:*)" expecting to block publish
+  ─────────────────────────────────────────────────────────
+  "Bash(npm:*)" matches ALL npm commands including npm publish.
+  You must explicitly deny: "Bash(npm publish:*)"
+```
+
+---
+
 ## 3. Sandbox Architecture
 
 The sandbox provides OS-level process isolation for the entire Claude Code session, preventing malicious code or accidental commands from affecting the rest of the system.
@@ -423,6 +895,282 @@ When running via the web interface (`claude.ai/code`), the entire session runs i
 - GitHub repository access via OAuth
 - No access to local file system (by design)
 - Ephemeral — session data deleted on close
+
+---
+
+## Sandbox Architecture Deep Dive
+
+This section explains how the sandbox works at the operating-system level, covering the specific kernel primitives used on macOS and Linux, how filesystem namespacing works, what network isolation actually restricts, and how to configure exceptions for legitimate use cases.
+
+### macOS — Apple Seatbelt (Sandbox.framework)
+
+On macOS, Claude Code uses **Apple Seatbelt** (also called the `sandbox(7)` framework, internally `libsandbox`). This is the same technology used to sandbox Safari, Mail, and App Store apps. It is enforced by the XNU kernel's Mandatory Access Control (MAC) framework via the `Sandbox` kext.
+
+```
+  macOS SEATBELT ARCHITECTURE
+  ══════════════════════════════════════════════════════════════════
+
+  Claude Code process
+       │
+       │ sandbox_init(profile, flags)
+       ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │  XNU Kernel — Mandatory Access Control Framework             │
+  │                                                              │
+  │  Intercepts ALL syscalls:                                    │
+  │  • file-read-data         → checked against path rules       │
+  │  • file-write-data        → checked against path rules       │
+  │  • process-exec           → checked against binary rules     │
+  │  • network-outbound       → checked against network rules    │
+  │  • mach-lookup            → checked against service rules    │
+  │  • ipc-posix-shm          → shared memory (blocked)         │
+  │  • iokit-open             → device access (blocked)          │
+  └──────────────────────────────────────────────────────────────┘
+
+  Sandbox profile (SBPL — Scheme-based policy language):
+  ─────────────────────────────────────────────────────
+  (version 1)
+  (deny default)                          ; deny everything by default
+
+  ; Allow read access to project directory
+  (allow file-read* (subpath "/Users/user/my-project"))
+
+  ; Allow read access to Claude config
+  (allow file-read* (subpath "/Users/user/.claude"))
+
+  ; Allow write access only to project and tmp
+  (allow file-write* (subpath "/Users/user/my-project"))
+  (allow file-write* (subpath "/private/tmp"))
+
+  ; Block sensitive paths even within home
+  (deny file-read* (subpath "/Users/user/.ssh"))
+  (deny file-read* (subpath "/Users/user/.aws"))
+  (deny file-read* (subpath "/Users/user/.gnupg"))
+
+  ; Allow outbound network to Anthropic API only
+  (allow network-outbound
+    (remote tcp "api.anthropic.com:443"))
+
+  ; Allow DNS
+  (allow network-outbound
+    (remote udp "*:53"))
+```
+
+**What Seatbelt protects against:**
+- Reading sensitive credential files (`~/.ssh`, `~/.aws`, Keychain)
+- Writing to system directories (`/etc`, `/Library`, `/System`)
+- Spawning processes outside the approved binary list
+- Opening raw sockets or network interfaces
+- Accessing other processes' memory via `mach_vm_read`
+
+**Seatbelt limitations on macOS:**
+- Does NOT restrict CPU usage (use `ulimit -t` separately)
+- Does NOT restrict memory usage (use `ulimit -v` separately)
+- Seatbelt is process-scoped, not container-scoped — a child process that breaks out of the parent sandbox is still sandboxed by its own profile
+- Hardened Runtime (`com.apple.security.cs.allow-unsigned-executable-memory`) can weaken sandbox if enabled
+
+### Linux — bubblewrap (bwrap)
+
+On Linux, Claude Code uses **bubblewrap** (`bwrap`), the same unprivileged sandbox used by Flatpak and GNOME applications. bubblewrap uses Linux kernel namespaces and seccomp-bpf to create an isolated environment without requiring root.
+
+```
+  Linux BUBBLEWRAP ARCHITECTURE
+  ══════════════════════════════════════════════════════════════════
+
+  Claude Code process
+       │
+       │ bwrap [options] -- claude-code-inner
+       ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │  Linux Kernel Namespaces                                     │
+  │                                                              │
+  │  MOUNT NAMESPACE (--unshare-mnt)                             │
+  │  • New private mount namespace                               │
+  │  • Only approved paths are bind-mounted in                   │
+  │  • /proc, /sys, /dev are synthetic (limited)                │
+  │                                                              │
+  │  USER NAMESPACE (--unshare-user)                             │
+  │  • Maps real UID to sandbox UID (uid 1000 → uid 0 inside)   │
+  │  • No actual root privileges — UID 0 in namespace only       │
+  │  • Cannot create new user namespaces inside                  │
+  │                                                              │
+  │  PID NAMESPACE (--unshare-pid)                               │
+  │  • Isolated PID numbering inside sandbox                     │
+  │  • Cannot see or signal host PIDs                            │
+  │                                                              │
+  │  NET NAMESPACE (--unshare-net, optional)                     │
+  │  • Private network interface (lo only)                       │
+  │  • No access to host network when active                     │
+  │  • Use --share-net for restricted (host-network) mode        │
+  │                                                              │
+  │  IPC NAMESPACE (--unshare-ipc)                               │
+  │  • Isolated System V IPC, POSIX message queues               │
+  │  • Cannot access shared memory of host processes             │
+  │                                                              │
+  │  SECCOMP-BPF filter                                          │
+  │  • Blocks dangerous syscalls:                                │
+  │    - ptrace, process_vm_readv (cross-process memory)         │
+  │    - mount, umount2 (remounting filesystems)                 │
+  │    - kexec_load (loading new kernel)                         │
+  │    - perf_event_open (can leak kernel data)                  │
+  │    - bpf (eBPF program loading)                              │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+**bubblewrap command generated by Claude Code (standard mode):**
+
+```bash
+bwrap \
+  --unshare-user \
+  --unshare-pid \
+  --unshare-ipc \
+  --unshare-mnt \
+  --uid 1000 --gid 1000 \
+  --ro-bind /usr /usr \
+  --ro-bind /lib /lib \
+  --ro-bind /lib64 /lib64 \
+  --ro-bind /bin /bin \
+  --ro-bind /etc/ssl /etc/ssl \
+  --ro-bind /etc/resolv.conf /etc/resolv.conf \
+  --bind /home/user/my-project /home/user/my-project \
+  --bind /tmp /tmp \
+  --ro-bind /home/user/.claude /home/user/.claude \
+  --tmpfs /home/user \
+  --proc /proc \
+  --dev /dev \
+  --new-session \
+  -- claude-code-inner [args]
+```
+
+**Filesystem Namespacing — What Gets Mounted:**
+
+```
+  INSIDE THE bwrap SANDBOX — FILESYSTEM VIEW
+  ══════════════════════════════════════════════════════════════════
+
+  /                           ← synthetic root (tmpfs)
+  ├── bin/                    ← ro-bind from host /bin
+  ├── usr/                    ← ro-bind from host /usr
+  ├── lib/                    ← ro-bind from host /lib
+  ├── lib64/                  ← ro-bind from host /lib64
+  ├── etc/
+  │   ├── ssl/                ← ro-bind (TLS certificates)
+  │   └── resolv.conf         ← ro-bind (DNS resolution)
+  ├── tmp/                    ← bind from host /tmp
+  ├── proc/                   ← synthetic /proc
+  ├── dev/                    ← synthetic /dev (limited devices)
+  └── home/
+      └── user/               ← tmpfs (EMPTY — isolates home dir)
+          ├── my-project/     ← bind from host (read-write)
+          └── .claude/        ← ro-bind from host (config only)
+
+  NOT MOUNTED (inaccessible inside sandbox):
+  • /home/user/.ssh/          → SSH keys protected
+  • /home/user/.aws/          → AWS credentials protected
+  • /home/user/.gnupg/        → GPG keys protected
+  • /home/user/.config/       → App configs protected
+  • /home/user/other-projects/→ Other projects isolated
+  • /etc/shadow               → Password hashes protected
+  • /etc/passwd               → User database (not needed)
+```
+
+**Network Isolation Modes:**
+
+```
+  NETWORK ISOLATION OPTIONS
+  ══════════════════════════════════════════════════════════════════
+
+  networkAccess: "full"
+  ─────────────────────
+  • bwrap uses host network namespace (--share-net)
+  • Claude Code can reach any host on the internet
+  • DNS resolution via /etc/resolv.conf (host's DNS)
+  • Use: interactive development with WebFetch/WebSearch
+
+  networkAccess: "restricted"
+  ─────────────────────────────
+  • bwrap uses host network namespace
+  • iptables OUTPUT rules restrict egress to allowedDomains
+  • Allowed by default: api.anthropic.com:443, bedrock.amazonaws.com:443
+  • Additional domains via sandbox.allowedNetworkDomains setting
+  • Use: CI/CD with controlled network access
+
+  networkAccess: "none" (air-gapped)
+  ────────────────────────────────────
+  • bwrap creates private net namespace (--unshare-net)
+  • Only loopback interface (127.0.0.1/lo) is available
+  • No DNS, no outbound connections of any kind
+  • Anthropic API calls will fail unless using local model proxy
+  • Use: high-security environments, air-gapped networks,
+         or when using a local Anthropic API proxy (ANTHROPIC_BASE_URL)
+```
+
+### Configuring Sandbox Exceptions
+
+Sometimes you need to allow paths or domains that are blocked by default. Use `sandbox.allowedPaths` and `sandbox.allowedNetworkDomains`:
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "networkAccess": "restricted",
+    "allowedPaths": [
+      "${PROJECT_DIR}",
+      "${HOME}/.claude",
+      "/tmp",
+      "/home/user/shared-libraries",
+      "/opt/company-tools"
+    ],
+    "blockedPaths": [
+      "${HOME}/.ssh",
+      "${HOME}/.aws",
+      "${HOME}/.gnupg",
+      "${HOME}/.config/gcloud",
+      "/etc/passwd",
+      "/etc/shadow"
+    ],
+    "allowedNetworkDomains": [
+      "api.anthropic.com",
+      "registry.npmjs.org",
+      "pypi.org",
+      "nuget.org",
+      "github.com",
+      "raw.githubusercontent.com"
+    ]
+  }
+}
+```
+
+### What the Sandbox Does NOT Protect Against
+
+Understanding sandbox limitations is important for accurate threat modelling:
+
+```
+  SANDBOX LIMITATIONS — WHAT IT DOES NOT PREVENT
+  ══════════════════════════════════════════════════════════════════
+
+  1. CPU/memory exhaustion (fork bombs, memory leaks)
+     → Mitigate with ulimit -u (process count) and cgroups
+
+  2. Disk space exhaustion (writing large files within allowed paths)
+     → Mitigate with disk quotas on the project directory
+
+  3. Reading allowed paths (project dir is always accessible)
+     → If secrets are in the project dir, Claude can read them
+
+  4. Network calls to allowed domains (api.anthropic.com always allowed)
+     → The Anthropic API itself is always reachable
+
+  5. Timing-based side channel attacks against host processes
+     → Not a practical threat in most environments
+
+  6. Vulnerabilities in the sandbox implementation itself
+     → Apple Seatbelt and bubblewrap are well-maintained but not perfect
+
+  7. Social engineering via prompt injection
+     → Sandbox is process-level; it cannot prevent Claude from being
+        tricked into performing allowed-but-harmful operations
+```
 
 ---
 
@@ -725,6 +1473,592 @@ claude_code.cost.usd            → turn cost in USD
 claude_code.tokens.input        → input tokens this turn
 claude_code.tokens.output       → output tokens this turn
 claude_code.tokens.cache_read   → cache-served tokens
+```
+
+---
+
+## Audit Logging — Complete Setup
+
+This section provides a comprehensive, production-ready audit logging setup using OpenTelemetry, file-based logs, webhook delivery, and a log schema reference for SIEM integration.
+
+### Why Audit Logging Matters
+
+Claude Code sessions can execute arbitrary shell commands, write files, and call external APIs. Without audit logging:
+- You cannot reconstruct what Claude did in a given session
+- Security incidents cannot be investigated
+- Compliance requirements (SOC 2, ISO 27001, HIPAA) cannot be met
+- Cost anomalies cannot be traced to specific sessions
+
+With audit logging, you get a complete, tamper-evident record of every tool call, with inputs, outputs, timing, and cost.
+
+### OpenTelemetry Setup — Complete Configuration
+
+Claude Code emits OTEL traces natively (v2.0.14+). No plugin or hook required for basic tracing.
+
+#### Step 1: Deploy an OTel Collector
+
+```yaml
+# otel-collector-config.yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+  resource:
+    attributes:
+      - key: service.namespace
+        value: claude-code
+        action: insert
+
+exporters:
+  # Export to your SIEM / observability stack — choose one or more:
+  otlphttp/datadog:
+    endpoint: https://otlp.datadoghq.com/v1/traces
+    headers:
+      DD-API-KEY: ${env:DD_API_KEY}
+
+  otlphttp/splunk:
+    endpoint: https://ingest.splunk.example.com/v1/log
+    headers:
+      Splunk: ${env:SPLUNK_TOKEN}
+
+  file:
+    path: /var/log/claude-code/otel-traces.jsonl
+    rotation:
+      max_megabytes: 100
+      max_days: 30
+      max_backups: 10
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch, resource]
+      exporters: [otlphttp/datadog, file]
+```
+
+#### Step 2: Configure Claude Code to Export
+
+```bash
+# ~/.claude/env  (or export in shell profile)
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_SERVICE_NAME=claude-code
+export OTEL_SERVICE_VERSION=2.1.126
+export OTEL_RESOURCE_ATTRIBUTES="team=platform,environment=production,user=${USER}"
+
+# For HTTPS with authentication:
+# export OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.corp.internal:4318
+# export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${CORP_OTEL_TOKEN}"
+```
+
+Or configure in `~/.claude/settings.json`:
+
+```json
+{
+  "telemetry": {
+    "enabled": true,
+    "endpoint": "http://localhost:4318",
+    "headers": {
+      "Authorization": "Bearer ${CORP_OTEL_TOKEN}"
+    },
+    "resourceAttributes": {
+      "team": "platform",
+      "environment": "production",
+      "cost_center": "engineering"
+    }
+  }
+}
+```
+
+### Log Format Schema — Complete Reference
+
+Every audit log entry (whether from the built-in JSONL log or via PostToolUse hook) follows this schema:
+
+```jsonc
+{
+  // Session identification
+  "ts": "2026-06-03T14:23:01.123Z",         // ISO 8601 UTC timestamp
+  "session_id": "sess_01abc123def456",       // Unique session ID
+  "turn": 4,                                  // Turn number within session
+  "event_type": "tool_call",                  // session_start | tool_call | session_end
+
+  // User and environment context
+  "user": "jane@corp.com",                   // OS user or identity
+  "hostname": "macbook-pro-jane.corp.com",   // Machine hostname
+  "project_dir": "/home/jane/api-service",   // Working directory
+  "git_branch": "feature/auth-refactor",     // Current git branch (if git repo)
+  "git_commit": "a1b2c3d",                   // Current HEAD commit
+
+  // Tool call details
+  "tool": "Bash",                            // Tool name
+  "tool_input": {
+    "command": "git status"                  // Full input (tool-specific)
+  },
+  "tool_output": "On branch main...",        // Output (truncated if large)
+  "tool_output_bytes": 1247,                 // Output size before truncation
+  "duration_ms": 234,                        // Execution time in ms
+  "exit_code": 0,                            // For Bash: exit code
+  "was_approved": true,                      // false if user denied the prompt
+
+  // Cost and model
+  "model": "claude-sonnet-4-6",             // Model used this turn
+  "input_tokens": 12453,                    // Input tokens this turn
+  "output_tokens": 823,                     // Output tokens this turn
+  "cache_read_tokens": 8200,               // Tokens served from cache
+  "cache_write_tokens": 4253,              // Tokens written to cache
+  "cost_usd": 0.043,                       // Estimated cost this turn
+
+  // Permission context
+  "permission_mode": "acceptEdits",         // Active permission mode
+  "was_in_allow_list": true,               // Whether tool was in allow list
+  "was_in_deny_list": false                // Whether tool was blocked by deny list
+}
+```
+
+### PostToolUse Hook — Production Audit Logging
+
+This hook writes structured audit logs for every tool call and ships them to multiple destinations:
+
+```python
+#!/usr/bin/env python3
+# ~/.claude/hooks/audit-logger.py
+"""
+PostToolUse audit hook for Claude Code.
+Ships logs to: local JSONL file, webhook (Splunk/Datadog/custom), optional SIEM.
+
+Configure via environment variables:
+  AUDIT_LOG_DIR     - local log directory (default: /var/log/claude-code)
+  AUDIT_WEBHOOK_URL - webhook endpoint (optional)
+  AUDIT_WEBHOOK_TOKEN - bearer token for webhook (optional)
+  AUDIT_MAX_OUTPUT_BYTES - max output to capture (default: 4096)
+"""
+import json
+import sys
+import os
+import datetime
+import hashlib
+import subprocess
+import urllib.request
+import urllib.error
+
+MAX_OUTPUT = int(os.environ.get("AUDIT_MAX_OUTPUT_BYTES", "4096"))
+LOG_DIR = os.environ.get("AUDIT_LOG_DIR", "/var/log/claude-code")
+WEBHOOK_URL = os.environ.get("AUDIT_WEBHOOK_URL", "")
+WEBHOOK_TOKEN = os.environ.get("AUDIT_WEBHOOK_TOKEN", "")
+
+
+def get_git_context(project_dir):
+    """Get current git branch and commit for the project."""
+    try:
+        branch = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project_dir, stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=project_dir, stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        return branch, commit
+    except Exception:
+        return "unknown", "unknown"
+
+
+def ship_to_webhook(entry):
+    """POST audit entry to webhook (Splunk HEC, Datadog Logs, custom endpoint)."""
+    if not WEBHOOK_URL:
+        return
+    try:
+        body = json.dumps({"event": entry, "sourcetype": "claude-code-audit"}).encode()
+        req = urllib.request.Request(
+            WEBHOOK_URL,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {WEBHOOK_TOKEN}",
+            },
+            method="POST"
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except urllib.error.URLError:
+        pass  # Don't fail audit logging if webhook is unreachable
+
+
+def write_local_log(entry, log_dir):
+    """Write JSONL entry to daily rotating log file."""
+    os.makedirs(log_dir, exist_ok=True)
+    date_str = datetime.date.today().isoformat()
+    log_file = os.path.join(log_dir, f"audit-{date_str}.jsonl")
+    with open(log_file, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+payload = json.loads(sys.stdin.read())
+
+tool_name = payload.get("tool_name", "unknown")
+tool_input = payload.get("tool_input", {})
+tool_output = payload.get("tool_response", {}).get("output", "")
+project_dir = payload.get("project_dir", os.getcwd())
+
+# Truncate large outputs
+output_bytes = len(tool_output.encode("utf-8", errors="replace"))
+if output_bytes > MAX_OUTPUT:
+    tool_output = tool_output[:MAX_OUTPUT] + f"... [truncated {output_bytes} bytes total]"
+
+git_branch, git_commit = get_git_context(project_dir)
+
+ts = datetime.datetime.utcnow().isoformat() + "Z"
+entry = {
+    "ts": ts,
+    "session_id": payload.get("session_id", "unknown"),
+    "turn": payload.get("turn_number", 0),
+    "event_type": "tool_call",
+    "user": os.environ.get("USER", os.environ.get("USERNAME", "unknown")),
+    "hostname": os.uname().nodename,
+    "project_dir": project_dir,
+    "git_branch": git_branch,
+    "git_commit": git_commit,
+    "tool": tool_name,
+    "tool_input": tool_input,
+    "tool_output": tool_output,
+    "tool_output_bytes": output_bytes,
+    "duration_ms": payload.get("duration_ms", 0),
+    "model": payload.get("model", "unknown"),
+    "cost_usd": payload.get("cost_usd", 0.0),
+}
+
+# Write locally
+write_local_log(entry, LOG_DIR)
+
+# Ship to webhook
+ship_to_webhook(entry)
+
+sys.exit(0)
+```
+
+Register the hook in `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/user/.claude/hooks/audit-logger.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Parsing Logs for Security Analysis
+
+Use these queries to analyze audit logs for security-relevant events:
+
+```bash
+# Find all Bash commands in today's logs
+jq 'select(.tool == "Bash") | {ts, user, project_dir, cmd: .tool_input.command}' \
+  /var/log/claude-code/audit-$(date +%Y-%m-%d).jsonl
+
+# Find blocked commands (exit code != 0)
+jq 'select(.tool == "Bash" and .exit_code != 0)' \
+  /var/log/claude-code/audit-*.jsonl
+
+# Find all file writes
+jq 'select(.tool == "Write" or .tool == "Edit" or .tool == "MultiEdit") | \
+    {ts, user, project_dir, path: .tool_input.file_path}' \
+  /var/log/claude-code/audit-*.jsonl
+
+# Find suspicious commands (sudo, curl|sh, rm -rf)
+jq -r 'select(.tool == "Bash") |
+  select(
+    (.tool_input.command | test("sudo|rm -rf|curl.*\\|.*sh|wget.*\\|.*sh"))
+  ) |
+  [.ts, .user, .tool_input.command] | @tsv' \
+  /var/log/claude-code/audit-*.jsonl
+
+# Cost by user (last 7 days)
+cat /var/log/claude-code/audit-*.jsonl | \
+  jq -r '[.user, .cost_usd] | @tsv' | \
+  awk '{sum[$1]+=$2} END {for(u in sum) print u, sum[u]}' | \
+  sort -k2 -rn
+
+# Top projects by tool calls
+cat /var/log/claude-code/audit-*.jsonl | \
+  jq -r '.project_dir' | \
+  sort | uniq -c | sort -rn | head -20
+```
+
+### SIEM Integration — Splunk Query Examples
+
+```
+# Splunk SPL — Find all dangerous Bash commands
+index=claude_code sourcetype=claude-code-audit tool=Bash
+| eval cmd=tool_input.command
+| where match(cmd, "sudo|rm -rf|curl.*\|.*sh|dd if=|mkfs")
+| table _time, user, hostname, project_dir, cmd
+| sort -_time
+
+# Alert: unusual cost spike (>$2 in a single turn)
+index=claude_code sourcetype=claude-code-audit
+| where cost_usd > 2.0
+| table _time, user, session_id, tool, cost_usd
+| sort -cost_usd
+
+# Dashboard: daily cost by team
+index=claude_code sourcetype=claude-code-audit
+| timechart span=1d sum(cost_usd) by user
+```
+
+### Configuring Log Retention and Rotation
+
+```bash
+# /etc/logrotate.d/claude-code
+/var/log/claude-code/audit-*.jsonl {
+    daily
+    rotate 90
+    compress
+    delaycompress
+    missingok
+    notifempty
+    dateext
+    dateformat -%Y-%m-%d
+    postrotate
+        # Optional: archive to S3 for long-term retention
+        aws s3 sync /var/log/claude-code/ s3://corp-audit-logs/claude-code/ \
+            --exclude "*.gz.1" --storage-class GLACIER
+    endscript
+}
+```
+
+---
+
+## Security Incident Response
+
+When Claude Code behaves unexpectedly, exceeds its permissions, or triggers a security concern, follow this structured response procedure.
+
+### Incident Classification
+
+```
+  SEVERITY CLASSIFICATION
+  ══════════════════════════════════════════════════════════════════
+
+  SEV-1 (Critical) — Immediate response required
+  ─────────────────────────────────────────────────
+  • Claude executed a command that deleted production data
+  • Claude exfiltrated credentials to an external endpoint
+  • Claude modified authentication or access-control code
+    without authorisation
+  • A malicious MCP server successfully injected commands
+
+  SEV-2 (High) — Response within 1 hour
+  ─────────────────────────────────────────────────
+  • Claude made commits to main/prod branch unexpectedly
+  • Claude accessed credential files (SSH, AWS, GnuPG)
+  • Unexpected external network calls from Claude session
+  • Audit log gap (missing expected entries)
+
+  SEV-3 (Medium) — Response within 24 hours
+  ─────────────────────────────────────────────────
+  • Claude made unexpected file writes outside project scope
+  • High cost spike without corresponding work output
+  • Claude exceeded max-turns limit on multiple sessions
+  • Unusual model or permission mode change detected
+
+  SEV-4 (Low) — Next business day
+  ─────────────────────────────────────────────────
+  • Permission prompt was bypassed by user (not Claude)
+  • Deny rule was triggered and blocked correctly
+  • Single anomalous tool call with no impact
+```
+
+### Immediate Containment Steps
+
+When a SEV-1 or SEV-2 incident is detected:
+
+```bash
+# Step 1: Kill the Claude Code session immediately
+# (Press Ctrl+C or close the terminal)
+
+# Step 2: If Claude is running as a background process:
+pkill -f "claude-code"
+# Or find and kill by session:
+ps aux | grep claude | grep -v grep
+kill -9 <PID>
+
+# Step 3: Disable the API key to prevent further API calls
+# (Do this even if the session is dead — Claude may have written scripts
+#  that invoke the API independently)
+# → Go to Anthropic Console → API Keys → Revoke the key
+
+# Step 4: Freeze git history to prevent further commits
+git log --oneline -20  # Review what was committed
+git remote set-url origin /dev/null  # Block push access temporarily
+
+# Step 5: Snapshot current state for forensics
+tar -czf /tmp/incident-snapshot-$(date +%Y%m%d-%H%M%S).tar.gz \
+  ~/.claude/logs/ \
+  /var/log/claude-code/ \
+  ~/.claude/teams/ \
+  .git/
+
+echo "Snapshot saved. Do NOT modify the working directory until investigation is complete."
+```
+
+### Investigation — Reviewing Audit Logs
+
+```bash
+# 1. Find the session ID from the incident window
+SESSION_ID="sess_01abc..."  # From alert or user report
+DATE="2026-06-03"
+
+# 2. Extract all tool calls for that session
+jq "select(.session_id == \"$SESSION_ID\")" \
+  /var/log/claude-code/audit-${DATE}.jsonl | \
+  jq -r '[.ts, .tool, (.tool_input | tostring)] | @tsv'
+
+# 3. Find all files written
+jq "select(.session_id == \"$SESSION_ID\" and \
+    (.tool == \"Write\" or .tool == \"Edit\" or .tool == \"MultiEdit\"))" \
+  /var/log/claude-code/audit-${DATE}.jsonl | \
+  jq '{ts, tool, path: .tool_input.file_path, content_preview: .tool_input.content[:200]}'
+
+# 4. Find all Bash commands executed
+jq "select(.session_id == \"$SESSION_ID\" and .tool == \"Bash\")" \
+  /var/log/claude-code/audit-${DATE}.jsonl | \
+  jq -r '[.ts, .tool_input.command, .exit_code] | @tsv'
+
+# 5. Find all network calls
+jq "select(.session_id == \"$SESSION_ID\" and \
+    (.tool == \"WebFetch\" or .tool == \"WebSearch\"))" \
+  /var/log/claude-code/audit-${DATE}.jsonl | \
+  jq '{ts, tool, url: .tool_input.url}'
+
+# 6. Check for MCP tool calls
+jq "select(.session_id == \"$SESSION_ID\" and (.tool | startswith(\"mcp__\")))" \
+  /var/log/claude-code/audit-${DATE}.jsonl
+```
+
+### Rollback Procedures
+
+Depending on what Claude modified, use the appropriate rollback strategy:
+
+#### Git Repository — Rollback Commits
+
+```bash
+# Find Claude's commits (look for automated commit messages)
+git log --oneline --author="Claude" --since="2 hours ago"
+git log --oneline --grep="\[Claude\]" --since="2 hours ago"
+
+# Preview what would be reverted
+git diff HEAD~3 HEAD  # If 3 commits to undo
+
+# Revert the commits (creates new revert commits — safer than reset)
+git revert HEAD~3..HEAD --no-commit
+git commit -m "security: revert Claude Code incident $(date +%Y-%m-%d)"
+
+# Force-push only if the commits were pushed to a branch (NOT main)
+# For main: create a PR with the revert commits instead
+```
+
+#### File System — Restore from Git
+
+```bash
+# List files modified in the incident window
+git diff --name-only HEAD~5 HEAD
+
+# Restore specific files to their pre-incident state
+git checkout HEAD~5 -- src/auth/tokens.py src/api/endpoints.py
+
+# Or restore everything to a known-good state
+git stash        # Save current working tree (for evidence)
+git checkout HEAD~5 -- .
+```
+
+#### Infrastructure — If Claude Modified Terraform/IaC
+
+```bash
+# Review the plan to understand what changed
+terraform show
+terraform plan -out=rollback.plan
+
+# Rollback: apply the previous state
+git checkout HEAD~1 -- terraform/
+terraform plan  # Verify rollback looks correct
+terraform apply # Apply rollback (with human approval)
+```
+
+### Preventing Recurrence
+
+After each incident, update your security configuration:
+
+```json
+// Add to .claude/settings.json based on incident type
+{
+  "permissions": {
+    "deny": [
+      // If Claude made unauthorized git commits:
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+
+      // If Claude accessed credentials:
+      "Read(/home/**/.ssh/*)",
+      "Read(/home/**/.aws/*)",
+      "Read(/home/**/.gnupg/*)",
+
+      // If Claude made unexpected network calls:
+      "WebFetch",
+      "WebSearch",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
+    ]
+  }
+}
+```
+
+### Enterprise Escalation Procedures
+
+For enterprise environments with a security team:
+
+```
+  ESCALATION PATH
+  ══════════════════════════════════════════════════════════════════
+
+  SEV-1/2: Immediate escalation
+  ─────────────────────────────────────────────────
+  1. Disable the API key (Anthropic Console or MDM-managed key rotation)
+  2. Page the security team (PagerDuty / OpsGenie)
+  3. Preserve all evidence (do NOT modify ~/.claude/logs/)
+  4. Notify CISO within 1 hour
+  5. If PII was exposed: begin breach notification assessment
+  6. File incident in your ticketing system with:
+     - Session ID
+     - Timeline of events
+     - Affected systems/files/data
+     - Audit log export (JSONL)
+
+  SEV-3/4: Standard escalation
+  ─────────────────────────────────────────────────
+  1. Document the anomaly
+  2. File a ticket in the security queue
+  3. Review and tighten permission configuration
+  4. Update deny list rules if applicable
+  5. Schedule a retrospective within 1 week
+
+  Anthropic Security Contact (for product vulnerabilities):
+  security@anthropic.com
+  HackerOne: https://hackerone.com/anthropic (responsible disclosure)
 ```
 
 ---
