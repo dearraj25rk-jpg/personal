@@ -568,7 +568,7 @@ const ROOT_MCP_JSON = `// .mcp.json (repo root — shared by all services)
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "@acme/datadog-mcp-server"],
-      "env": { "DD_API_KEY": "${DD_API_KEY}" },
+      "env": { "DD_API_KEY": "\${DD_API_KEY}" },
       "description": "Metrics, traces, logs — shared observability"
     }
   }

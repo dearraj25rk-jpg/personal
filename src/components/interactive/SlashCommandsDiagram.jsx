@@ -276,7 +276,7 @@ export default function SlashCommandsDiagram() {
             </div>
             <div style={{ background: C.surface, border: `1.5px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
               <div style={{ background: C.card, padding: "8px 16px", display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ ...mono, fontSize: 11, color: C.textDim }}.claude/commands/security-review.md</div>
+                <div style={{ ...mono, fontSize: 11, color: C.textDim }}>.claude/commands/security-review.md</div>
                 <Tag color={C.purple}>project command</Tag>
               </div>
               <pre style={{ ...mono, fontSize: 12, color: C.textSoft, margin: 0, padding: "16px 20px", overflowX: "auto", lineHeight: 1.7 }}>
