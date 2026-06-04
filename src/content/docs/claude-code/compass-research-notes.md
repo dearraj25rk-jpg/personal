@@ -46,16 +46,17 @@ Use this section for rapid recall of precise numbers the exam tests. Every figur
 | **Hook events count** | **30+** | Official docs list 30+ events; specific named events include PreToolUse, PostToolUse, UserPromptSubmit, Stop, StopFailure, SessionStart, SessionEnd, Setup, Notification, PreCompact, PostCompact, WorktreeCreate, WorktreeRemove, CwdChanged, FileChanged, ConfigChange, InstructionsLoaded, Elicitation, ElicitationResult, SubagentStop, PermissionDenied, TeammateIdle, TaskCompleted |
 | **Hook handler types** | **5** | command, prompt, agent, http (v2.1.63), mcp_tool (v2.1.118) |
 
-### Model Lineup (v2.1.126 / May 2026)
+### Model Lineup (v2.1.126 / June 2026)
 
-| Model | Context Window | Input Price | Output Price | Notes |
-|-------|---------------|-------------|--------------|-------|
-| **claude-opus-4-7** | 200K / 1M extended | $5/MTok | $25/MTok | Default effort: xhigh. 1.35× tokenizer vs prior models |
-| **claude-opus-4-6** | 200K / 1M extended | $5/MTok | $25/MTok | 1M context GA at standard pricing since March 2026 |
-| **claude-sonnet-4-6** | 200K / 1M extended | $3/MTok | $15/MTok | Default model for Claude Code; 1M context >200K surcharge: $6 in / $22.50 out |
-| **claude-haiku-4-5** | 200K | $1/MTok | $5/MTok | Used by Explore subagent and Prompt hooks; no 1M window |
+| Model | Alias | Context Window | Input Price | Output Price | Cache Read | Notes |
+|-------|-------|---------------|-------------|--------------|------------|-------|
+| **claude-opus-4-8** | `opus` | 1M tokens | $15/MTok | $75/MTok | $1.50/MTok | **Newest.** Most capable Opus; holds the `opus` alias. Same pricing tier as Opus 4.7 |
+| **claude-opus-4-7** | — | 1M tokens | $15/MTok | $75/MTok | $1.50/MTok | Default effort: `xhigh`. 1M context at standard pricing since March 14, 2026 |
+| **claude-opus-4-6** | — | 200K tokens | $15/MTok | $75/MTok | $1.50/MTok | Opus-tier, 200K context only. No 1M window — use Opus 4.7/4.8 for large-context tasks |
+| **claude-sonnet-4-6** | `sonnet` | 200K tokens | $3/MTok | $15/MTok | $0.30/MTok | **Default model** for Claude Code. Best balance quality/speed for daily work |
+| **claude-haiku-4-5** | `haiku` | 200K tokens | $0.80/MTok | $4/MTok | $0.08/MTok | Fastest, cheapest. Used by Explore subagent and Prompt hook handlers |
 
-Cache pricing (all models): read = 0.1× input price (90% savings); write 5-min TTL = 1.25× input; write 1-hr TTL = ~2× input. Batch API = 50% discount on input and output.
+Cache pricing: cache read = 0.1× input price (90% savings); cache write (5-min TTL) = 1.25× input; cache write (1-hr TTL) ≈ 2× input. Batch API = 50% discount on input and output tokens.
 
 ### Permission Modes and Settings Hierarchy
 
@@ -105,7 +106,7 @@ Cache pricing (all models): read = 0.1× input price (90% savings); write 5-min 
 | Structured output: max optional params | 24 across all strict schemas |
 | Structured output: max union-type params | 16 |
 | Grammar cache TTL | 24 hours from last use |
-| Auto-compact trigger | ~95% context capacity |
+| Auto-compact trigger | ~83.5% context capacity |
 | Recommended manual compact trigger | 70% context capacity |
 | CLAUDE.md recommended max | 200 lines / ~3,000 tokens |
 | SubAgent MEMORY.md injection limit | First 200 lines OR 25KB (whichever comes first) |

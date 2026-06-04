@@ -1253,3 +1253,22 @@ src/
 | **Giant single prompts** | Claude misses constraints in a long list | Break into: (1) plan, (2) execute step A, (3) verify, (4) execute step B |
 | **Auto-Accept in an unfamiliar codebase** | Unexpected file changes in areas you didn't expect | Stay in Normal mode until you understand the codebase |
 | **No session naming** | Can't find yesterday's session | Use `/rename` immediately when starting a significant session |
+
+---
+
+## Common Beginner Mistakes
+
+The table below covers mistakes that are distinct from the "new user" pitfalls above — these tend to surface after your first week once you start configuring Claude Code more deeply.
+
+| Mistake | What happens | Fix |
+|---------|-------------|-----|
+| **Leaving CLAUDE.md empty or missing** | Claude has no project context and asks clarifying questions every session, produces generic boilerplate, misses your conventions | Add project context: language/framework, repo layout, test command, key constraints, and the things Claude repeatedly gets wrong |
+| **Not using `/compact` proactively** | At 90%+ context the model starts forgetting earlier decisions, quality degrades silently, and you get inconsistent output in the same session | Run `/compact [brief focus note]` at roughly 70% context capacity — don't wait for the warning |
+| **Using Opus for every task** | Costs 5–10× more than necessary; bulk or routine tasks (file search, grep-style analysis, boilerplate generation) produce identical results on cheaper models | Use Haiku for bulk/repetitive work, Sonnet as the standard workhorse, Opus only for architecture decisions and hard multi-step reasoning |
+| **Ignoring path-scoped rules** | A single monolithic CLAUDE.md bloats context for every session regardless of which part of the codebase you are working in | Move domain-specific instructions to `.claude/rules/` files with `paths:` globs (e.g., `paths: ["src/api/**"]`) so they only load when relevant |
+| **Not saving useful patterns to MEMORY.md** | Hard-won context (decisions, gotchas, team conventions) evaporates when the session ends; you re-explain the same things in every new session | At the end of a productive session, tell Claude: "Remember the decision we made about X" — it writes to MEMORY.md; review and curate it periodically |
+| **Using a model alias in CI** | Aliases like `opus` or `sonnet` resolve to different model versions as Anthropic releases updates, making CI non-deterministic and potentially breaking on new behavior | Pin to the full model ID in CI configs: `claude-opus-4-8`, `claude-sonnet-4-5`, `claude-haiku-4-5` — never rely on alias resolution in automated pipelines |
+| **Putting shared MCP servers in project settings** | Other team members don't get the server unless they also have it in their user settings, and the project settings file gets cluttered with machine-specific config | Put servers your whole team should use in project `.claude/settings.json`; put personal or machine-specific servers in `~/.claude/settings.json` (user-level) |
+| **Forgetting `keep-coding-instructions: true` in custom output styles** | Your custom style replaces the SE behavioral block, silently disabling Claude's built-in safety rules (no accidental `rm -rf`, no force-push warnings, tool-use preferences) | Unless you are deliberately building a non-coding style, always set `keep-coding-instructions: true` in your custom style YAML |
+| **Using `--bare` mode in development** | Bare mode strips the interactive TUI, permission prompts, and the SE system prompt block; you lose context, safety checks, and the ability to course-correct mid-task | `--bare` is designed for CI pipelines and programmatic output parsing only; use normal interactive mode during development |
+| **Over-engineering CLAUDE.md** | A 500-line CLAUDE.md consumes thousands of tokens every session, slows responses, and is harder to maintain than the codebase itself | Keep CLAUDE.md under 200 lines of high-signal content; use `@import path/to/file` to pull in large reference sections only when needed, and move domain rules to path-scoped `.claude/rules/` files |

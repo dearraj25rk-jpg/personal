@@ -1,6 +1,6 @@
 ---
 title: Claude Code
-description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles, memory management (7 types), models & pricing, slash commands, context engineering, enterprise deployment, monorepo patterns, and 19 interactive diagrams. 44 total resources. Claude Code v2.1.126 · Updated June 2026.
+description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles (with interactive diagram), memory management (7 types), models & pricing, slash commands, context engineering, context window architecture, native binary guide, remote control & cloud sessions, enterprise deployment, monorepo patterns, and 21 interactive diagrams. 48 total resources. Claude Code v2.1.126 · Updated June 2026.
 sidebar:
   order: 1
 lastUpdated: 2026-06-03
@@ -8,7 +8,7 @@ lastUpdated: 2026-06-03
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
 
-**Latest stable:** v2.1.126 (May 19, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions) · **Platforms:** macOS, Linux, WSL2, Windows native
+**Latest stable:** v2.1.126 (May 19, 2026) · **Package:** `@anthropic-ai/claude-code` (392+ published versions) · **Platforms:** macOS, Linux, WSL2, Windows native · **Binary:** Native (no Node.js required since v2.1.113)
 
 ```
 ┌────────────────────────────── CLAUDE CODE ECOSYSTEM ────────────────────────────────┐
@@ -87,11 +87,17 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 
 ## June 2026 — Documentation Update
 
-This site received a comprehensive documentation refresh on **2026-06-03**, covering all Claude Code features through **v2.1.126** (the latest stable release as of May 19, 2026).
+This site received a comprehensive documentation refresh on **2026-06-04**, covering all Claude Code features through **v2.1.126** (the latest stable release as of May 19, 2026).
 
 **What was updated in this refresh:**
 
-- All 44 documentation files reviewed and updated for accuracy through v2.1.126
+- All 48 documentation files reviewed and updated for accuracy through v2.1.126
+- 3 new reference guides added: Context Window Architecture, Native Binary Guide, Remote Control & Cloud Sessions
+- 1 new interactive diagram: Output Styles (with token cost calculator and custom style builder)
+- Fixed data inconsistency: `ModelsDiagram.jsx` now correctly shows Opus 4.6 with 200K context (was incorrectly showing 1M)
+- Fixed pricing data in Compass Research Notes: Opus pricing corrected to $15/M input / $75/M output, Haiku to $0.80/M input / $4/M output, auto-compact trigger corrected to 83.5%
+- 6 MDX interactive diagram pages enriched with new reference sections
+- 7 reference guide files enriched with missing sections (Agent Teams state machine, Worktrees state sharing, Native binary enterprise deployment, mcp_tool hook matcher security, Azure WIF for CI, and more)
 - New ASCII flow diagrams added throughout: agentic loop detail, model decision trees, cost optimization flowcharts, MCP debugging flows, and configuration hierarchy visuals
 - Pricing tables updated to reflect current rates: Opus 4.8/4.7/4.6 at $15/$75/$1.50 per million tokens; Sonnet 4.6 at $3/$15/$0.30; Haiku 4.5 at $0.80/$4.00/$0.08
 - Extended cost optimization strategies with worked examples: prompt caching ROI, multi-model agent fleet pricing, per-sprint cost projections
@@ -253,6 +259,9 @@ claude
 | [Enterprise Deployment Guide](./enterprise-guide) | Managed settings via MDM/registry/plist, policy federation for 500+ developer orgs, shared MCP server infrastructure, audit logging with OpenTelemetry, cost governance, multi-cloud auth (Bedrock + Vertex WIF), security hardening, rollout playbook |
 | [Monorepo & Multi-Service Guide](./monorepo-guide) | Root-level and service-specific CLAUDE.md hierarchy, path-scoped rules for domain isolation, shared MCP servers, parallel worktree development, Agent Teams cross-service coordination, CI/CD matrix builds |
 | [Troubleshooting Guide](./troubleshooting) | Authentication failures, MCP connection issues, hook failures, context/compaction problems, sandbox errors, performance debugging, CI/CD pipeline issues, error message dictionary |
+| [Context Window Architecture](./context-window-guide) | Context window composition anatomy, 200K vs 1M windows, compaction mechanics, context budget configuration, token measurement, ToolSearch deferred loading, cost math, and optimization strategies |
+| [Native Binary Guide](./native-binary-guide) | v2.1.113 architecture change, bfs/ugrep embedded tools, 30-50% faster cold starts, all installation methods, enterprise airgap deployment, DISABLE_UPDATES version pinning, performance benchmarks |
+| [Remote Control & Cloud Sessions](./remote-control-guide) | Remote Control bridge architecture, Cloud Sessions (browser-native), mobile use on iOS/Android, security model, session setup and teardown, available features remotely vs locally |
 
 ---
 
@@ -267,6 +276,7 @@ claude
 | [Models — Comparison & Pricing](./models-diagram) | Interactive model comparison, task decision guide, and real-time pricing calculator with cache ROI for all 5 models |
 | [Context & Cost Efficiency Guide](./claude-code-efficiency-guide) | Visual interactive guide to token efficiency, compaction strategies, caching, and effort levels |
 | [Context Engineering for Claude Code](./context-engineering-ce) | Four CE strategies, token window simulator, session rhythm, command reference, full CE checklist |
+| [Output Styles — Interactive Diagram](./output-styles-diagram) | Built-in styles (Default, Explanatory, Learning) with side-by-side comparison, keep-coding-instructions toggle, real-time token cost calculator, and custom style builder with frontmatter reference |
 | [/advisor Command Diagram](./advisor-diagram) | Interactive flow diagram of the dual-model /advisor command — Sonnet executor + Opus advisor |
 | [Hooks System — Flow Diagram](./hooks-diagram) | Interactive session lifecycle flow, all 30+ hook events, five handler types, 6 copy-paste automation patterns |
 | [MCP Architecture — Diagram](./mcp-diagram) | Interactive four-layer architecture, three primitives with examples, transport types, config scopes, 12 official servers |

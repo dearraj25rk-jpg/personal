@@ -1,0 +1,283 @@
+---
+tableOfContents: false
+title: Output Styles — Interactive Diagram
+description: >
+  Interactive visual guide to Claude Code Output Styles — built-in styles (Default, Explanatory, Learning),
+  custom style authoring, keep-coding-instructions behavior, token cost impact, and activation patterns.
+  v2.1.126 (May 2026).
+sidebar:
+  order: 15
+  label: Output Styles Diagram
+lastUpdated: 2026-06-04
+---
+
+import OutputStylesDiagram from '../../../components/interactive/OutputStylesDiagram.jsx';
+
+<div class="interactive-tool">
+  <OutputStylesDiagram client:only="react" />
+</div>
+
+---
+
+## Output Styles Quick Reference
+
+Claude Code ships with three built-in output styles. Each replaces the SE-specific system prompt block (see below) while optionally preserving or discarding the software-engineering behavioral instructions.
+
+| Style | Tone | `keep-coding-instructions` default | Best for | Token cost vs. Default |
+|-------|------|-------------------------------------|----------|------------------------|
+| **Default** | Concise, direct, tool-focused | N/A (baseline) | Day-to-day coding, CI, agentic loops | Baseline |
+| **Explanatory** | Verbose, step-by-step reasoning | `true` | Onboarding, pair-review, understanding unfamiliar code | +15–30% output tokens |
+| **Learning** | Socratic, question-driven, educational | `true` | Skill-building, juniors, code walkthroughs | +20–40% output tokens |
+
+> **Version note:** Output Styles were introduced in v2.0.64. The `keep-coding-instructions` key and custom style YAML format reached stable API in v2.1.0. All three built-in styles ship with v2.1.126.
+
+---
+
+## What Gets Replaced
+
+Every Claude Code session begins with a **system prompt** composed of several blocks. One of those blocks is the **SE (Software Engineering) block** — a large section that contains:
+
+- File-tool preference instructions (use `Read`/`Edit`/`Grep` instead of `cat`/`sed`/`grep`)
+- Git workflow guidance (conventional commits, branch hygiene)
+- Test-driven development heuristics
+- Safety rules (no `rm -rf` without confirmation, no `git push --force` to main)
+- Code style defaults (language-idiomatic, minimal comments, no emojis)
+
+When you activate an output style, **the SE block is replaced** with the style's own system prompt text. The rest of the system prompt (session metadata, tool definitions, permissions block, CLAUDE.md contents) is **not touched**.
+
+This means:
+- Your CLAUDE.md instructions are always preserved regardless of style.
+- Your `.claude/settings.json` permission rules still apply.
+- Only the style of response and the embedded behavioral defaults change.
+
+```
+Full system prompt structure
+├── [Session metadata]           ← never replaced
+├── [Tool definitions]           ← never replaced
+├── [Permissions block]          ← never replaced
+├── [SE behavioral block]        ← REPLACED by the active output style
+├── [CLAUDE.md contents]         ← never replaced
+└── [Path-scoped rules]          ← never replaced
+```
+
+---
+
+## `keep-coding-instructions` Behavior
+
+The `keep-coding-instructions` flag in a custom style (or surfaced via the built-in style config) controls whether the **SE behavioral block is appended after the style's own prompt text** rather than discarded.
+
+### `keep-coding-instructions: false` (default for custom styles)
+
+The SE block is fully replaced. You lose:
+
+- Tool preference reminders (`Read` over `cat`, etc.)
+- Git safety rules (no force-push warnings)
+- TDD heuristics
+- Code style defaults
+
+You keep everything in your CLAUDE.md, settings.json, and path-scoped rules.
+
+**Use when:** Your custom style already encodes all the behavioral instructions you need, or you want a clean slate (e.g., a non-coding writing style for documentation work).
+
+### `keep-coding-instructions: true`
+
+The style's prompt text is prepended to the SE block. Claude gets both the style tone guidance **and** the full SE behavioral instructions. This is the setting used by both `Explanatory` and `Learning` built-in styles.
+
+**What you keep:**
+
+- All SE safety rules and tool-use preferences
+- All style-specific tone and structure guidance
+
+**What you lose:**
+
+- Nothing — this is the union of both prompt blocks
+
+**Example: custom style with keep-coding-instructions**
+
+```yaml
+# .claude/styles/my-review-style.yaml
+name: PR Review
+description: Thorough pull-request review voice
+keep-coding-instructions: true
+system: |
+  You are a senior engineer performing a pull-request review.
+  Structure every response as:
+  1. Summary (1–2 sentences of what the PR does)
+  2. Critical issues (blocking) — use ❌ prefix
+  3. Non-critical suggestions — use 💡 prefix
+  4. Praise for good patterns — use ✅ prefix
+  Cite specific line numbers. Be direct and constructive.
+```
+
+With `keep-coding-instructions: true`, the above style still enforces all SE safety defaults — Claude won't `rm -rf` without confirmation even while in review mode.
+
+---
+
+## Custom Style File Format
+
+Custom styles live in `.claude/styles/` (project-level) or `~/.claude/styles/` (user-level). Files must be `.yaml` or `.yml`.
+
+### Complete YAML frontmatter spec
+
+```yaml
+# Required fields
+name: string                    # Display name shown in /config and the UI
+system: string                  # The replacement system prompt text (multiline OK)
+
+# Optional fields
+description: string             # Short description shown in /config style picker
+keep-coding-instructions: bool  # Default: false. Set true to append SE block after system.
+version: string                 # Freeform version label for your own tracking
+author: string                  # Freeform author label
+tags: [string]                  # Freeform tags for filtering (not used by Claude Code itself)
+```
+
+### Minimal example (clean slate)
+
+```yaml
+name: Documentation Writer
+description: Converts code analysis into clean prose documentation
+keep-coding-instructions: false
+system: |
+  You write developer documentation. Your output is always Markdown.
+  Tone: clear, neutral, third-person.
+  Never include implementation details the reader does not need.
+  Always include: purpose, parameters/inputs, return values, one usage example.
+```
+
+### Team distribution example (with all optional fields)
+
+```yaml
+name: Incident Response
+description: Terse, action-oriented voice for live incident debugging
+keep-coding-instructions: true
+version: "1.2.0"
+author: "platform-eng@example.com"
+tags: [oncall, ops, production]
+system: |
+  You are assisting an on-call engineer during a live production incident.
+  Rules:
+  - Be extremely terse. No pleasantries.
+  - Lead with the most likely cause and the fastest mitigation.
+  - Present commands as copy-pasteable blocks with no explanation unless asked.
+  - If you need more information, ask exactly one specific question.
+  - Prioritise MTTR (mean time to recovery) over code quality.
+```
+
+Place team styles in a shared dotfiles repo or distribute via your internal tooling. Engineers drop the file into `.claude/styles/` in their project or `~/.claude/styles/` for global access.
+
+---
+
+## Activation Methods
+
+### 1. Interactive: `/config` command
+
+```
+/config
+  > Output style
+    > [select style from list]
+```
+
+Changes take effect immediately for the current session and persist to your local settings.
+
+### 2. `defaultStyle` in `settings.json`
+
+Set a permanent default in your project or user settings:
+
+```json
+// .claude/settings.json  (project-level)
+{
+  "defaultStyle": "Explanatory"
+}
+```
+
+```json
+// ~/.claude/settings.json  (user-level)
+{
+  "defaultStyle": "my-review-style"
+}
+```
+
+The value is the `name` field from the style YAML, or one of the three built-in names: `"Default"`, `"Explanatory"`, `"Learning"`.
+
+### 3. CLI flag (session override)
+
+```bash
+claude --style "PR Review" "review the diff in HEAD~1"
+```
+
+The `--style` flag overrides `defaultStyle` for that session only.
+
+### 4. Team distribution via shared settings
+
+In a monorepo, commit a `.claude/styles/` directory with your team styles and a `.claude/settings.json` that sets `defaultStyle`. Every engineer who clones the repo gets the same baseline style.
+
+```
+.claude/
+├── settings.json          # {"defaultStyle": "Incident Response"}
+└── styles/
+    ├── incident-response.yaml
+    └── pr-review.yaml
+```
+
+---
+
+## When to Use Each Style
+
+| Situation | Recommended style | Reason |
+|-----------|------------------|--------|
+| Regular feature development | **Default** | Lowest token cost, fastest iteration |
+| CI / agentic pipelines | **Default** | Output is parsed, not read — verbosity is waste |
+| Onboarding a new codebase | **Explanatory** | Step-by-step reasoning helps you learn the territory |
+| Code review with a junior | **Explanatory** | Verbose rationale teaches, not just fixes |
+| Learning a new language/framework | **Learning** | Socratic questions build mental models |
+| Documentation writing | **Custom (no keep-coding)** | Clean prose style, SE defaults are irrelevant |
+| Incident response | **Custom (keep-coding: true)** | Terse voice but full SE safety rules still apply |
+| PR review workflow | **Custom (keep-coding: true)** | Structured review format + SE code judgment |
+
+---
+
+## Token Cost Implications
+
+Output styles affect both **input tokens** (the system prompt) and **output tokens** (response verbosity).
+
+### Input token impact (system prompt size)
+
+| Style | Approximate system prompt delta |
+|-------|--------------------------------|
+| Default | Baseline (0) |
+| Explanatory | +800–1,200 tokens (SE block preserved + style preamble) |
+| Learning | +900–1,300 tokens (SE block preserved + Socratic preamble) |
+| Custom (`keep-coding: false`) | −2,000–4,000 tokens (SE block removed; your style text replaces it) |
+| Custom (`keep-coding: true`) | +200–800 tokens (your style text prepended to SE block) |
+
+> Exact numbers vary with Claude Code version. The SE block grows as new behavioral guidance is added.
+
+### Output token impact (response length)
+
+| Style | Typical output multiplier | Notes |
+|-------|--------------------------|-------|
+| Default | 1× | Terse, direct |
+| Explanatory | 1.15–1.30× | Adds reasoning steps and rationale |
+| Learning | 1.20–1.40× | Adds questions, examples, alternative framings |
+| Custom (terse) | 0.6–0.9× | A well-crafted terse style beats Default for cost |
+
+### Cost optimisation tips
+
+```json
+// For CI: always force Default regardless of user settings
+{
+  "ci": {
+    "defaultStyle": "Default"
+  }
+}
+```
+
+- Use `Explanatory` only for interactive sessions where you will read every word.
+- A custom terse style (e.g., `keep-coding: false` + short system prompt) is the cheapest option for high-volume agentic workloads — cheaper than Default because the SE block is removed.
+- `Learning` style is expensive in long sessions; switch back to `Default` once you understand the domain.
+- Monitor actual costs with `/usage` before and after switching styles to calibrate for your workload.
+
+---
+
+→ Full reference: [Output Styles — Complete Reference](./output-styles-guide)

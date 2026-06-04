@@ -5,6 +5,128 @@
 
 ---
 
+## [2026-06-04] — June 2026 Depth Pass (feature/rag-hub)
+
+### Overview
+
+Comprehensive depth pass on all 44 existing files plus 4 new files added. Focus: deeper content, data accuracy fixes, new guides for missing topics, and enriched interactive diagrams. Total Claude Code resource count raised from 44 to 48.
+
+### Scope
+
+| Category | Files | Action |
+|----------|-------|--------|
+| Reference docs (md) — new | 3 | Created: context-window-guide.md, native-binary-guide.md, remote-control-guide.md |
+| Interactive diagram pages (mdx) — new | 1 | Created: output-styles-diagram.mdx |
+| React components (jsx) — new | 1 | Created: OutputStylesDiagram.jsx |
+| React components (jsx) — fixed | 1 | ModelsDiagram.jsx: Opus 4.6 context corrected 1M→200K |
+| Reference docs (md) — enriched | 10 | agent-teams-guide.md, worktrees-guide.md, troubleshooting.md, enterprise-guide.md, permissions-security.md, cicd-integration.md, claude-code-efficiency-reference.md, models-pricing.md, quick-start.md, compass-research-notes.md |
+| Interactive diagram pages (mdx) — enriched | 6 | models-diagram.mdx, advisor-diagram.mdx, slash-commands-diagram.mdx, file-catalog.mdx, precedence.mdx, override-test-lab.mdx |
+| Section index | 1 | index.md: updated stats, added 3 new guides to reference tables, added output-styles-diagram to diagrams table |
+| Home page | 1 | index.mdx: updated stats (44→48 docs, 113+→117+ total), added output-styles-diagram card, updated Claude Code card description and count |
+| **Total changed** | **25** | **All changes on feature/rag-hub branch** |
+
+---
+
+### Data Accuracy Fixes
+
+These were factual errors found during the depth pass:
+
+| File | Error | Fix |
+|------|-------|-----|
+| `ModelsDiagram.jsx` | Opus 4.6 context window shown as 1,000,000 tokens | Corrected to 200,000 tokens — only Opus 4.7 and 4.8 have 1M context |
+| `compass-research-notes.md` | Model lineup missing claude-opus-4-8 | Added as newest model with correct pricing |
+| `compass-research-notes.md` | Opus pricing shown as $5/MTok — wrong | Corrected to $15/MTok input, $75/MTok output |
+| `compass-research-notes.md` | Haiku pricing shown as $1/MTok — wrong | Corrected to $0.80/MTok input, $4/MTok output |
+| `compass-research-notes.md` | Auto-compact trigger shown as ~95% | Corrected to ~83.5% (matches architecture.mdx and index.md) |
+| `index.mdx` (home page) | Claude Code card count "25 reference docs · 19 interactive diagrams" — wrong | Corrected to "27 reference docs · 21 interactive diagrams" after new files added |
+
+---
+
+### New Files Created
+
+#### `src/content/docs/claude-code/context-window-guide.md`
+New comprehensive guide to context window architecture (sidebar order: 25). Covers: window composition anatomy (all 12 blocks in load order), 200K vs 1M context windows (which models have which and practical implications), compaction trigger mechanics (83.5% threshold, circuit breaker, cost to compact), context budget configuration, `/context` command interpretation, ToolSearch deferred loading (85% token savings), path-scoped rules zero-cost deferral, cost math for different context states, optimization strategies ranked by impact, and 3 worked examples by project type.
+
+#### `src/content/docs/claude-code/native-binary-guide.md`
+New guide to the v2.1.113 native binary architecture (sidebar order: 26). Covers: what changed from Node.js (embedded `bfs` + `ugrep`, no runtime dependency), performance benchmarks (~40% faster cold start, ~53% lower memory), all installation methods across all platforms, enterprise airgap deployment steps with MDM/Ansible examples, `DISABLE_UPDATES` version pinning for enterprise fleets, verifying native binary install via `claude --version --json`, and troubleshooting native binary issues.
+
+#### `src/content/docs/claude-code/remote-control-guide.md`
+New guide to Remote Control and Cloud Sessions (sidebar order: 27). Covers: two modes (Remote Control = local binary + web bridge; Cloud Sessions = fully browser-based), architecture diagram, starting a Remote Control session, what works/doesn't work remotely, security model (per-session auth tokens, encrypted bridge), mobile use on iOS/Android, Cloud Sessions limitations, the remote execution environment for cloud-based GitHub sessions, `CLAUDE_REMOTE_CONTROL_*` environment variables, and teardown/security.
+
+#### `src/content/docs/claude-code/output-styles-diagram.mdx`
+New interactive diagram page for Output Styles (sidebar order: 15). Imports `OutputStylesDiagram` component. Reference sections include: style overview table, what gets replaced (SE-specific system prompt block explanation), `keep-coding-instructions` behavior, custom style file format, activation methods, when-to-use decision guide, and token cost implications.
+
+#### `src/components/interactive/OutputStylesDiagram.jsx`
+New React component with 3 tabs: (1) Style Overview — expandable cards for Default/Explanatory/Learning + custom style template, with interactive system prompt structure diagram showing what gets replaced; (2) Token Cost Impact — sliders for session size and model selector, real-time bar chart comparing all 3 styles; (3) Configuration — activation methods, directory structure, `keep-coding-instructions` toggle with live preview.
+
+---
+
+### Reference Documentation Enrichments
+
+#### `quick-start.md`
+Appended "## Common Beginner Mistakes" table (10 mistakes with What-happens and Fix columns) covering: empty CLAUDE.md, skipping /compact, using Opus for everything, ignoring path-scoped rules, not using MEMORY.md, pinning `opus` alias in CI, wrong MCP server scope, forgetting keep-coding-instructions, --bare in development, and over-engineering CLAUDE.md.
+
+#### `agent-teams-guide.md`
+Appended: "Enabling Agent Teams" section with env var setup and verification; "Agent Teams State Machine" with complete 7-state ASCII diagram (PENDING→QUEUED→ACTIVE→WAITING→DONE/FAILED→CANCELLED); "Mailbox Protocol Deep Dive" with exact file format for messages and team-state.json; "Monitoring Running Teams" with live monitoring commands; "When Agent Teams Fail" table with failure modes and recovery steps.
+
+#### `worktrees-guide.md`
+Appended: "State Across Worktrees" section with ASCII table of shared vs isolated state (including the important MEMORY.md sharing implication); "Worktrees + CLAUDE.local.md" explaining per-branch personal notes pattern; "Worktrees + Agent Teams" with architecture diagram and setup instructions; "Directory Layout After Multiple Worktrees" with filesystem tree.
+
+#### `troubleshooting.md`
+Appended 10 new error dictionary entries: illegal byte sequence, MCP server exited before init, Agent team message delivery timeout, ugrep pattern compile error, bfs permission denied, DISABLE_UPDATES informational, http hook TLS timeout, skills description exceeds 1536 char limit, @import max depth exceeded, mcp_tool matcher requires server/tool format.
+
+#### `enterprise-guide.md`
+Appended "Native Binary Deployment for Enterprise" section with: before/after comparison table, airgap deployment steps with curl+sha256 verification + Ansible/JAMF examples, and DISABLE_UPDATES enterprise fleet configuration with managed-settings.json example.
+
+#### `permissions-security.md`
+Appended "The mcp_tool Hook Matcher (v2.1.118+)" section with: why it matters for security, JSON configuration example (blocking dangerous MCP tools, requiring confirmation for write tools), matcher format reference, and comparison table with permissions.deny for choosing the right mechanism.
+
+#### `cicd-integration.md`
+Appended "Azure Workload Identity Federation" section with Azure DevOps + GCP Vertex AI WIF pipeline YAML; "DISABLE_UPDATES in CI" section with examples for all 3 CI platforms (GitHub Actions, GitLab, Azure DevOps).
+
+#### `claude-code-efficiency-reference.md`
+Appended "Native Binary Performance (v2.1.113+)" section with before/after comparison table, `claude --version --json` verification command, upgrade instructions, and `--bare` mode performance benchmarks.
+
+#### `compass-research-notes.md`
+Fixed model lineup table: added claude-opus-4-8 as newest model, corrected Opus pricing ($5→$15/MTok), corrected Haiku pricing ($1→$0.80/MTok), updated context windows. Fixed auto-compact trigger from ~95% to ~83.5%.
+
+---
+
+### Interactive Diagram Enrichments
+
+#### `models-diagram.mdx`
+Appended: "Opus 4.8 vs Opus 4.7 — Choosing Between the Two Newest" decision table (never use `opus` alias in CI); "Cache Write Pricing" table with write costs for all 3 models at 5-min and 1-hr TTL.
+
+#### `advisor-diagram.mdx`
+Appended: "Advisor Model as of June 2026" (updated to clarify advisor uses `claude-opus-4-8` since it holds the `opus` alias); "/advisor vs Full-Opus Session — Break-Even Analysis" with worked cost example showing 64% savings.
+
+#### `slash-commands-diagram.mdx`
+Appended: "Commands Added by Version" table (v2.1.84–v2.1.126); "Custom Command Anatomy — Complete Frontmatter Reference" with all YAML fields and special variables table.
+
+#### `file-catalog.mdx`
+Appended: "v2.1.84–v2.1.126 Changes to File Types" table; "Why the File Type Count Changed (16→23)" with category breakdown table.
+
+#### `precedence.mdx`
+Appended: "Settings Keys — What Enterprise Can Lock" table; "Managed Settings vs CLAUDE.md — Different Systems" table with critical security note (CLAUDE.md cannot enforce tool restrictions — use permissions.deny).
+
+#### `override-test-lab.mdx`
+Appended: "Rules `paths:` Migration Guide (v2.1.84)" with old vs new syntax; "Precedence Edge Cases — Five Scenarios" covering CLAUDE.md at same level, @import cycle detection, enterprise settings vs path-scoped rules, settings.local.json vs CLAUDE.local.md, and plugin vs project command name conflicts.
+
+---
+
+### Home Page Updates (`src/content/docs/index.mdx`)
+
+| Change | Before | After |
+|--------|--------|-------|
+| Terminal animation | "113+ resources ready" | "117+ resources ready" |
+| Claude Code Docs stat | 44 | 48 |
+| Total Resources stat | 113+ | 117+ |
+| Claude Code card count | "25 reference docs · 19 interactive diagrams" | "27 reference docs · 21 interactive diagrams" |
+| Claude Code card description | No mention of new guides | Added: context window architecture, native binary, remote control, output styles diagram |
+| Interactive Tools section | No output-styles-diagram card | Added Output Styles Diagram card |
+
+---
+
 ## [2026-06-03] — June 2026 Comprehensive Refresh (feature/rag-hub)
 
 ### Overview
