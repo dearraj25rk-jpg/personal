@@ -234,3 +234,40 @@ POST-COMPACTION (reload)
 ```
 
 → Full reference: [Every Markdown File — Complete Catalog](./claude-code-all-markdown-files-catalog)
+
+---
+
+## Changes to File Types in v2.1.84–v2.1.126
+
+Key changes affecting how file types behave:
+
+| Version | File Type | Change |
+|---------|-----------|--------|
+| v2.1.84 | Rules (`.claude/rules/*.md`) | `paths:` frontmatter now accepts **YAML list** syntax: `paths: ["src/**/*.ts", "tests/**"]`. Previously only accepted a single string. Old single-string syntax still works but list syntax is now preferred |
+| v2.1.118 | Settings (settings.json hooks) | New `mcp_tool` hook handler type — can target individual MCP tool calls by tool name using `"matcher": "server-name/tool-name"` |
+| v2.1.120 | Skills (SKILL.md) | `description` field now supports `${CLAUDE_EFFORT}` variable — skills can branch on session effort level for adaptive behavior |
+| v2.1.126 | All | `claude project purge` command added — deletes all Claude Code state for a project (MEMORY.md, session files, cache) without deleting project files themselves |
+| v2.1.113 | Auto-Memory (MEMORY.md) | Memory timestamps added — Claude now annotates each remembered fact with a timestamp for freshness reasoning; format: `[YYYY-MM-DD] fact text` |
+
+---
+
+## Why the File Type Count Changed (16 → 23)
+
+Earlier documentation referenced "16 Claude Code markdown file types". The current count is 23. Here is why:
+
+The original 16-type catalog (pre-v2.0) counted only the primary instruction file types. The current 23 count includes all configuration and state files that Claude Code treats with special semantics — not just the ones that inject content into the context window.
+
+| Category | Files in the count |
+|----------|-------------------|
+| Instruction files (inject into context) | 6: Enterprise CLAUDE.md, User CLAUDE.md, Project CLAUDE.md, CLAUDE.local.md, Rules *.md, Skills SKILL.md |
+| Agent and command files | 2: Agents *.md, Commands *.md |
+| Session behavior modifiers | 2: Output Styles *.md, Auto-Memory MEMORY.md |
+| MCP configuration | 3: .mcp.json (project), ~/.claude/.mcp.json (user), .mcp.json.local |
+| Settings files | 3: settings.json (project), settings.local.json (project), ~/.claude/settings.json (user) |
+| Enterprise/managed | 2: Enterprise managed settings, Windows registry |
+| Theming | 1: ~/.claude/themes/*.md |
+| Keybindings | 1: ~/.claude/keybindings.json |
+| Plugin | 1: plugin.json manifest |
+| **Total** | **23** |
+
+The count may reach 24+ in future releases as new file types are added.

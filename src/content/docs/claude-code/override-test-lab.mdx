@@ -311,3 +311,48 @@ Default value from Claude Code applies.
 ```
 
 → Full reference: [Configuration Guide](./claude-code-config-guide)
+
+---
+
+## Rules `paths:` — Migration Guide (v2.1.84)
+
+Before v2.1.84, `paths:` in Rules files accepted only a single string. In v2.1.84+, it accepts a YAML list. Both syntaxes still work:
+
+**Old syntax (single string — still works):**
+```yaml
+---
+paths: "src/**/*.ts"
+---
+```
+
+**New syntax (YAML list — preferred):**
+```yaml
+---
+paths:
+  - "src/**/*.ts"
+  - "tests/**/*.test.ts"
+---
+```
+
+**Recommended migration:** Convert all single-string `paths:` to YAML lists for consistency, even for single-pattern rules. The list syntax is more readable and makes adding patterns later trivial.
+
+---
+
+## Precedence Edge Cases — Five Scenarios Not Covered in the Test Lab
+
+These scenarios are less common but important to understand:
+
+### Edge Case 1: Two CLAUDE.md files at the same directory level
+This cannot happen by design — each directory can have at most one `CLAUDE.md`. However, a directory can have both `CLAUDE.md` and `CLAUDE.local.md`. In this case, `CLAUDE.md` loads first (shared, version-controlled context), then `CLAUDE.local.md` appends after it (personal overrides). There is no conflict — both load.
+
+### Edge Case 2: @import cycle detection
+If `CLAUDE.md` imports `./docs/shared.md`, which in turn imports `../CLAUDE.md`, Claude Code detects the cycle and skips the second import with a warning: `"Circular @import detected in CLAUDE.md — skipping"`. The maximum import depth is 5 hops.
+
+### Edge Case 3: Enterprise settings override path-scoped rules
+Enterprise managed settings can deny specific tools. If `.claude/rules/python.md` tells Claude "run pytest after every edit", but enterprise managed settings have `"permissions.deny": ["Bash"]`, the rule instruction will be in context but Claude cannot execute Bash. The rule does NOT override the tool restriction. Instructions and permissions are separate systems.
+
+### Edge Case 4: `.claude/settings.local.json` vs `CLAUDE.local.md` — Same precedence layer?
+No — they are in different systems. `settings.local.json` controls **settings** (permissions, model, cost limits) at the highest non-enterprise precedence. `CLAUDE.local.md` controls **context/instructions** and loads after all other CLAUDE.md files. They do not conflict because they operate on different dimensions of Claude's behavior.
+
+### Edge Case 5: Plugin commands vs project commands with the same name
+Plugin-installed commands are placed in `.claude/commands/` (project scope) or `~/.claude/commands/` (user scope) depending on plugin install scope. If a project command at `.claude/commands/review.md` has the same name as a plugin command installed to the same path, the file system wins — last writer wins at install time. To avoid conflicts, plugins should namespace their commands: `/myplugin-review` not `/review`.

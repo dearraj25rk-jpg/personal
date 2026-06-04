@@ -340,3 +340,61 @@ Report: deployment status, rollout time, and smoke test results.
 ```
 
 Invoke with: `/deploy-staging` from inside the `services/payments/` directory.
+
+---
+
+## Commands Added by Version (v2.1.84–v2.1.126)
+
+Track which commands are available on your installed version:
+
+| Command | Added in | What it does |
+|---------|----------|--------------|
+| `/branch` | v2.1.84 | Create a git worktree on a new branch — parallel Claude Code sessions |
+| `/advisor` | v2.1.92 | Invoke dual-model advisor (Sonnet executor + Opus reviewer) |
+| `/fast` | v2.1.113 | Toggle Fast Mode — Opus-speed streaming without model downgrade |
+| `/doctor` | v2.1.105 | Health check with `f`-key guided auto-repair |
+| `/team-onboarding` | v2.1.104 | Generate codebase-aware team onboarding guide |
+| `/terminal-setup` | v2.1.116 | Configure scroll sensitivity, clipboard, iTerm2 multiline binding |
+| `/changelog` | v2.1.126 | Show Claude Code release notes for the installed version |
+| `/keybindings` | v2.1.119 | Create or edit `~/.claude/keybindings.json` for custom key bindings |
+| `/status` | v2.1.120 | Show live session status: model, mode, context usage, permission mode |
+
+**Check your version:** `claude --version` — commands in the table above are only available on the version they were added in or later.
+
+---
+
+## Custom Command Anatomy — Complete Frontmatter Reference
+
+Custom commands live in `.claude/commands/<name>.md` (project) or `~/.claude/commands/<name>.md` (personal).
+
+Every field in the YAML frontmatter:
+
+```yaml
+---
+name: my-command          # Required: name after / (no spaces, no /)
+description: >            # Required: shown in /help and autocomplete picker
+  One-paragraph description of what this command does.
+  Keep under 500 chars for clean autocomplete display.
+allowed-tools:            # Optional: restrict which tools this command can use
+  - Read
+  - Bash
+  - Edit
+confirmation-required: true   # Optional: show "Are you sure?" before running
+hide: false               # Optional: hide from /help listing (still invocable)
+---
+
+Command content goes here. Use $ARGUMENTS for inline substitution.
+```
+
+**Special variables available in command content:**
+
+| Variable | Resolves to |
+|----------|------------|
+| `$ARGUMENTS` | Everything after the command name (e.g. `/my-command foo bar` → `foo bar`) |
+| `$ARG_1`, `$ARG_2` | Space-split individual arguments |
+| `$(shell command)` | Execute shell command and inline its stdout |
+| `@./path/to/file.md` | Inline the content of a file at that path |
+| `$CLAUDE_CWD` | Current working directory |
+| `$CLAUDE_SESSION_ID` | Unique ID for the current session |
+
+→ Full reference: [Slash Commands — Complete Reference](./slash-commands-reference)

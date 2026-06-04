@@ -342,3 +342,40 @@ Advisor snapshot contents:
 ```
 
 This snapshot is optimised to fit within Opus context limits while preserving the information Opus needs for strategic guidance. Token compression is automatic — you do not need to manage it.
+
+---
+
+## Advisor Model as of June 2026
+
+The `/advisor` command invokes a dual-model session:
+- **Executor**: `claude-sonnet-4-6` — handles all tool calls and active work
+- **Advisor**: `claude-opus-4-8` — reviews intermediate steps and provides guidance
+
+Since `claude-opus-4-8` took the `opus` alias in v2.1.126, the advisor automatically uses the newest Opus model. Prior documentation referenced Opus 4.7 as the advisor model — this is now outdated. The advisor always uses whatever model the `opus` alias resolves to.
+
+---
+
+## /advisor vs Full-Opus Session — Break-Even Analysis
+
+The economic case for `/advisor` is that Sonnet handles 90%+ of the work at 5× lower cost, while Opus only reviews key decision points. Here is a concrete break-even calculation:
+
+```
+Scenario: 50-turn refactoring session
+Input tokens per turn: ~3,000 (prompt + context)
+Output tokens per turn: ~800 (response + tool calls)
+Advisor activations: ~5 times (one per major decision point)
+
+Full-Opus session cost:
+  50 × (3,000 × $15/M + 800 × $75/M) = 50 × (0.045 + 0.060) = $5.25
+
+/advisor session cost:
+  45 Sonnet turns × (3,000 × $3/M + 800 × $15/M) = 45 × (0.009 + 0.012) = $0.95
+  5 Opus review turns × (5,000 × $15/M + 1,500 × $75/M) = 5 × (0.075 + 0.113) = $0.94
+  Total: $1.89
+
+Savings: $5.25 - $1.89 = $3.36 (64% cheaper) for same quality on most of the session
+```
+
+**When full-Opus beats /advisor:** If your session is Opus-heavy (mostly complex reasoning turns, very few routine tool calls), or if you need the advisor model's judgment on every single step (security audits, novel algorithm work), the overhead of advisor context transfer can make full-Opus sessions more efficient.
+
+**Rule of thumb:** Use `/advisor` for development sessions mixing routine work with occasional hard problems. Use full-Opus directly when every single turn requires frontier reasoning.

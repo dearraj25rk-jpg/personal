@@ -373,3 +373,38 @@ The most important thing to understand about Claude Code precedence is that **se
 This explains why you can have a 10-file hierarchy of CLAUDE.md files without any conflicts — they all stack — while having a single `model` key that can only come from one source.
 
 → Full reference: [Configuration Guide — CLAUDE.md vs Skills vs Rules](./claude-code-config-guide)
+
+---
+
+## Settings Keys — What Enterprise Can Lock
+
+Enterprise managed settings can lock any key in `settings.json`. Here are the most commonly locked keys and their semantics:
+
+| Key | What it controls | Enterprise can lock? | User can override if unlocked? |
+|-----|-----------------|---------------------|-------------------------------|
+| `model` | Default model for sessions | Yes | Yes — via `/model` or `--model` |
+| `maxCostPerSession` | Maximum spend per session | Yes | Yes — user can set lower, not higher |
+| `permissions.allow` | Tool allowlist | Yes (adds restrictions) | Yes (can add more) |
+| `permissions.deny` | Tool blocklist | Yes (adds restrictions) | Yes (can add more) |
+| `env.DISABLE_UPDATES` | Prevent auto-updates | Yes | Yes — set in any settings file |
+| `env.DISABLE_TELEMETRY` | Opt out of telemetry | Yes | Yes — but enterprise may force enable |
+| `hooks` | Automation hooks | Yes (enterprise hooks fire alongside) | Yes (project/user hooks still fire) |
+| `defaultStyle` | Default output style | Yes | Yes — can override via `/config` |
+| `mcp.mcpServers` | MCP server definitions | Yes — adds servers, cannot remove enterprise servers | Yes — can add, cannot remove enterprise |
+
+**Enterprise lock semantics:** Enterprise settings don't just set defaults — they lock. A key set in `managed-settings.json` cannot be overridden by ANY other settings file, CLI flag, or environment variable. The only exception is CLAUDE.md context injection, which is additive (enterprise CLAUDE.md is always loaded, but project CLAUDE.md is also loaded after it).
+
+---
+
+## Managed Settings vs CLAUDE.md — Different Systems
+
+These two enterprise features control entirely different aspects of Claude Code behavior and do NOT interact:
+
+| Feature | Controls | Format | Override level |
+|---------|----------|--------|----------------|
+| Managed Settings (`managed-settings.json`) | **Permissions, tools, model, costs, hooks** — everything in settings.json | JSON | Cannot be overridden by any non-enterprise mechanism |
+| Enterprise CLAUDE.md | **Instructions, context, coding standards, policies in natural language** | Markdown | Always loaded; project CLAUDE.md adds to it, doesn't replace it |
+
+**Example:** You can use managed settings to restrict Claude to only specific tools (`permissions.deny: ["Bash"]`) AND use enterprise CLAUDE.md to tell Claude your team's coding standards. These work independently and both apply simultaneously.
+
+**Why this matters:** Some teams try to use CLAUDE.md to restrict tool access. This does NOT work — CLAUDE.md is natural language instructions, not a security control. Tool restrictions MUST be in `permissions.deny` inside managed settings. Claude might follow CLAUDE.md instructions to not use Bash, but a prompt injection or jailbreak attempt could override natural-language restrictions. Managed settings permissions are enforced at the binary level, not the LLM level.

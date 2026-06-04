@@ -433,3 +433,38 @@ Opus 4.x output:     18.75×  ($75.00/M)
 ```
 
 > All pricing is per million tokens and subject to change. Check [anthropic.com/pricing](https://anthropic.com/pricing) for current rates. Enterprise agreements may have negotiated rates that differ from list price.
+
+---
+
+## Choosing Between Opus 4.8 and Opus 4.7
+
+Opus 4.8 and Opus 4.7 have identical pricing ($15/M input, $75/M output, $1.50/M cache) and the same 1M context window. Here is when to reach for each:
+
+| Scenario | Use Opus 4.8 | Use Opus 4.7 |
+|----------|-------------|--------------|
+| You want the newest model | ✓ | — |
+| You use the `opus` alias | ✓ (it resolves to 4.8) | ✗ (alias points to 4.8) |
+| Pinning to a specific model ID in CI | `claude-opus-4-8` | `claude-opus-4-7` |
+| Extended thinking (xhigh effort) | ✓ same | ✓ same |
+| Architecture decisions | ✓ (slightly stronger) | ✓ fine |
+| You need maximum capability on hardest problems | ✓ prefer 4.8 | Falls back fine |
+
+**Rule of thumb:** Use `claude-opus-4-8` by default (it's newer and holds the `opus` alias). Use `claude-opus-4-7` only if you have a specific reason to pin to that version — for example, reproducing a result, testing a regression, or a team agreement to standardize on 4.7.
+
+**Never use the `opus` alias in CI/CD.** The alias advances when new Opus models are released. Always pin to the full model ID (`claude-opus-4-8`) in pipeline definitions.
+
+---
+
+## Cache Write Pricing
+
+In addition to cache read pricing (shown in the calculator above), Claude Code automatically writes prompt cache entries. Cache write pricing is separate from read pricing:
+
+| Model | Cache Write (5-min TTL) | Cache Write (1-hr TTL) | Cache Read |
+|-------|------------------------|------------------------|------------|
+| Opus 4.8 / 4.7 / 4.6 | $3.75/M tokens | ~$30/M tokens | $1.50/M tokens |
+| Sonnet 4.6 | $0.75/M tokens | ~$6/M tokens | $0.30/M tokens |
+| Haiku 4.5 | $0.10/M tokens | ~$0.80/M tokens | $0.08/M tokens |
+
+**Important:** Cache write costs are a one-time investment. You write once and read many times. A CLAUDE.md block that costs $0.75/M to write (Sonnet) costs only $0.30/M to read — you break even after 2.5 reads and save on every read after that.
+
+**TTL selection:** Claude Code uses the 5-minute TTL for most caching. The 1-hour TTL is available via the API for stable content like system prompts that won't change across sessions.
