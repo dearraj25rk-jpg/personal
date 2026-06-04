@@ -1326,3 +1326,92 @@ Content Safety
 - [Agent Teams Guide](./agent-teams-guide) — multi-agent CI pipelines
 - [Models & Pricing](./models-pricing) — CI/CD cost optimisation with Haiku and Bedrock
 - [Efficiency Reference](./claude-code-efficiency-reference) — cost optimisation for CI
+
+---
+
+## Azure Workload Identity Federation
+
+Parallel to GCP Workload Identity Federation (WIF), Azure offers Workload Identity Federation for authentication without storing service principal credentials in CI/CD secrets. This allows Azure DevOps pipelines to authenticate to Vertex AI or directly to Anthropic APIs without storing long-lived credentials.
+
+### Azure WIF with GCP Vertex AI
+
+If your organization uses both Azure DevOps and GCP Vertex AI, you can combine Azure WIF with GCP WIF for keyless authentication:
+
+```yaml
+# azure-pipelines.yml — Claude Code with Azure WIF → GCP Vertex AI
+trigger:
+  branches:
+    include: [main]
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: AzureCLI@2
+    displayName: 'Configure GCP Workload Identity Federation'
+    inputs:
+      azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        # Exchange Azure token for GCP token via WIF
+        AZURE_TOKEN=$(az account get-access-token --query accessToken -o tsv)
+        
+        # Configure gcloud to use WIF
+        gcloud auth login --brief --cred-file=<(echo '{
+          "type": "external_account",
+          "audience": "//iam.googleapis.com/projects/PROJECT_NUM/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID",
+          "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+          "token_url": "https://sts.googleapis.com/v1/token",
+          "credential_source": {
+            "file": "/tmp/azure-token.txt"
+          }
+        }')
+        
+        echo "$AZURE_TOKEN" > /tmp/azure-token.txt
+        
+        # Get GCP token for Vertex AI
+        GCP_TOKEN=$(gcloud auth print-access-token)
+        echo "##vso[task.setvariable variable=GCP_ACCESS_TOKEN;issecret=true]$GCP_TOKEN"
+
+  - script: |
+      export ANTHROPIC_AUTH_TOKEN="$(GCP_ACCESS_TOKEN)"
+      export ANTHROPIC_VERTEX_PROJECT_ID="$(GCP_PROJECT_ID)"
+      export ANTHROPIC_VERTEX_REGION="us-east5"
+      
+      claude --print --no-interactive \
+        "Review the PR diff and report any issues" \
+        < diff.txt
+    displayName: 'Run Claude Code review'
+```
+
+### DISABLE_UPDATES in CI
+
+Always set `DISABLE_UPDATES=1` in CI/CD environments. This prevents Claude Code from:
+1. Making outbound requests to check for updates during pipeline runs
+2. Downloading and installing new versions mid-pipeline (which could change behavior)
+3. Showing update prompts that interfere with `--print` / non-interactive mode
+
+```yaml
+# GitHub Actions
+- name: Run Claude Code
+  env:
+    DISABLE_UPDATES: '1'
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  run: |
+    claude --print --no-interactive "Analyze the changes in this PR"
+
+# GitLab CI
+claude_review:
+  variables:
+    DISABLE_UPDATES: "1"
+  script:
+    - claude --print "Analyze changes"
+
+# Azure DevOps
+- script: claude --print "..."
+  env:
+    DISABLE_UPDATES: '1'
+```
+
+**For enterprise/managed deployments:** Set `DISABLE_UPDATES: "1"` in `managed-settings.json` so it applies to all sessions organization-wide, without needing to set it in every pipeline definition.

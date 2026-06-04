@@ -950,3 +950,155 @@ Orchestrator:
 - [Hooks System](./hooks-deep-dive) — SubagentStop and TaskCompleted hooks
 - [MCP Servers Guide](./mcp-servers-guide) — tools available to agents
 - [CI/CD Integration](./cicd-integration) — agents in pipelines
+
+---
+
+## Enabling Agent Teams
+
+Agent Teams are in Research Preview as of v2.1.126. To enable:
+
+```bash
+# Set the environment variable before launching Claude Code
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+claude
+
+# Or set it per-session via a SessionStart hook
+# In .claude/settings.json:
+{
+  "hooks": {
+    "SessionStart": [{
+      "handler": {
+        "type": "command",
+        "command": "echo 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1'"
+      }
+    }]
+  }
+}
+```
+
+The environment variable must be set in the parent session that creates the Agent Team. Sub-agents in the team do NOT need the flag — they receive it through team configuration. The flag does NOT persist across Claude Code restarts unless set in your shell profile.
+
+**Verification:** Once enabled, type `/agents` in a Claude Code session. The output should include "Agent Teams (Research Preview): enabled" in the status line.
+
+---
+
+## Agent Teams State Machine
+
+Every message in an Agent Teams team follows this state lifecycle:
+
+```
+                    ┌─────────────────────────────────────────────┐
+                    │           AGENT TEAMS MESSAGE STATES         │
+                    └─────────────────────────────────────────────┘
+
+Message created → [PENDING]
+                     │
+                     ▼
+              Team router picks it up → [QUEUED]
+                     │
+                     ▼
+              Assigned agent starts work → [ACTIVE]
+                     │
+            ┌────────┼────────────────────┐
+            ▼        ▼                    ▼
+         [DONE]   [FAILED]           [WAITING]
+         (result   (error,            (blocked, waiting
+          returned) retried up         for another agent
+                    to 3×)             to respond)
+                     │                    │
+                     │                    ▼
+                     │              Other agent responds
+                     │                    │
+                     │                    ▼
+                     │              [ACTIVE] again
+                     │
+                  [CANCELLED] (orchestrator terminated team)
+```
+
+**Key state transitions:**
+- `PENDING → QUEUED`: The team router has accepted the message and is routing it
+- `QUEUED → ACTIVE`: An agent has picked up the task and started processing
+- `ACTIVE → WAITING`: The agent is waiting for a peer agent's response (e.g., waiting for the researcher to return data before the writer can proceed)
+- `ACTIVE → DONE`: Task completed successfully, result written to mailbox
+- `ACTIVE → FAILED`: Tool error or timeout; retried up to 3 times before permanent failure
+- `DONE/FAILED → CANCELLED`: Orchestrator terminated the team before all agents finished
+
+---
+
+## Mailbox Protocol Deep Dive
+
+The filesystem mailbox is the inter-agent communication channel. All messages are files in a well-known directory:
+
+```
+~/.claude/agent-teams/<team-id>/mailbox/
+  ├── inbox/
+  │   ├── <message-id>.json    ← messages TO this agent
+  │   └── ...
+  ├── outbox/
+  │   ├── <message-id>.json    ← messages FROM this agent
+  │   └── ...
+  └── team-state.json          ← shared team state (read by all agents)
+```
+
+**Message file format** (`<message-id>.json`):
+
+```json
+{
+  "id": "msg_01AbCd...",
+  "from": "researcher",
+  "to": "writer",
+  "type": "task" | "response" | "status" | "terminate",
+  "payload": {
+    "content": "Here are the search results: ...",
+    "artifacts": ["./research-notes.md"],
+    "status": "success" | "error"
+  },
+  "timestamp": "2026-06-04T12:00:00Z",
+  "state": "PENDING" | "QUEUED" | "ACTIVE" | "WAITING" | "DONE" | "FAILED" | "CANCELLED"
+}
+```
+
+**team-state.json** is the shared coordination file. Every agent in the team can read it. The orchestrator agent writes to it to signal team-wide state changes (pause, resume, terminate). Individual agents write their own status updates.
+
+**Important constraint:** Agents cannot write to each other's inboxes directly — all routing goes through the team router. This prevents deadlocks where two agents are each waiting for the other.
+
+---
+
+## Monitoring Running Teams
+
+Monitor a live Agent Teams session using these tools:
+
+```bash
+# View mailbox messages in real time
+watch -n 1 'ls -la ~/.claude/agent-teams/*/mailbox/inbox/'
+
+# Watch team-state.json for coordinator signals
+tail -f ~/.claude/agent-teams/<team-id>/mailbox/team-state.json | jq .
+
+# Check agent logs (each agent has a separate log)
+tail -f ~/.claude/logs/agent-teams-<team-id>-*.log
+
+# From within Claude Code
+/debug agents   # Shows live agent team status including state, message count, errors
+```
+
+The `/debug agents` output shows:
+- Team ID and creation time
+- List of all agents with their current state (ACTIVE/WAITING/DONE/FAILED)
+- Message queue depth (pending + queued messages)
+- Last activity timestamp per agent
+- Any error messages from failed tasks
+
+---
+
+## When Agent Teams Fail
+
+Common failure modes and how to recover:
+
+| Failure | Symptom | Recovery |
+|---------|---------|----------|
+| Agent timeout | One agent goes to FAILED state; task stuck | Run `/agents restart <agent-id>` to restart that specific agent |
+| Deadlock (two agents waiting for each other) | All agents in WAITING state, no progress | Run `/agents terminate` and redesign the workflow to avoid circular dependencies |
+| Mailbox fills up | Messages dropped; agents report "mailbox full" | Use `/agents clear-mailbox` to remove completed messages; increase `maxMailboxSize` in team config |
+| Env var not set | `/agents` doesn't show "Agent Teams: enabled" | Set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and restart Claude Code |
+| Tool permission blocked | Agent task fails on PreToolUse hook | Check `permissions.allow` includes the tools your agents need; subagents inherit parent permissions |

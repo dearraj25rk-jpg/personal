@@ -841,3 +841,126 @@ git worktree remove .worktrees/feature-x
 | Coordinate multiple agents | [Agent Teams Guide](./agent-teams-guide) |
 | CI/CD parallel workflows | [CI/CD Integration](./cicd-integration) |
 | Understand session isolation | [Permissions & Security](./permissions-security) |
+
+---
+
+## State Across Worktrees — What's Shared vs Isolated
+
+Understanding which Claude Code state is shared between worktrees vs isolated to each worktree is critical for avoiding surprises:
+
+```
+SHARED (same file on disk — all worktrees see the same thing):
+  ✓ .claude/settings.json         (project settings)
+  ✓ CLAUDE.md                     (project CLAUDE.md)
+  ✓ .claude/rules/*.md            (path-scoped rules)
+  ✓ .claude/skills/               (skill files)
+  ✓ .claude/agents/               (agent definitions)
+  ✓ .claude/commands/             (custom commands)
+  ✓ .mcp.json                     (MCP servers)
+  ✓ Auto-Memory MEMORY.md         (project hash is same for all worktrees of same repo)
+
+ISOLATED (separate per-worktree):
+  ✗ .claude/settings.local.json   (local overrides — each worktree is a separate dir)
+  ✗ CLAUDE.local.md               (personal overrides — tied to the directory)
+  ✗ Active Claude Code process    (each worktree runs its own session)
+  ✗ Conversation history          (separate sessions)
+  ✗ TodoWrite task lists          (session-scoped)
+```
+
+**The MEMORY.md sharing implication:** Auto-Memory MEMORY.md is stored at `~/.claude/projects/<SHA256-of-project-root>/memory/MEMORY.md`. All worktrees share the same SHA256 because they all point back to the same git repository root. This means memory facts written in one worktree session are visible to other worktree sessions — which is usually what you want (project facts persist) but can be surprising if different worktree sessions write conflicting facts.
+
+**Best practice for MEMORY.md in worktrees:** Use branch-scoped memory sections to avoid conflicts:
+```markdown
+# In MEMORY.md
+## main branch context
+[facts about main branch work]
+
+## feature/auth-refactor context  
+[facts specific to this branch]
+```
+
+---
+
+## Worktrees + CLAUDE.local.md
+
+`CLAUDE.local.md` is NOT shared across worktrees. Each worktree directory has its own `CLAUDE.local.md` (or lacks one). This is useful for per-branch personal overrides:
+
+```bash
+# In worktree for feature/auth-refactor:
+cat > ./CLAUDE.local.md << 'EOF'
+# My personal notes for this branch
+- Auth refactor context: we're migrating from JWT to session tokens
+- Don't touch the legacy /auth/v1 endpoints during this work
+- Current focus: the AuthService class in src/services/auth/
+EOF
+```
+
+This personal note only applies when Claude Code runs in that specific worktree directory — it doesn't affect the main branch session or other worktrees.
+
+---
+
+## Worktrees + Agent Teams
+
+Combining worktrees and Agent Teams enables parallel cross-branch development:
+
+```
+Architecture: Multi-branch Agent Team
+─────────────────────────────────────────────────────────────────
+Main branch worktree                  Feature branch worktree
+(orchestrator agent)                  (implementation agent)
+       │                                      │
+       │  Task: "Add auth refactor to         │
+       │  feature/auth-refactor branch        │
+       │  and keep main compatible"           │
+       └──────────────────────────────────────►│
+                                              │  Works in the
+                                              │  feature branch
+                                              │  worktree
+                                              │
+                                              ◄─│  Reports completion
+                                                │
+       Orchestrator reviews the               │
+       diff and approves or requests          │
+       changes                                │
+```
+
+**To set this up:**
+1. Create worktrees for each branch: `/branch feature/auth-refactor`
+2. Enable Agent Teams: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
+3. Use the orchestrator to delegate tasks to specific branches
+4. Each agent runs its Claude Code session in its own worktree directory
+
+**Caveat:** Agent Teams is in Research Preview. File path routing to the correct worktree is not automatic — you must ensure agents set their CWD to the right worktree path in their initialization.
+
+---
+
+## Directory Layout After Multiple Worktrees
+
+After running `/branch feature/auth` and `/branch hotfix/login-bug` from the main repository:
+
+```
+/projects/myapp/                     ← main repository
+  .git/
+  .claude/
+  CLAUDE.md
+  src/
+  ...
+
+~/.claude/agent-teams/               ← Agent Teams state (if using)
+
+/projects/myapp-worktrees/           ← created by /branch command
+  feature-auth/                      ← worktree for feature/auth branch
+    .git                             ← symlink to main .git
+    .claude/                         ← SHARED .claude/ via symlink or separate
+    CLAUDE.md                        ← SHARED via git
+    src/
+    ...
+  hotfix-login-bug/                  ← worktree for hotfix/login-bug branch
+    .git
+    .claude/
+    CLAUDE.md
+    src/
+    ...
+```
+
+The exact location of worktrees depends on the `--path` argument to `/branch` or the `worktreeRootPath` setting in `settings.json`. By default, worktrees are created at `../repo-name-worktrees/branch-name`.

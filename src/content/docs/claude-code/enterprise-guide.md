@@ -2473,3 +2473,75 @@ curl -s -X POST "$SLACK_WEBHOOK" \
 
 *Document version: v2.1.126 · Last updated: 2026-06-02 · Maintained by Platform Team*
 *Feedback: `#claude-code-help` on Slack or open a ticket in JIRA → PLATFORM project*
+
+---
+
+## Native Binary Deployment for Enterprise
+
+As of v2.1.113, Claude Code ships as a platform-native binary (not a Node.js application). This changes the enterprise deployment model:
+
+### What Changed
+
+| Aspect | Before v2.1.113 (Node.js) | v2.1.113+ (Native Binary) |
+|--------|--------------------------|--------------------------|
+| Runtime required | Node.js 18+ must be installed | **No runtime required** after install |
+| Install via npm | `npm install -g @anthropic-ai/claude-code` | Same command, but downloads native binary |
+| Binary location after install | Node.js-managed path | Platform PATH (e.g., `/usr/local/bin/claude`) |
+| Cold start time | 2-3 seconds (Node.js JIT) | 1-2 seconds (~40% faster) |
+| Memory at startup | ~180MB (Node.js + app) | ~85MB (native binary only) |
+| Airgap deployment | Needed Node.js + npm package | **Binary only, no Node.js needed** |
+
+### Airgap Deployment Steps
+
+For organizations with no internet access on developer machines:
+
+```bash
+# Step 1: Download the native binary on an internet-connected machine
+# Platform-specific download:
+curl -fsSL https://claude.ai/download/linux-x64 -o claude-linux-x64
+curl -fsSL https://claude.ai/download/darwin-arm64 -o claude-darwin-arm64
+curl -fsSL https://claude.ai/download/win-x64.exe -o claude-win-x64.exe
+
+# Step 2: Verify the binary checksum (checksums published at claude.ai/checksums)
+sha256sum claude-linux-x64 | grep <expected-checksum>
+
+# Step 3: Distribute via MDM, Ansible, or internal package repository
+# macOS via JAMF:
+jamf_pkg_build --binary=claude-darwin-arm64 --install-path=/usr/local/bin/claude
+
+# Linux via Ansible:
+- name: Deploy Claude Code binary
+  copy:
+    src: claude-linux-x64
+    dest: /usr/local/bin/claude
+    mode: '0755'
+
+# Step 4: Configure DISABLE_UPDATES to prevent update checks
+# In managed-settings.json:
+{
+  "env": {
+    "DISABLE_UPDATES": "1"
+  }
+}
+```
+
+### DISABLE_UPDATES for Enterprise Fleets
+
+`DISABLE_UPDATES=1` prevents Claude Code from checking for updates, prompting users to upgrade, or auto-installing new versions. This is critical for:
+- **Regression prevention**: Pin a tested version across the fleet
+- **Airgap compliance**: No outbound version-check requests
+- **Reproducible builds**: CI/CD always uses the same Claude Code version
+
+Set it in enterprise managed settings to enforce it org-wide:
+
+```json
+// ~/.claude/managed-settings.json (deployed by MDM)
+{
+  "env": {
+    "DISABLE_UPDATES": "1",
+    "DISABLE_TELEMETRY": "1"    // Optional: disable telemetry in enterprise
+  }
+}
+```
+
+Note: `DISABLE_UPDATES` prevents auto-updates but does NOT prevent manual updates via `claude update` (if the user has internet access). To prevent manual updates in airgap environments, use file system permissions to make the binary read-only after deployment.

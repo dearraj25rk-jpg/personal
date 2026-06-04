@@ -2079,3 +2079,63 @@ BUDGET OPTIMIZATION ACTIONS:
 ```
 
 **Cost of exceeding the budget:** When auto-compact triggers at 83.5%, you pay ~$0.01–0.05 for the compaction operation and lose conversation granularity. More importantly, the next several turns pay elevated input costs because the compact summary is dense. Proactive compaction at 70% is always cheaper than reactive compaction at 83.5%.
+
+---
+
+## Native Binary Performance (v2.1.113+)
+
+Claude Code v2.1.113 replaced the Node.js-based runtime with a platform-native binary. This affects all timing estimates in this guide:
+
+### What Changed
+
+| Operation | Before v2.1.113 | v2.1.113+ | Improvement |
+|-----------|----------------|-----------|-------------|
+| Cold start (first launch) | 2.5–3.5 seconds | 1.5–2.0 seconds | ~40% faster |
+| Subsequent launches (warm) | 1.5–2.0 seconds | 0.8–1.2 seconds | ~40% faster |
+| `Glob` / file traversal | Uses Node.js fs | Uses embedded `bfs` | 30-50% faster on large repos |
+| `Grep` / content search | Uses Node.js spawn | Uses embedded `ugrep` | 20-40% faster on large files |
+| Memory at startup | ~180MB | ~85MB | ~53% lower |
+| Startup with 2 MCP servers | 4–5 seconds | 2.5–3.5 seconds | ~35% faster |
+
+### Verifying You're on the Native Binary
+
+```bash
+claude --version --json
+# Native binary output includes: "runtime": "native"
+# Node.js output includes: "runtime": "node"
+```
+
+If you're still on the Node.js runtime, upgrade:
+```bash
+# Homebrew
+brew upgrade --cask claude-code
+
+# Or re-run the install script
+curl -fsSL https://claude.ai/install.sh | bash
+
+# Or npm (still downloads native binary)
+npm install -g @anthropic-ai/claude-code@latest
+```
+
+### --bare Mode Performance (v2.1.92+)
+
+For CI/CD environments where startup speed matters:
+
+```bash
+claude --bare --print "Your task here"
+```
+
+`--bare` mode skips:
+- Theme loading (saves ~50ms)
+- Update check (saves ~200ms if DISABLE_UPDATES not set)
+- Telemetry prompt (saves ~50ms on first run)
+- Non-essential initialization steps
+
+Combined with the native binary, `--bare` delivers approximately **14% faster startup** compared to standard mode. For CI pipelines running dozens of Claude Code tasks, this adds up.
+
+**Benchmark (Haiku 4.5, simple formatting task):**
+```
+Standard mode, Node.js:   3.2s startup + 1.1s task = 4.3s total
+--bare mode, native binary: 1.8s startup + 1.1s task = 2.9s total
+Improvement: 33% faster end-to-end
+```

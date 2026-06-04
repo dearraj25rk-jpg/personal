@@ -2241,3 +2241,58 @@ Claude Code's trust model has three principals:
 - [Hooks System](./hooks-deep-dive) — PreToolUse blocking hooks for security enforcement
 - [MCP Servers Guide](./mcp-servers-guide) — MCP security and prompt injection
 - [CI/CD Integration](./cicd-integration) — `bypassPermissions` in pipelines
+
+---
+
+## The `mcp_tool` Hook Matcher (v2.1.118+)
+
+The `mcp_tool` hook handler (added in v2.1.118) allows hooks to target individual MCP tool calls by tool name, enabling fine-grained access control at the MCP layer.
+
+### Why It Matters for Security
+
+Without `mcp_tool` hooks, you can block all MCP tool use with a PreToolUse hook on all tools. But you cannot selectively allow some MCP tools while blocking others. With `mcp_tool` hooks, you can:
+- Block specific dangerous MCP tools (e.g., `database/drop-table`) while allowing safe ones (`database/query`)
+- Require confirmation before MCP tools that write data
+- Log only specific MCP tool calls rather than all tool calls
+- Enforce review before tools that send external messages or notifications
+
+### Configuration
+
+```json
+// In .claude/settings.json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "database-server/drop-table",
+        "handler": {
+          "type": "command",
+          "command": "echo 'DROP TABLE requires manual approval. Create a task instead.' && exit 2"
+        }
+      },
+      {
+        "matcher": "database-server/insert|database-server/update|database-server/delete",
+        "handler": {
+          "type": "command",
+          "command": "read -p 'Confirm write operation to database? (y/N) ' confirm && [[ $confirm == 'y' ]] && exit 0 || exit 2"
+        }
+      }
+    ]
+  }
+}
+```
+
+**Matcher format:** `"server-name/tool-name"` — the server name (as defined in `.mcp.json`) followed by `/` and the tool name. Both parts are required. You can use pipe `|` to match multiple tools: `"server/tool-a|server/tool-b"`.
+
+**Blockable:** Yes — `mcp_tool` hooks on `PreToolUse` can block execution with exit code 2. The tool call is rejected and Claude sees the stdout message explaining why.
+
+### MCP Tool Access Control vs Permissions Blocklist
+
+These are two separate mechanisms:
+
+| Mechanism | Where configured | Granularity | Use for |
+|-----------|-----------------|-------------|---------|
+| `permissions.deny` in settings.json | Settings files | Tool type level (blocks all MCP calls from that server) | Blocking entire MCP servers or tool categories |
+| `mcp_tool` hook on PreToolUse | Settings files (hooks section) | Individual tool level | Fine-grained per-tool blocking, conditional approval, custom messages |
+
+For enterprise security gates that need to approve specific write operations, `mcp_tool` hooks are the right mechanism. For completely blocking a server, use `permissions.deny: ["mcp__servername__*"]`.

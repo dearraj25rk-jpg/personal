@@ -2102,3 +2102,18 @@ When filing a bug report, include the output of:
 claude --version
 /debug    # (copy the full output)
 ```
+
+### Additional Error Messages (v2.1.113–v2.1.126)
+
+| Error message | Likely cause | Fix |
+|--------------|--------------|-----|
+| `claude: error: illegal byte sequence` | Source file contains non-UTF-8 bytes (BOM, extended ASCII, binary) | Run `file -i <path>` to detect encoding; use `iconv` to convert to UTF-8 or exclude the file from Claude's scope |
+| `MCP server exited before sending init` | stdio transport race condition: server process started but didn't send `initialize` response in time | Increase server startup time; check server logs for crash on startup; verify the binary path in .mcp.json is correct |
+| `Agent team message delivery timeout` | Agent Teams mailbox message not consumed within timeout (default: 60s) | Check target agent logs; verify CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 is set; restart the team with `/agents terminate` and re-run |
+| `ugrep: pattern compile error` | Invalid regex in Grep tool call from v2.1.113+ (ugrep has stricter regex validation than old grep) | Escape special chars: use `\[`, `\(`, `\{` etc.; or switch to literal string search |
+| `bfs: permission denied: <path>` | New bfs file traverser (v2.1.113+) hit a directory with restricted permissions | Add the path to `.claude/settings.json` excludes, or adjust directory permissions |
+| `DISABLE_UPDATES=1 but newer version available` | Informational only — not an error. Version pinning is working | Normal behavior; this log message confirms DISABLE_UPDATES is working correctly |
+| `hook handler http: TLS handshake timeout` | The http hook handler cannot reach the webhook URL (network timeout) | Check webhook URL is accessible from the machine; add timeout config or switch to command handler with curl |
+| `skills: description exceeds 1536 char limit` | Skill `description` field in SKILL.md frontmatter is too long | Trim to 1,536 characters (raised from 250 in v2.1.120 update) |
+| `@import: max depth (5) exceeded` | @import chain deeper than 5 hops | Flatten the import chain; maximum is 5 hops from root CLAUDE.md |
+| `mcp_tool matcher requires server/tool format` | `mcp_tool` hook matcher missing the server name prefix | Use format: `"matcher": "server-name/tool-name"` — both the server name and tool name are required |
