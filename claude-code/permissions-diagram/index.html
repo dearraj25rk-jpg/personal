@@ -1,0 +1,671 @@
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-sidebar class="astro-bguv2lll"> <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Permissions & Security — Diagram | Context</title><link rel="canonical" href="https://rajrkdev.github.io/ai-lab/claude-code/permissions-diagram/"/><link rel="sitemap" href="/ai-lab/sitemap-index.xml"/><script>
+(function() {
+  var NAV_KEY = 'sl-nav-collapsed';
+  var TOC_KEY = 'sl-toc-collapsed';
+
+  // SVG icons â€” chevron panel icons
+  var ICON_PANEL_CLOSE = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><polyline points="16 15 13 12 16 9"/></svg>';
+  var ICON_PANEL_OPEN  = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><polyline points="13 9 16 12 13 15"/></svg>';
+  var ICON_RPANEL_CLOSE = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/><polyline points="8 9 11 12 8 15"/></svg>';
+  var ICON_RPANEL_OPEN  = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/><polyline points="11 15 8 12 11 9"/></svg>';
+
+  function setNavCssVar(collapsed) {
+    if (collapsed) {
+      document.body.style.setProperty('--sl-content-inline-start', '0rem');
+    } else {
+      document.body.style.removeProperty('--sl-content-inline-start');
+    }
+  }
+
+  function dispatchResize() {
+    // Let React components (and any resize listeners) reflow after sidebar change
+    setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 260);
+  }
+
+  function applyState() {
+    var navCollapsed = localStorage.getItem(NAV_KEY) === '1';
+    var tocCollapsed = localStorage.getItem(TOC_KEY) === '1';
+    if (navCollapsed) document.documentElement.setAttribute('data-nav-collapsed', '');
+    else document.documentElement.removeAttribute('data-nav-collapsed');
+    if (tocCollapsed) document.documentElement.setAttribute('data-toc-collapsed', '');
+    else document.documentElement.removeAttribute('data-toc-collapsed');
+    setNavCssVar(navCollapsed);
+  }
+
+  function injectToggles() {
+    // Left nav toggle
+    var navToggle = document.createElement('button');
+    navToggle.id = 'sl-nav-toggle';
+    navToggle.setAttribute('aria-label', 'Toggle navigation sidebar');
+    navToggle.setAttribute('title', 'Toggle navigation sidebar');
+    var navCollapsed = document.documentElement.hasAttribute('data-nav-collapsed');
+    navToggle.innerHTML = navCollapsed ? ICON_PANEL_OPEN : ICON_PANEL_CLOSE;
+    navToggle.addEventListener('click', function() {
+      var collapsed = document.documentElement.toggleAttribute('data-nav-collapsed');
+      navToggle.innerHTML = collapsed ? ICON_PANEL_OPEN : ICON_PANEL_CLOSE;
+      setNavCssVar(collapsed);
+      localStorage.setItem(NAV_KEY, collapsed ? '1' : '0');
+      dispatchResize();
+    });
+    document.body.appendChild(navToggle);
+
+    // Right TOC toggle â€” always inject; CSS hides it when no right sidebar
+    var tocToggle = document.createElement('button');
+    tocToggle.id = 'sl-toc-toggle';
+    tocToggle.setAttribute('aria-label', 'Toggle table of contents');
+    tocToggle.setAttribute('title', 'Toggle table of contents');
+    var tocCollapsed = document.documentElement.hasAttribute('data-toc-collapsed');
+    tocToggle.innerHTML = tocCollapsed ? ICON_RPANEL_OPEN : ICON_RPANEL_CLOSE;
+    tocToggle.addEventListener('click', function() {
+      var collapsed = document.documentElement.toggleAttribute('data-toc-collapsed');
+      tocToggle.innerHTML = collapsed ? ICON_RPANEL_OPEN : ICON_RPANEL_CLOSE;
+      localStorage.setItem(TOC_KEY, collapsed ? '1' : '0');
+      dispatchResize();
+    });
+    document.body.appendChild(tocToggle);
+  }
+
+  // â”€â”€ TOC scroll sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Starlight's IntersectionObserver updates aria-current on TOC links but never
+  // calls scrollIntoView, so active items below the visible TOC area are invisible.
+  // This MutationObserver scrolls the active link into view whenever it changes.
+  var tocSyncObserver = null;
+  function setupTocScrollSync() {
+    if (tocSyncObserver) { tocSyncObserver.disconnect(); tocSyncObserver = null; }
+    var tocEl = document.querySelector('starlight-toc');
+    if (!tocEl) return;
+    var tocContainer = tocEl.closest('.right-sidebar-container');
+    tocSyncObserver = new MutationObserver(function() {
+      var active = tocEl.querySelector('a[aria-current="true"]');
+      if (!active) return;
+      if (tocContainer) {
+        // Scroll the sticky container so the active link stays in view
+        var cRect = tocContainer.getBoundingClientRect();
+        var aRect = active.getBoundingClientRect();
+        var visible = aRect.top >= cRect.top && aRect.bottom <= cRect.bottom;
+        if (!visible) {
+          active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      } else {
+        active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    });
+    tocSyncObserver.observe(tocEl, {
+      subtree: true, attributes: true, attributeFilter: ['aria-current']
+    });
+  }
+
+  // â”€â”€ Left nav scroll sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Scroll the left sidebar so the active page link is visible.
+  // Starlight marks the current page link with aria-current="page".
+  // We manually adjust scrollTop so only the sidebar pane scrolls, not the page.
+  function scrollNavToActive() {
+    var pane = document.querySelector('.sidebar-pane');
+    if (!pane) return;
+    var active = pane.querySelector('a[aria-current="page"]');
+    if (!active) return;
+    var paneRect = pane.getBoundingClientRect();
+    var activeRect = active.getBoundingClientRect();
+    var isVisible = activeRect.top >= paneRect.top && activeRect.bottom <= paneRect.bottom;
+    if (!isVisible) {
+      // Center the active link within the pane's visible scroll area
+      var relativeTop = activeRect.top - paneRect.top + pane.scrollTop;
+      pane.scrollTop = Math.max(0, relativeTop - pane.clientHeight / 2 + active.offsetHeight / 2);
+    }
+  }
+
+  function setup() {
+    ['sl-nav-toggle','sl-toc-toggle'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.remove();
+    });
+    applyState();
+    injectToggles();
+    // Scroll left nav to show active page link (run immediately + after short delay)
+    scrollNavToActive();
+    setTimeout(scrollNavToActive, 200);
+    // Delay slightly so starlight-toc custom element can finish its own init
+    setTimeout(setupTocScrollSync, 300);
+  }
+
+  // Apply state immediately to prevent flash before DOM ready
+  if (localStorage.getItem(NAV_KEY) === '1') document.documentElement.setAttribute('data-nav-collapsed', '');
+  if (localStorage.getItem(TOC_KEY) === '1') document.documentElement.setAttribute('data-toc-collapsed', '');
+
+  document.addEventListener('DOMContentLoaded', setup);
+  document.addEventListener('astro:page-load', setup);
+
+  // â”€â”€ Reading progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Injected here (global script) so it works on every page without
+  // depending on any Starlight component override being rendered.
+  var progressBar = null;
+  var scrollHandler = null;
+
+  function setupProgressBar() {
+    // Remove any listener from a previous page navigation
+    if (progressBar && scrollHandler) {
+      window.removeEventListener('scroll', scrollHandler);
+    }
+
+    // Create the bar element once; reuse on subsequent navigations
+    progressBar = document.getElementById('reading-progress');
+    if (!progressBar) {
+      progressBar = document.createElement('div');
+      progressBar.id = 'reading-progress';
+      progressBar.setAttribute('role', 'progressbar');
+      progressBar.setAttribute('aria-valuenow', '0');
+      progressBar.setAttribute('aria-valuemin', '0');
+      progressBar.setAttribute('aria-valuemax', '100');
+      progressBar.setAttribute('aria-label', 'Reading progress');
+      document.body.appendChild(progressBar);
+    }
+
+    // Reset width on new page
+    progressBar.style.width = '0%';
+
+    scrollHandler = function() {
+      var scroll = window.scrollY;
+      var height = document.body.scrollHeight - window.innerHeight;
+      var pct = height > 0 ? Math.round((scroll / height) * 100) : 0;
+      progressBar.style.width = pct + '%';
+      progressBar.setAttribute('aria-valuenow', String(pct));
+    };
+
+    window.addEventListener('scroll', scrollHandler, { passive: true });
+  }
+
+  document.addEventListener('DOMContentLoaded', setupProgressBar);
+  document.addEventListener('astro:page-load', setupProgressBar);
+})();
+					</script><link rel="shortcut icon" href="/ai-lab/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v6.1.3"/><meta name="generator" content="Starlight v0.38.2"/><meta property="og:title" content="Permissions &#38; Security — Diagram"/><meta property="og:type" content="article"/><meta property="og:url" content="https://rajrkdev.github.io/ai-lab/claude-code/permissions-diagram/"/><meta property="og:locale" content="en"/><meta property="og:description" content="Interactive visual guide to Claude Code's permission and security model — four-layer permission hierarchy, four permission modes, tool allowlist and blocklist syntax, sandbox architecture (Seatbelt on macOS, bubblewrap on Linux), and audit logging flow with destinations. v2.1.126 (June 2026).
+"/><meta property="og:site_name" content="Context"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Interactive visual guide to Claude Code's permission and security model — four-layer permission hierarchy, four permission modes, tool allowlist and blocklist syntax, sandbox architecture (Seatbelt on macOS, bubblewrap on Linux), and audit logging flow with destinations. v2.1.126 (June 2026).
+"/><meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex"/><meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex"/><meta name="bingbot" content="noindex, nofollow"/><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg><svg aria-hidden="true" class="dark astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg><svg aria-hidden="true" class="auto astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg></template><link rel="stylesheet" href="/ai-lab/_astro/print.DNXP8c50.css" media="print"><link rel="stylesheet" href="/ai-lab/_astro/Page.Dt5Mr5I5.css"><script type="module" src="/ai-lab/_astro/page.BIhdncjw.js"></script></head> <body class="astro-bguv2lll"> <a href="#_top" class="astro-7q3lir66">Skip to content</a> <div class="page sl-flex astro-vrdttmbt"> <header class="header astro-vrdttmbt"><div class="header astro-kmkmnagf"> <div class="title-wrapper sl-flex astro-kmkmnagf"> <a href="/ai-lab/" class="site-title sl-flex astro-m46x6ez3">  <span class="astro-m46x6ez3" translate="no"> Context </span> </a> </div> <div class="sl-flex print:hidden astro-kmkmnagf"> <site-search class="astro-kmkmnagf astro-v37mnknz" data-translations="{&#34;placeholder&#34;:&#34;Search&#34;}"> <button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-v37mnknz"> <svg aria-hidden="true" class="astro-v37mnknz astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg> <span class="sl-hidden md:sl-block astro-v37mnknz" aria-hidden="true">Search</span> <kbd class="sl-hidden md:sl-flex astro-v37mnknz" style="display: none;"> <kbd class="astro-v37mnknz">Ctrl</kbd><kbd class="astro-v37mnknz">K</kbd> </kbd> </button> <dialog style="padding:0" aria-label="Search" class="astro-v37mnknz"> <div class="dialog-frame sl-flex astro-v37mnknz">  <button data-close-modal class="sl-flex md:sl-hidden astro-v37mnknz"> Cancel </button> <div class="search-container astro-v37mnknz"> <div id="starlight__search" class="astro-v37mnknz"></div> </div> </div> </dialog> </site-search>  <script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script> <script type="module" src="/ai-lab/_astro/Search.astro_astro_type_script_index_0_lang.5I8Mqpy2.js"></script>  </div> <div class="sl-hidden md:sl-flex print:hidden right-group astro-kmkmnagf"> <div class="sl-flex social-icons astro-kmkmnagf">  </div> <starlight-theme-select>  <label style="--sl-select-width: 6.25em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select theme</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg> <select autocomplete="off" class="astro-4yphtoen"> <option value="dark" class="astro-4yphtoen">Dark</option><option value="light" class="astro-4yphtoen">Light</option><option value="auto" selected class="astro-4yphtoen">Auto</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg> </label> </starlight-theme-select>  <script>
+	StarlightThemeProvider.updatePickers();
+</script> <script type="module">const r="starlight-theme",o=e=>e==="auto"||e==="dark"||e==="light"?e:"auto",c=()=>o(typeof localStorage<"u"&&localStorage.getItem(r));function n(e){typeof localStorage<"u"&&localStorage.setItem(r,e==="light"||e==="dark"?e:"")}const l=()=>matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";function t(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e==="auto"?l():e,n(e)}matchMedia("(prefers-color-scheme: light)").addEventListener("change",()=>{c()==="auto"&&t("auto")});class s extends HTMLElement{constructor(){super(),t(c()),this.querySelector("select")?.addEventListener("change",a=>{a.currentTarget instanceof HTMLSelectElement&&t(o(a.currentTarget.value))})}}customElements.define("starlight-theme-select",s);</script> <script type="module">class s extends HTMLElement{constructor(){super();const e=this.querySelector("select");e&&(e.addEventListener("change",t=>{t.currentTarget instanceof HTMLSelectElement&&(window.location.pathname=t.currentTarget.value)}),window.addEventListener("pageshow",t=>{if(!t.persisted)return;const n=e.querySelector("option[selected]")?.index;n!==e.selectedIndex&&(e.selectedIndex=n??0)}))}}customElements.define("starlight-lang-select",s);</script> </div> </div></header> <nav class="sidebar print:hidden astro-vrdttmbt" aria-label="Main"> <starlight-menu-button class="print:hidden astro-jif73yzw"> <button aria-expanded="false" aria-label="Menu" aria-controls="starlight__sidebar" class="sl-flex md:sl-hidden astro-jif73yzw"> <svg aria-hidden="true" class="open-menu astro-jif73yzw astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg> <svg aria-hidden="true" class="close-menu astro-jif73yzw astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="m13.41 12 6.3-6.29a1.004 1.004 0 1 0-1.42-1.42L12 10.59l-6.29-6.3a1.004 1.004 0 0 0-1.42 1.42l6.3 6.29-6.3 6.29a1 1 0 0 0 0 1.42.998.998 0 0 0 1.42 0l6.29-6.3 6.29 6.3a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.42L13.41 12Z"/></svg> </button> </starlight-menu-button> <script type="module">class s extends HTMLElement{constructor(){super(),this.btn=this.querySelector("button"),this.btn.addEventListener("click",()=>this.toggleExpanded());const t=this.closest("nav");t&&t.addEventListener("keyup",e=>this.closeOnEscape(e))}setExpanded(t){this.setAttribute("aria-expanded",String(t)),document.body.toggleAttribute("data-mobile-menu-expanded",t)}toggleExpanded(){this.setExpanded(this.getAttribute("aria-expanded")!=="true")}closeOnEscape(t){t.code==="Escape"&&(this.setExpanded(!1),this.btn.focus())}}customElements.define("starlight-menu-button",s);</script>  <div id="starlight__sidebar" class="sidebar-pane astro-vrdttmbt"> <div class="sidebar-content sl-flex astro-vrdttmbt"> <ul class="sl-topics astro-ssfzsv2f"><li class="astro-ssfzsv2f"><a href="/ai-lab/rag/" class="astro-ssfzsv2f"><span class="sl-topics-icon astro-ssfzsv2f"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-ssfzsv2f"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span><span class="astro-ssfzsv2f">RAG Guides</span></a></li><li class="astro-ssfzsv2f"><a href="/ai-lab/bert/" class="astro-ssfzsv2f"><span class="sl-topics-icon astro-ssfzsv2f"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-ssfzsv2f"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg></span><span class="astro-ssfzsv2f">BERT Architectures</span></a></li><li class="astro-ssfzsv2f"><a href="/ai-lab/langchain/" class="astro-ssfzsv2f"><span class="sl-topics-icon astro-ssfzsv2f"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-ssfzsv2f"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span><span class="astro-ssfzsv2f">LangChain Reference</span></a></li><li class="astro-ssfzsv2f"><a href="/ai-lab/claude-code/" class="sl-topics-current astro-ssfzsv2f"><span class="sl-topics-icon astro-ssfzsv2f"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-ssfzsv2f"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span><span class="astro-ssfzsv2f">Claude Code</span></a></li><li class="astro-ssfzsv2f"><a href="/ai-lab/cert/" class="astro-ssfzsv2f"><span class="sl-topics-icon astro-ssfzsv2f"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-ssfzsv2f"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg></span><span class="astro-ssfzsv2f">Cert Prep</span></a></li></ul><sl-sidebar-state-persist data-hash="05szybe" class="astro-kku4brbg"> <script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script>  <ul class="top-level astro-3ii7xxms"> <li class="astro-3ii7xxms"> <details open class="astro-3ii7xxms"> <summary class="astro-3ii7xxms"> <span class="group-label astro-3ii7xxms"> <span class="large astro-3ii7xxms">Claude Code</span>  </span> <svg aria-hidden="true" class="caret astro-3ii7xxms astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg> </summary> <sl-sidebar-restore data-index="0"></sl-sidebar-restore> <ul class="astro-3ii7xxms"> <li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Claude Code</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/claude-code-reference/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">CLI Reference</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/quick-start/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Quick Start</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/claude-code-config-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">CLAUDE.md vs Skills vs Rules — Architecture Guide</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/claude-code-all-markdown-files-catalog/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Every Markdown File Claude Code Recognizes — Complete Catalog</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/claude-code-efficiency-reference/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Claude Code: Context, Cost &amp; Token Efficiency — Reference</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/hooks-deep-dive/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Hooks System</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/mcp-servers-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">MCP Servers</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/agent-teams-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Agent Teams</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/cicd-integration/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">CI/CD Integration</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/permissions-security/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Permissions &amp; Security</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/sdk-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Agent SDK</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/architecture/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Architecture Diagram — Full Lifecycle</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/claude-training/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Elite Claude Code Mastery — Training Program</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/worktrees-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Worktrees &amp; Parallel Dev</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/precedence/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Precedence Diagram — Full Hierarchy Guide</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/slash-commands-reference/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Slash Commands</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/override-test-lab/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Override Test Lab</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/plugins-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Plugins</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/validation-report/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Concept Validation Report</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/file-catalog/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">File Catalog — Interactive</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/output-styles-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Output Styles</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/claude-code-efficiency-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Claude Code — Context, Cost &amp; Token Efficiency Guide</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/memory-management/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Memory Management</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/context-engineering-ce/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Context Engineering for Claude Code</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/models-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Models Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/models-pricing/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Models &amp; Pricing</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/advisor-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">/advisor Command — Dual-Model Flow Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/hooks-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Hooks System — Interactive Flow Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/mcp-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">MCP Architecture — Interactive Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/agent-teams-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Agent Teams — Interactive Architecture Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/sdk-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Agent SDK — Interactive Architecture Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/cicd-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">CI/CD Integration — Interactive Pipeline Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/compass-research-notes/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Research Notes</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/memory-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Memory System — Interactive Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/plugins-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Plugins — Interactive Architecture Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/troubleshooting/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Troubleshooting Guide</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/enterprise-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Enterprise Deployment Guide</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/worktrees-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Worktrees &amp; Parallel Development — Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/monorepo-guide/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Monorepo &amp; Multi-Service Guide</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/permissions-diagram/" aria-current="page" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Permissions &amp; Security — Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/enterprise-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Enterprise Deployment — Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/monorepo-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Monorepo Patterns — Diagram</span>  </a> </li><li class="astro-3ii7xxms"> <a href="/ai-lab/claude-code/slash-commands-diagram/" class="astro-3ii7xxms"> <span class="astro-3ii7xxms">Slash Commands — Visual Reference</span>  </a> </li> </ul> </details> </li> </ul>  <script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script> </sl-sidebar-state-persist> <div class="md:sl-hidden"> <div class="mobile-preferences sl-flex astro-wu23bvmt"> <div class="social-icons astro-wu23bvmt">  </div> <starlight-theme-select>  <label style="--sl-select-width: 6.25em" class="astro-4yphtoen"> <span class="sr-only astro-4yphtoen">Select theme</span> <svg aria-hidden="true" class="icon label-icon astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg> <select autocomplete="off" class="astro-4yphtoen"> <option value="dark" class="astro-4yphtoen">Dark</option><option value="light" class="astro-4yphtoen">Light</option><option value="auto" selected class="astro-4yphtoen">Auto</option> </select> <svg aria-hidden="true" class="icon caret astro-4yphtoen astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg> </label> </starlight-theme-select>  <script>
+	StarlightThemeProvider.updatePickers();
+</script>   </div> </div> </div> </div> </nav> <div class="main-frame astro-vrdttmbt">  <script type="module">const a=document.getElementById("starlight__sidebar"),n=a?.querySelector("sl-sidebar-state-persist"),o="sl-sidebar-state",i=()=>{let t=[];const e=n?.dataset.hash||"";try{const s=sessionStorage.getItem(o),r=JSON.parse(s||"{}");Array.isArray(r.open)&&r.hash===e&&(t=r.open)}catch{}return{hash:e,open:t,scroll:a?.scrollTop||0}},c=t=>{try{sessionStorage.setItem(o,JSON.stringify(t))}catch{}},d=()=>c(i()),l=(t,e)=>{const s=i();s.open[e]=t,c(s)};n?.addEventListener("click",t=>{if(!(t.target instanceof Element))return;const e=t.target.closest("summary")?.closest("details");if(!e)return;const s=e.querySelector("sl-sidebar-restore"),r=parseInt(s?.dataset.index||"");isNaN(r)||l(!e.open,r)});addEventListener("visibilitychange",()=>{document.visibilityState==="hidden"&&d()});addEventListener("pageHide",d);</script> <div class="lg:sl-flex astro-67yu43on">  <div class="main-pane astro-67yu43on">  <main data-pagefind-body class="astro-bguv2lll" lang="en" dir="ltr">   <script type="module">class t extends HTMLElement{constructor(){super(),this.isManualToggle=!1,this.breadcrumbs=null,this.mainBemClass=null,this.totalWidth=0,this.resizeObserver=null,this.handleTruncatedButtonClick=()=>{this.breadcrumbs?.classList.remove("is-truncated"),this.isManualToggle=!0},this.mainBemClass=this.dataset.mainBemClass||null;const e=this.dataset.id;!("truncated"in this.dataset)||!e||(this.breadcrumbs=document.getElementById(e),this.initializeCrumbs(),this.setupResizeObserver())}initializeCrumbs(){this.breadcrumbs?.querySelectorAll(`.${this.mainBemClass}__crumb`)?.forEach(s=>{this.totalWidth+=s.offsetWidth})}setupResizeObserver(){this.resizeObserver=new ResizeObserver(e=>{e.forEach(s=>{this.checkOverflow(s.target.clientWidth)})}),this.breadcrumbs&&this.resizeObserver.observe(this.breadcrumbs)}connectedCallback(){this.showHiddenCrumbs()}disconnectedCallback(){this.resizeObserver&&this.breadcrumbs&&(this.resizeObserver.unobserve(this.breadcrumbs),this.resizeObserver.disconnect())}toggleTruncated(e){this.breadcrumbs?.classList.toggle("is-truncated",e)}showHiddenCrumbs(){const e=this.breadcrumbs?.querySelector(`.${this.mainBemClass}__truncated-button`);e?.removeEventListener("click",this.handleTruncatedButtonClick),e?.addEventListener("click",this.handleTruncatedButtonClick.bind(this))}checkOverflow(e){const s=this.totalWidth>e&&!this.isManualToggle;this.toggleTruncated(s),s||(this.isManualToggle=!1)}}customElements.get("astro-breadcrumbs")||customElements.define("astro-breadcrumbs",t);</script> <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <astro-breadcrumbs data-main-bem-class="c-breadcrumbs" data-id="81f46eeb-d1af-4639-87b3-26a36f9f89e1" data-path-length="3" data-truncated="false"> <nav aria-label="breadcrumbs" class="c-breadcrumbs" id="81f46eeb-d1af-4639-87b3-26a36f9f89e1"> <ol class="c-breadcrumbs__crumbs  has-separators"> <li class="c-breadcrumbs__crumb"> <a href="/ai-lab/" class="c-breadcrumbs__link is-index" aria-current="false"> <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Home" role="img" class="astro-guvttfii"> <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" class="astro-guvttfii"></path> <polyline points="9 22 9 12 15 12 15 22" class="astro-guvttfii"></polyline> </svg> </a> <span class="c-breadcrumbs__separator" aria-hidden="true"> <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-guvttfii"> <polyline points="9 18 15 12 9 6" class="astro-guvttfii"></polyline> </svg> </span> </li> <li class="c-breadcrumbs__crumb"> <a href="/ai-lab/claude-code/" class="c-breadcrumbs__link is-current" aria-current="location"> Claude Code </a>  </li>  </ol> </nav> </astro-breadcrumbs>   <h1 id="_top" class="astro-j6tvhyss">Permissions &amp; Security — Diagram</h1>  </div> </div> <div class="content-panel astro-7nkwcw3z"> <div class="sl-container astro-7nkwcw3z"> <div class="sl-markdown-content"> <div class="interactive-tool"><style>astro-island,astro-slot,astro-static-slot{display:contents}</style><script>(()=>{var e=async t=>{await(await t())()};(self.Astro||(self.Astro={})).only=e;window.dispatchEvent(new Event("astro:only"));})();</script><script>(()=>{var A=Object.defineProperty;var g=(i,o,a)=>o in i?A(i,o,{enumerable:!0,configurable:!0,writable:!0,value:a}):i[o]=a;var d=(i,o,a)=>g(i,typeof o!="symbol"?o+"":o,a);{let i={0:t=>m(t),1:t=>a(t),2:t=>new RegExp(t),3:t=>new Date(t),4:t=>new Map(a(t)),5:t=>new Set(a(t)),6:t=>BigInt(t),7:t=>new URL(t),8:t=>new Uint8Array(t),9:t=>new Uint16Array(t),10:t=>new Uint32Array(t),11:t=>Number.POSITIVE_INFINITY*t},o=t=>{let[l,e]=t;return l in i?i[l](e):void 0},a=t=>t.map(o),m=t=>typeof t!="object"||t===null?t:Object.fromEntries(Object.entries(t).map(([l,e])=>[l,o(e)]));class y extends HTMLElement{constructor(){super(...arguments);d(this,"Component");d(this,"hydrator");d(this,"hydrate",async()=>{var b;if(!this.hydrator||!this.isConnected)return;let e=(b=this.parentElement)==null?void 0:b.closest("astro-island[ssr]");if(e){e.addEventListener("astro:hydrate",this.hydrate,{once:!0});return}let c=this.querySelectorAll("astro-slot"),n={},h=this.querySelectorAll("template[data-astro-template]");for(let r of h){let s=r.closest(this.tagName);s!=null&&s.isSameNode(this)&&(n[r.getAttribute("data-astro-template")||"default"]=r.innerHTML,r.remove())}for(let r of c){let s=r.closest(this.tagName);s!=null&&s.isSameNode(this)&&(n[r.getAttribute("name")||"default"]=r.innerHTML)}let p;try{p=this.hasAttribute("props")?m(JSON.parse(this.getAttribute("props"))):{}}catch(r){let s=this.getAttribute("component-url")||"<unknown>",v=this.getAttribute("component-export");throw v&&(s+=` (export ${v})`),console.error(`[hydrate] Error parsing props for component ${s}`,this.getAttribute("props"),r),r}let u;await this.hydrator(this)(this.Component,p,n,{client:this.getAttribute("client")}),this.removeAttribute("ssr"),this.dispatchEvent(new CustomEvent("astro:hydrate"))});d(this,"unmount",()=>{this.isConnected||this.dispatchEvent(new CustomEvent("astro:unmount"))})}disconnectedCallback(){document.removeEventListener("astro:after-swap",this.unmount),document.addEventListener("astro:after-swap",this.unmount,{once:!0})}connectedCallback(){if(!this.hasAttribute("await-children")||document.readyState==="interactive"||document.readyState==="complete")this.childrenConnectedCallback();else{let e=()=>{document.removeEventListener("DOMContentLoaded",e),c.disconnect(),this.childrenConnectedCallback()},c=new MutationObserver(()=>{var n;((n=this.lastChild)==null?void 0:n.nodeType)===Node.COMMENT_NODE&&this.lastChild.nodeValue==="astro:end"&&(this.lastChild.remove(),e())});c.observe(this,{childList:!0}),document.addEventListener("DOMContentLoaded",e)}}async childrenConnectedCallback(){let e=this.getAttribute("before-hydration-url");e&&await import(e),this.start()}async start(){let e=JSON.parse(this.getAttribute("opts")),c=this.getAttribute("client");if(Astro[c]===void 0){window.addEventListener(`astro:${c}`,()=>this.start(),{once:!0});return}try{await Astro[c](async()=>{let n=this.getAttribute("renderer-url"),[h,{default:p}]=await Promise.all([import(this.getAttribute("component-url")),n?import(n):()=>()=>{}]),u=this.getAttribute("component-export")||"default";if(!u.includes("."))this.Component=h[u];else{this.Component=h;for(let f of u.split("."))this.Component=this.Component[f]}return this.hydrator=p,this.hydrate},e,this)}catch(n){console.error(`[astro-island] Error hydrating ${this.getAttribute("component-url")}`,n)}}attributeChangedCallback(){this.hydrate()}}d(y,"observedAttributes",["props"]),customElements.get("astro-island")||customElements.define("astro-island",y)}})();</script><astro-island uid="Z21AJvS" component-url="/ai-lab/_astro/PermissionsDiagram.csVNXx8o.js" component-export="default" renderer-url="/ai-lab/_astro/client.j8TX5vns.js" props="{}" ssr client="only" opts="{&quot;name&quot;:&quot;PermissionsDiagram&quot;,&quot;value&quot;:&quot;react&quot;}"></astro-island></div>
+<div class="sl-heading-wrapper level-h2"><h2 id="permissions-quick-reference">Permissions Quick Reference</h2><a class="sl-anchor-link" href="#permissions-quick-reference"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Permissions Quick Reference”</span></a></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="four-permission-layers">Four Permission Layers</h3><a class="sl-anchor-link" href="#four-permission-layers"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Four Permission Layers”</span></a></div>
+<p>From highest to lowest precedence:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Layer</th><th>File</th><th>Who controls</th><th>Override?</th></tr></thead><tbody><tr><td>Enterprise Managed</td><td><code dir="auto">~/.claude/managed-settings.json</code></td><td>MDM/IT admin</td><td>Cannot be overridden</td></tr><tr><td>Project Local</td><td><code dir="auto">.claude/settings.local.json</code></td><td>Individual dev</td><td>Overrides project + user</td></tr><tr><td>Project</td><td><code dir="auto">.claude/settings.json</code></td><td>Team (committed)</td><td>Overrides user settings</td></tr><tr><td>User Global</td><td><code dir="auto">~/.claude/settings.json</code></td><td>Individual dev</td><td>Base defaults</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="permission-modes">Permission Modes</h3><a class="sl-anchor-link" href="#permission-modes"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Permission Modes”</span></a></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Mode</th><th><code dir="auto">--permission-mode</code> flag</th><th>What it does</th></tr></thead><tbody><tr><td><code dir="auto">default</code></td><td>(none)</td><td>Prompts for each new tool permission</td></tr><tr><td><code dir="auto">acceptEdits</code></td><td><code dir="auto">--permission-mode acceptEdits</code></td><td>Auto-approves file edits, prompts for Bash</td></tr><tr><td><code dir="auto">bypassPermissions</code></td><td><code dir="auto">--permission-mode bypassPermissions</code></td><td>Skips ALL permission checks — use in sandboxed CI only</td></tr><tr><td><code dir="auto">autoApprove</code></td><td><code dir="auto">--permission-mode autoApprove</code></td><td>Approves everything including dangerous operations</td></tr></tbody></table>
+<blockquote>
+<p><strong>CI recommendation:</strong> Use <code dir="auto">--permission-mode bypassPermissions</code> only inside Docker containers or restricted CI environments where the filesystem scope is already constrained at the container level.</p>
+</blockquote>
+<div class="sl-heading-wrapper level-h3"><h3 id="tool-allowlist--blocklist-syntax">Tool Allowlist / Blocklist Syntax</h3><a class="sl-anchor-link" href="#tool-allowlist--blocklist-syntax"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Tool Allowlist / Blocklist Syntax”</span></a></div>
+<div class="expressive-code"><link rel="stylesheet" href="/ai-lab/_astro/ec.v4551.css"><script type="module" src="/ai-lab/_astro/ec.0vx5m.js"></script><figure class="frame has-title not-content"><figcaption class="header"><span class="title">.claude/settings.json</span></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"permissions"</span><span style="--0:#D6DEEB;--1:#403F53">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#7FDBCA;--1:#096E72">"allow"</span><span style="--0:#D6DEEB;--1:#403F53">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(npm:*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,           </span><span style="--0:#919F9F;--1:#5D6376">// allow npm commands</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(git:*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,           </span><span style="--0:#919F9F;--1:#5D6376">// allow all git commands</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Read</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,                  </span><span style="--0:#919F9F;--1:#5D6376">// allow all file reads</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Edit(.claude/**)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">       </span><span style="--0:#919F9F;--1:#5D6376">// allow edits only in .claude/</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">    </span></span><span style="--0:#D6DEEB;--1:#403F53">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#7FDBCA;--1:#096E72">"deny"</span><span style="--0:#D6DEEB;--1:#403F53">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(rm:-rf*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,         </span><span style="--0:#919F9F;--1:#5D6376">// block rm -rf</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(curl:*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,          </span><span style="--0:#919F9F;--1:#5D6376">// block all curl</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">WebFetch</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,              </span><span style="--0:#919F9F;--1:#5D6376">// block all web fetches</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Write(/etc/**)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">         </span><span style="--0:#919F9F;--1:#5D6376">// block writes to /etc/</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">    </span></span><span style="--0:#D6DEEB;--1:#403F53">]</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">  </span></span><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &#x22;permissions&#x22;: {    &#x22;allow&#x22;: [      &#x22;Bash(npm:*)&#x22;,           // allow npm commands      &#x22;Bash(git:*)&#x22;,           // allow all git commands      &#x22;Read&#x22;,                  // allow all file reads      &#x22;Edit(.claude/**)&#x22;       // allow edits only in .claude/    ],    &#x22;deny&#x22;: [      &#x22;Bash(rm:-rf*)&#x22;,         // block rm -rf      &#x22;Bash(curl:*)&#x22;,          // block all curl      &#x22;WebFetch&#x22;,              // block all web fetches      &#x22;Write(/etc/**)&#x22;         // block writes to /etc/    ]  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="sandbox-architecture">Sandbox Architecture</h3><a class="sl-anchor-link" href="#sandbox-architecture"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Sandbox Architecture”</span></a></div>
+<p>Claude Code uses OS-level sandboxing:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Platform</th><th>Sandbox tech</th><th>What it restricts</th></tr></thead><tbody><tr><td>macOS</td><td>Seatbelt (sandbox-exec)</td><td>Filesystem paths, network, process spawning</td></tr><tr><td>Linux</td><td>bubblewrap (bwrap)</td><td>Mount namespaces, user namespaces, network</td></tr></tbody></table>
+<p>The sandbox is applied to <strong>Bash tool executions</strong> when sandbox mode is enabled. File tools (Read, Write, Edit) are controlled via the allowlist, not the OS sandbox.</p>
+<p>→ Full guide: <a href="./permissions-security">Permissions &#x26; Security</a></p>
+<hr>
+<div class="sl-heading-wrapper level-h2"><h2 id="permission-modes--precise-definitions">Permission Modes — Precise Definitions</h2><a class="sl-anchor-link" href="#permission-modes--precise-definitions"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Permission Modes — Precise Definitions”</span></a></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="normal-default"><code dir="auto">normal</code> (default)</h3><a class="sl-anchor-link" href="#normal-default"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “normal (default)”</span></a></div>
+<p>Claude prompts the user before using any tool that is not explicitly allowed in the <code dir="auto">permissions.allow</code> list. Read-only operations (Read, Glob, Grep) are permitted without a prompt. All write and execute operations require interactive approval unless pre-listed.</p>
+<p><strong>When to use:</strong> Interactive development sessions where the developer reviews each action. The safest default for any environment where a human is present.</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">claude</span><span style="--0:#D6DEEB;--1:#403F53">                           </span><span style="--0:#919F9F;--1:#5F636F"># normal mode (default)</span></div></div><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">claude</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#82AAFF;--1:#3B61B0">--permission-mode</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">normal</span><span style="--0:#D6DEEB;--1:#403F53">  </span><span style="--0:#919F9F;--1:#5F636F"># explicit</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="claude                           # normal mode (default)claude --permission-mode normal  # explicit"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="autoaccept-acceptedits"><code dir="auto">autoAccept</code> (acceptEdits)</h3><a class="sl-anchor-link" href="#autoaccept-acceptedits"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “autoAccept (acceptEdits)”</span></a></div>
+<p>Auto-approves file edits (Write, Edit, MultiEdit) and most Bash commands. Claude still prompts for sensitive operations (network calls, git push, package installation) unless those are in the <code dir="auto">allow</code> list. Equivalent to the interactive “auto-accept edits” toggle.</p>
+<p><strong>When to use:</strong> Rapid iteration when you trust Claude’s output and want to skip per-edit approvals. Still retains prompts for high-risk operations.</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">claude</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#82AAFF;--1:#3B61B0">--permission-mode</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">acceptEdits</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="claude --permission-mode acceptEdits"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="bypasspermissions"><code dir="auto">bypassPermissions</code></h3><a class="sl-anchor-link" href="#bypasspermissions"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “bypassPermissions”</span></a></div>
+<p>Skips ALL permission checks — no prompts, no allow/deny list evaluation. Every tool call is executed unconditionally. This mode requires the <code dir="auto">--dangerously-skip-permissions</code> flag acknowledgment and should only run inside a container or VM where blast radius is constrained at the infrastructure level.</p>
+<p><strong>When to use:</strong> CI/CD pipelines running inside isolated Docker containers, sandboxed test environments, or ephemeral VMs. Never on a developer workstation.</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">claude</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#82AAFF;--1:#3B61B0">--permission-mode</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">bypassPermissions</span></div></div><div class="ec-line"><div class="code"><span style="--0:#919F9F;--1:#5F636F"># Typically set in CI via environment instead:</span></div></div><div class="ec-line"><div class="code"><span style="--0:#C792EA;--1:#8844AE">export</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#C5E478;--1:#3B61B0">CLAUDE_CODE_PERMISSION_MODE</span><span style="--0:#C792EA;--1:#8844AE">=</span><span style="--0:#C5E478;--1:#3B61B0">bypassPermissions</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="claude --permission-mode bypassPermissionsexport CLAUDE_CODE_PERMISSION_MODE=bypassPermissions"><div></div></button></div></figure></div>
+<blockquote>
+<p>Managed-settings can block this mode entirely: set <code dir="auto">disableBypassPermissionsMode: true</code> in <code dir="auto">~/.claude/managed-settings.json</code>.</p>
+</blockquote>
+<div class="sl-heading-wrapper level-h3"><h3 id="plan"><code dir="auto">plan</code></h3><a class="sl-anchor-link" href="#plan"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “plan”</span></a></div>
+<p>Claude can read and reason about files (Read, Glob, Grep, LS) but cannot write, edit, or execute anything. Equivalent to a “read-only audit” mode. No file is modified, no command is run.</p>
+<p><strong>When to use:</strong> Code review, architecture exploration, or security auditing sessions where you want Claude’s analysis without any risk of side-effects.</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">claude</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#82AAFF;--1:#3B61B0">--permission-mode</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">plan</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="claude --permission-mode plan"><div></div></button></div></figure></div>
+<hr>
+<div class="sl-heading-wrapper level-h2"><h2 id="tool-allowlist--blocklist--full-syntax-reference">Tool Allowlist / Blocklist — Full Syntax Reference</h2><a class="sl-anchor-link" href="#tool-allowlist--blocklist--full-syntax-reference"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Tool Allowlist / Blocklist — Full Syntax Reference”</span></a></div>
+<p>Rules are evaluated in order: <code dir="auto">deny</code> wins over <code dir="auto">allow</code> when both match the same tool call.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"permissions"</span><span style="--0:#D6DEEB;--1:#403F53">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#7FDBCA;--1:#096E72">"allow"</span><span style="--0:#D6DEEB;--1:#403F53">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Read(**)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Edit(**/*.ts)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(git:*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(npm test)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(npm run *)</span><span style="--0:#D9F5DD;--1:#111111">"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">    </span></span><span style="--0:#D6DEEB;--1:#403F53">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#7FDBCA;--1:#096E72">"deny"</span><span style="--0:#D6DEEB;--1:#403F53">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(rm -rf*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(git push --force*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">WebFetch</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Read(**/.env*)</span><span style="--0:#D9F5DD;--1:#111111">"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">    </span></span><span style="--0:#D6DEEB;--1:#403F53">]</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">  </span></span><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &#x22;permissions&#x22;: {    &#x22;allow&#x22;: [      &#x22;Read(**)&#x22;,      &#x22;Edit(**/*.ts)&#x22;,      &#x22;Bash(git:*)&#x22;,      &#x22;Bash(npm test)&#x22;,      &#x22;Bash(npm run *)&#x22;    ],    &#x22;deny&#x22;: [      &#x22;Bash(rm -rf*)&#x22;,      &#x22;Bash(git push --force*)&#x22;,      &#x22;WebFetch&#x22;,      &#x22;Read(**/.env*)&#x22;    ]  }}"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="pattern-syntax">Pattern syntax</h3><a class="sl-anchor-link" href="#pattern-syntax"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Pattern syntax”</span></a></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Pattern</th><th>Matches</th></tr></thead><tbody><tr><td><code dir="auto">Read</code></td><td>All Read calls, any path</td></tr><tr><td><code dir="auto">Read(**)</code></td><td>All Read calls (explicit glob)</td></tr><tr><td><code dir="auto">Read(src/**)</code></td><td>Reads inside <code dir="auto">src/</code> only</td></tr><tr><td><code dir="auto">Edit(**/*.ts)</code></td><td>Edits to <code dir="auto">.ts</code> files anywhere</td></tr><tr><td><code dir="auto">Bash(git:*)</code></td><td>Any Bash call whose command starts with <code dir="auto">git</code></td></tr><tr><td><code dir="auto">Bash(npm test)</code></td><td>Exactly <code dir="auto">npm test</code></td></tr><tr><td><code dir="auto">Bash(npm run *)</code></td><td>Any <code dir="auto">npm run &#x3C;script></code></td></tr><tr><td><code dir="auto">Bash(rm -rf*)</code></td><td>Any <code dir="auto">rm -rf</code> invocation</td></tr><tr><td><code dir="auto">WebFetch</code></td><td>All WebFetch calls, any URL</td></tr><tr><td><code dir="auto">WebFetch(https://api.corp.com/*)</code></td><td>WebFetch to that domain only</td></tr><tr><td><code dir="auto">mcp__github__*</code></td><td>Any GitHub MCP tool</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="deny-list-best-practices">Deny list best practices</h3><a class="sl-anchor-link" href="#deny-list-best-practices"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Deny list best practices”</span></a></div>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"permissions"</span><span style="--0:#D6DEEB;--1:#403F53">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#7FDBCA;--1:#096E72">"deny"</span><span style="--0:#D6DEEB;--1:#403F53">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(rm -rf*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(git push --force*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(git push --force-with-lease*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(curl * | bash*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(wget * | bash*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(npm publish*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(pip install*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">WebFetch</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Read(**/.env*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Read(**/*.pem)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Read(**/*.key)</span><span style="--0:#D9F5DD;--1:#111111">"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">    </span></span><span style="--0:#D6DEEB;--1:#403F53">]</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">  </span></span><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &#x22;permissions&#x22;: {    &#x22;deny&#x22;: [      &#x22;Bash(rm -rf*)&#x22;,      &#x22;Bash(git push --force*)&#x22;,      &#x22;Bash(git push --force-with-lease*)&#x22;,      &#x22;Bash(curl * | bash*)&#x22;,      &#x22;Bash(wget * | bash*)&#x22;,      &#x22;Bash(npm publish*)&#x22;,      &#x22;Bash(pip install*)&#x22;,      &#x22;WebFetch&#x22;,      &#x22;Read(**/.env*)&#x22;,      &#x22;Read(**/*.pem)&#x22;,      &#x22;Read(**/*.key)&#x22;    ]  }}"><div></div></button></div></figure></div>
+<hr>
+<div class="sl-heading-wrapper level-h2"><h2 id="sandbox-architecture-1">Sandbox Architecture</h2><a class="sl-anchor-link" href="#sandbox-architecture-1"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Sandbox Architecture”</span></a></div>
+<p>Claude Code uses OS-level process sandboxing to constrain what Bash tool executions can do, independent of the allowlist.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="macos--apple-seatbelt-sandbox-exec">macOS — Apple Seatbelt (<code dir="auto">sandbox-exec</code>)</h3><a class="sl-anchor-link" href="#macos--apple-seatbelt-sandbox-exec"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “macOS — Apple Seatbelt (sandbox-exec)”</span></a></div>
+<p>The Seatbelt profile restricts the shell process spawned by the Bash tool to a narrowly defined set of allowed operations:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Restriction</th><th>Default sandbox behavior</th></tr></thead><tbody><tr><td>Filesystem reads</td><td>Allowed inside the project working directory only</td></tr><tr><td>Filesystem writes</td><td>Blocked outside the project working directory</td></tr><tr><td>Network</td><td>Blocked unless explicitly permitted</td></tr><tr><td>Process spawning</td><td>Allowed for child processes within the same sandbox</td></tr><tr><td>IPC / Mach ports</td><td>Blocked (no inter-process communication to other apps)</td></tr><tr><td>Camera / microphone</td><td>Blocked</td></tr></tbody></table>
+<p>Enable with:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">claude</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#82AAFF;--1:#3B61B0">--sandbox</span></div></div><div class="ec-line"><div class="code"><span style="--0:#919F9F;--1:#5F636F"># or in settings.json:</span></div></div><div class="ec-line"><div class="code"><span style="--0:#919F9F;--1:#5F636F"># { "sandbox": true }</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="claude --sandbox"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="linux--bubblewrap-bwrap">Linux — bubblewrap (<code dir="auto">bwrap</code>)</h3><a class="sl-anchor-link" href="#linux--bubblewrap-bwrap"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Linux — bubblewrap (bwrap)”</span></a></div>
+<p>bubblewrap creates a lightweight container around the Bash tool execution using Linux kernel namespaces:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Namespace</th><th>What it isolates</th></tr></thead><tbody><tr><td>Mount namespace</td><td>Hides host filesystem paths outside the project directory</td></tr><tr><td>User namespace</td><td>Runs as unprivileged UID inside the sandbox</td></tr><tr><td>Network namespace</td><td>No network access by default</td></tr><tr><td>PID namespace</td><td>Process tree is isolated from host PIDs</td></tr><tr><td>IPC namespace</td><td>No shared memory or semaphores with host processes</td></tr></tbody></table>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="bash"><code><div class="ec-line"><div class="code"><span style="--0:#919F9F;--1:#5F636F"># Linux sandbox requires bubblewrap installed:</span></div></div><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">sudo</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">apt</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">install</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">bubblewrap</span><span style="--0:#D6DEEB;--1:#403F53">   </span><span style="--0:#919F9F;--1:#5F636F"># Debian/Ubuntu</span></div></div><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">sudo</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">dnf</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">install</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#ECC48D;--1:#3B61B0">bubblewrap</span><span style="--0:#D6DEEB;--1:#403F53">   </span><span style="--0:#919F9F;--1:#5F636F"># Fedora/RHEL</span></div></div><div class="ec-line"><div class="code">
+</div></div><div class="ec-line"><div class="code"><span style="--0:#919F9F;--1:#5F636F"># Then enable:</span></div></div><div class="ec-line"><div class="code"><span style="--0:#82AAFF;--1:#3B61B0">claude</span><span style="--0:#D6DEEB;--1:#403F53"> </span><span style="--0:#82AAFF;--1:#3B61B0">--sandbox</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="sudo apt install bubblewrap   # Debian/Ubuntusudo dnf install bubblewrap   # Fedora/RHELclaude --sandbox"><div></div></button></div></figure></div>
+<blockquote>
+<p>The sandbox applies to <strong>Bash tool executions only</strong>. File tools (Read, Write, Edit, Glob, Grep) are controlled by the allowlist system, not the OS sandbox, because they run inside the Claude Code process itself.</p>
+</blockquote>
+<hr>
+<div class="sl-heading-wrapper level-h2"><h2 id="enterprise-managed-permission-controls">Enterprise Managed Permission Controls</h2><a class="sl-anchor-link" href="#enterprise-managed-permission-controls"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Enterprise Managed Permission Controls”</span></a></div>
+<p>These settings in <code dir="auto">~/.claude/managed-settings.json</code> (or MDM-pushed equivalent) override all user and project settings:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Key</th><th>Type</th><th>What it enforces</th></tr></thead><tbody><tr><td><code dir="auto">disableBypassPermissionsMode</code></td><td><code dir="auto">boolean</code></td><td>Prevents <code dir="auto">--permission-mode bypassPermissions</code> from being used on this device</td></tr><tr><td><code dir="auto">allowManagedHooksOnly</code></td><td><code dir="auto">boolean</code></td><td>Blocks any hooks not deployed via MDM; only IT-approved hook scripts run</td></tr><tr><td><code dir="auto">allowedMcpServers</code></td><td><code dir="auto">string[]</code></td><td>Allowlist of MCP server IDs; all others are silently blocked</td></tr><tr><td><code dir="auto">permissions.deny</code></td><td><code dir="auto">string[]</code></td><td>Global deny rules applied before any project or user allow rules</td></tr><tr><td><code dir="auto">permissions.allow</code></td><td><code dir="auto">string[]</code></td><td>Global allow rules that cannot be removed by project settings</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="example-managed-settingsjson-for-a-regulated-environment">Example managed-settings.json for a regulated environment</h3><a class="sl-anchor-link" href="#example-managed-settingsjson-for-a-regulated-environment"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Example managed-settings.json for a regulated environment”</span></a></div>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"disableBypassPermissionsMode"</span><span style="--0:#D6DEEB;--1:#403F53">: </span><span style="--0:#FF6A83;--1:#A24848">true</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"allowManagedHooksOnly"</span><span style="--0:#D6DEEB;--1:#403F53">: </span><span style="--0:#FF6A83;--1:#A24848">true</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"allowedMcpServers"</span><span style="--0:#D6DEEB;--1:#403F53">: [</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">github</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">, </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">linear</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">, </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">internal-jira</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">],</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"permissions"</span><span style="--0:#D6DEEB;--1:#403F53">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#7FDBCA;--1:#096E72">"deny"</span><span style="--0:#D6DEEB;--1:#403F53">: [</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">WebFetch</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(curl*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Bash(wget*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Read(**/.env*)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Read(**/*.pem)</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">      </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">Read(**/*.key)</span><span style="--0:#D9F5DD;--1:#111111">"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">    </span></span><span style="--0:#D6DEEB;--1:#403F53">]</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">  </span></span><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &#x22;disableBypassPermissionsMode&#x22;: true,  &#x22;allowManagedHooksOnly&#x22;: true,  &#x22;allowedMcpServers&#x22;: [&#x22;github&#x22;, &#x22;linear&#x22;, &#x22;internal-jira&#x22;],  &#x22;permissions&#x22;: {    &#x22;deny&#x22;: [      &#x22;WebFetch&#x22;,      &#x22;Bash(curl*)&#x22;,      &#x22;Bash(wget*)&#x22;,      &#x22;Read(**/.env*)&#x22;,      &#x22;Read(**/*.pem)&#x22;,      &#x22;Read(**/*.key)&#x22;    ]  }}"><div></div></button></div></figure></div>
+<hr>
+<div class="sl-heading-wrapper level-h2"><h2 id="audit-logging-flow">Audit Logging Flow</h2><a class="sl-anchor-link" href="#audit-logging-flow"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Audit Logging Flow”</span></a></div>
+<p>Every tool call that Claude Code evaluates — whether permitted, denied, or user-confirmed — generates an audit event.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="what-gets-logged">What gets logged</h3><a class="sl-anchor-link" href="#what-gets-logged"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What gets logged”</span></a></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Description</th><th>Example</th></tr></thead><tbody><tr><td><code dir="auto">ts</code></td><td>ISO-8601 timestamp</td><td><code dir="auto">"2026-06-03T14:22:11Z"</code></td></tr><tr><td><code dir="auto">user</code></td><td>Developer identity (from auth)</td><td><code dir="auto">"alice@corp.com"</code></td></tr><tr><td><code dir="auto">session</code></td><td>Session UUID</td><td><code dir="auto">"sess_abc123"</code></td></tr><tr><td><code dir="auto">tool</code></td><td>Tool name</td><td><code dir="auto">"Bash"</code>, <code dir="auto">"Edit"</code>, <code dir="auto">"WebFetch"</code></td></tr><tr><td><code dir="auto">input</code></td><td>Tool arguments</td><td><code dir="auto">"npm test"</code>, <code dir="auto">"src/auth.ts"</code></td></tr><tr><td><code dir="auto">permitted</code></td><td>Whether the call was allowed</td><td><code dir="auto">true</code>, <code dir="auto">false</code></td></tr><tr><td><code dir="auto">mode</code></td><td>Active permission mode</td><td><code dir="auto">"normal"</code>, <code dir="auto">"bypassPermissions"</code></td></tr><tr><td><code dir="auto">duration_ms</code></td><td>Execution time</td><td><code dir="auto">4201</code></td></tr><tr><td><code dir="auto">denied_reason</code></td><td>Why it was blocked (if applicable)</td><td><code dir="auto">"matches deny rule: Bash(rm -rf*)"</code></td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="where-it-goes">Where it goes</h3><a class="sl-anchor-link" href="#where-it-goes"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Where it goes”</span></a></div>
+<p>Configure <code dir="auto">auditLogDestination</code> in managed-settings or project settings:</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"auditLogDestination"</span><span style="--0:#D6DEEB;--1:#403F53">: </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">/var/log/claude/audit.jsonl</span><span style="--0:#D9F5DD;--1:#111111">"</span></div></div><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &#x22;auditLogDestination&#x22;: &#x22;/var/log/claude/audit.jsonl&#x22;}"><div></div></button></div></figure></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Destination type</th><th>URI format</th><th>Notes</th></tr></thead><tbody><tr><td>Local file</td><td><code dir="auto">/absolute/path/audit.jsonl</code></td><td>JSONL, one event per line</td></tr><tr><td>Webhook / SIEM</td><td><code dir="auto">https://splunk.corp.com:8088/...</code></td><td>JSON POST per event</td></tr><tr><td>OpenTelemetry</td><td><code dir="auto">otlp+http://otel-collector:4318</code></td><td>OTLP spans with Claude attributes</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="opentelemetry-integration">OpenTelemetry integration</h3><a class="sl-anchor-link" href="#opentelemetry-integration"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “OpenTelemetry integration”</span></a></div>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="json"><code><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">{</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"auditLogDestination"</span><span style="--0:#D6DEEB;--1:#403F53">: </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">otlp+http://otel-collector.infra.svc.cluster.local:4318</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#7FDBCA;--1:#096E72">"auditLogOtelResource"</span><span style="--0:#D6DEEB;--1:#403F53">: {</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#7FDBCA;--1:#096E72">"service.name"</span><span style="--0:#D6DEEB;--1:#403F53">: </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">claude-code</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#7FDBCA;--1:#096E72">"deployment.environment"</span><span style="--0:#D6DEEB;--1:#403F53">: </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">production</span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#D6DEEB;--1:#403F53">,</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#7FDBCA;--1:#096E72">"team"</span><span style="--0:#D6DEEB;--1:#403F53">: </span><span style="--0:#D9F5DD;--1:#111111">"</span><span style="--0:#C789D6;--1:#7C5686">payments</span><span style="--0:#D9F5DD;--1:#111111">"</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#D6DEEB;--1:#403F53">  </span></span><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div><div class="ec-line"><div class="code"><span style="--0:#D6DEEB;--1:#403F53">}</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="{  &#x22;auditLogDestination&#x22;: &#x22;otlp+http://otel-collector.infra.svc.cluster.local:4318&#x22;,  &#x22;auditLogOtelResource&#x22;: {    &#x22;service.name&#x22;: &#x22;claude-code&#x22;,    &#x22;deployment.environment&#x22;: &#x22;production&#x22;,    &#x22;team&#x22;: &#x22;payments&#x22;  }}"><div></div></button></div></figure></div>
+<p>Events flow: Claude Code → OTLP Collector → your backend (Datadog, Honeycomb, Grafana Tempo, Jaeger).</p>
+<p>Each permitted Bash execution creates a span. Denied calls generate a span with <code dir="auto">error: true</code> and the deny reason in attributes. This lets you build dashboards and alerts for blocked operations in your existing observability stack.</p>
+<hr>
+<div class="sl-heading-wrapper level-h2"><h2 id="trust-model">Trust Model</h2><a class="sl-anchor-link" href="#trust-model"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Trust Model”</span></a></div>
+<p>Claude Code’s trust model distinguishes what is trusted implicitly from what requires explicit permission grant.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="trusted-by-default-no-prompt-required">Trusted by default (no prompt required)</h3><a class="sl-anchor-link" href="#trusted-by-default-no-prompt-required"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Trusted by default (no prompt required)”</span></a></div>
+<ul>
+<li>Reading files in the current working directory tree</li>
+<li>Running Glob and Grep searches within the project</li>
+<li>Reading environment variables (not writing)</li>
+<li>Calling MCP tools that are in the active <code dir="auto">allowedMcpServers</code> list</li>
+<li>Tool calls that match an <code dir="auto">allow</code> rule in any active settings layer</li>
+</ul>
+<div class="sl-heading-wrapper level-h3"><h3 id="requires-explicit-user-approval-prompt-shown">Requires explicit user approval (prompt shown)</h3><a class="sl-anchor-link" href="#requires-explicit-user-approval-prompt-shown"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Requires explicit user approval (prompt shown)”</span></a></div>
+<ul>
+<li>Writing or editing files not covered by an <code dir="auto">allow</code> rule</li>
+<li>Running Bash commands not covered by an <code dir="auto">allow</code> rule</li>
+<li>Calling WebFetch to external URLs</li>
+<li>Using MCP tools not in the <code dir="auto">allowedMcpServers</code> list</li>
+<li>Operations where the active <code dir="auto">deny</code> list matches (these are blocked outright, not prompted)</li>
+</ul>
+<div class="sl-heading-wrapper level-h3"><h3 id="trust-model-flow">Trust model flow</h3><a class="sl-anchor-link" href="#trust-model-flow"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentcolor" d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 0 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 1 0-1.42-1.42Zm8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 0 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 1 0 1.42 1.42l3.88-3.89a4.49 4.49 0 0 0 0-6.33ZM8.83 15.17a1 1 0 0 0 1.1.22 1 1 0 0 0 .32-.22l4.92-4.92a1 1 0 0 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42Z"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Trust model flow”</span></a></div>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="plaintext"><code><div class="ec-line"><div class="code"><span style="--0:#d6deeb;--1:#403f53">Tool call received</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#d6deeb;--1:#403f53">       </span></span><span style="--0:#d6deeb;--1:#403f53">│</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#d6deeb;--1:#403f53">       </span></span><span style="--0:#d6deeb;--1:#403f53">▼</span></div></div><div class="ec-line"><div class="code"><span style="--0:#d6deeb;--1:#403f53">Does a DENY rule match?  ──yes──► Blocked immediately (logged, no prompt)</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#d6deeb;--1:#403f53">       </span></span><span style="--0:#d6deeb;--1:#403f53">│ no</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#d6deeb;--1:#403f53">       </span></span><span style="--0:#d6deeb;--1:#403f53">▼</span></div></div><div class="ec-line"><div class="code"><span style="--0:#d6deeb;--1:#403f53">Does an ALLOW rule match? ──yes──► Permitted immediately (logged, no prompt)</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#d6deeb;--1:#403f53">       </span></span><span style="--0:#d6deeb;--1:#403f53">│ no</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#d6deeb;--1:#403f53">       </span></span><span style="--0:#d6deeb;--1:#403f53">▼</span></div></div><div class="ec-line"><div class="code"><span style="--0:#d6deeb;--1:#403f53">Is permission mode bypassPermissions? ──yes──► Permitted (logged, no prompt)</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#d6deeb;--1:#403f53">       </span></span><span style="--0:#d6deeb;--1:#403f53">│ no</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#d6deeb;--1:#403f53">       </span></span><span style="--0:#d6deeb;--1:#403f53">▼</span></div></div><div class="ec-line"><div class="code"><span style="--0:#d6deeb;--1:#403f53">Prompt the user ──approve──► Permitted (logged, rule optionally saved)</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#d6deeb;--1:#403f53">               </span></span><span style="--0:#d6deeb;--1:#403f53">└─deny──► Blocked (logged)</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="Tool call received       │       ▼Does a DENY rule match?  ──yes──► Blocked immediately (logged, no prompt)       │ no       ▼Does an ALLOW rule match? ──yes──► Permitted immediately (logged, no prompt)       │ no       ▼Is permission mode bypassPermissions? ──yes──► Permitted (logged, no prompt)       │ no       ▼Prompt the user ──approve──► Permitted (logged, rule optionally saved)               └─deny──► Blocked (logged)"><div></div></button></div></figure></div>
+<p>This layered evaluation means MDM-pushed deny rules always win regardless of what any project or user settings allow.</p> </div> <footer class="sl-flex astro-3yyafb3n"> <div class="meta sl-flex astro-3yyafb3n">  <p>Last updated: <time datetime="2026-06-03T00:00:00.000Z">Jun 3, 2026</time></p> </div> <div class="pagination-links print:hidden astro-u2l5gyhi" dir="ltr"> <a href="/ai-lab/claude-code/monorepo-guide/" rel="prev" class="astro-u2l5gyhi"> <svg aria-hidden="true" class="astro-u2l5gyhi astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg> <span class="astro-u2l5gyhi"> Previous <br class="astro-u2l5gyhi"> <span class="link-title astro-u2l5gyhi">Monorepo &amp; Multi-Service Guide</span> </span> </a> <a href="/ai-lab/claude-code/enterprise-diagram/" rel="next" class="astro-u2l5gyhi"> <svg aria-hidden="true" class="astro-u2l5gyhi astro-c6vsoqas" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg> <span class="astro-u2l5gyhi"> Next <br class="astro-u2l5gyhi"> <span class="link-title astro-u2l5gyhi">Enterprise Deployment — Diagram</span> </span> </a> </div>  </footer> <footer class="ctx-site-footer astro-sz7xmlte"> <div class="ctx-footer-inner astro-sz7xmlte"> <nav class="ctx-footer-links astro-sz7xmlte" aria-label="Footer navigation"> <a href="/ai-lab/rag/" class="astro-sz7xmlte">RAG</a> <a href="/ai-lab/bert/" class="astro-sz7xmlte">BERT</a> <a href="/ai-lab/langchain/" class="astro-sz7xmlte">LangChain</a> <a href="/ai-lab/claude-code/" class="astro-sz7xmlte">Claude Code</a> <a href="/ai-lab/cert/" class="astro-sz7xmlte">Cert Prep</a> </nav> </div> </footer> <nav class="ctx-mobile-tab-bar astro-sz7xmlte" aria-label="Module navigation"> <a href="/ai-lab/rag/" class="ctx-tab astro-sz7xmlte" aria-label="RAG Guides"> <!-- Send/rocket icon --> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-sz7xmlte"> <path d="M22 2L11 13" class="astro-sz7xmlte"></path><path d="M22 2L15 22 11 13 2 9 22 2z" class="astro-sz7xmlte"></path> </svg> <span class="astro-sz7xmlte">RAG</span> </a> <a href="/ai-lab/bert/" class="ctx-tab astro-sz7xmlte" aria-label="BERT Architectures"> <!-- CPU/chip icon --> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-sz7xmlte"> <rect x="4" y="4" width="16" height="16" rx="2" class="astro-sz7xmlte"></rect><rect x="9" y="9" width="6" height="6" class="astro-sz7xmlte"></rect> <path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3" class="astro-sz7xmlte"></path> </svg> <span class="astro-sz7xmlte">BERT</span> </a> <a href="/ai-lab/langchain/" class="ctx-tab astro-sz7xmlte" aria-label="LangChain Reference"> <!-- Link/chain icon --> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-sz7xmlte"> <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" class="astro-sz7xmlte"></path> <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" class="astro-sz7xmlte"></path> </svg> <span class="astro-sz7xmlte">LangChain</span> </a> <a href="/ai-lab/claude-code/" class="ctx-tab astro-sz7xmlte" aria-label="Claude Code" aria-current="page"> <!-- Terminal/prompt icon --> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-sz7xmlte"> <polyline points="4 17 10 11 4 5" class="astro-sz7xmlte"></polyline><line x1="12" y1="19" x2="20" y2="19" class="astro-sz7xmlte"></line> </svg> <span class="astro-sz7xmlte">Code</span> </a> <a href="/ai-lab/cert/" class="ctx-tab astro-sz7xmlte" aria-label="Cert Prep"> <!-- Award/cert icon --> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="astro-sz7xmlte"> <circle cx="12" cy="8" r="6" class="astro-sz7xmlte"></circle><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11" class="astro-sz7xmlte"></path> </svg> <span class="astro-sz7xmlte">Cert</span> </a> </nav> </div> </div>  </main> </div> </div> </div> </div> </body></html>
