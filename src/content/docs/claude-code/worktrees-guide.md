@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 11
   label: Worktrees & Parallel Dev
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Git Worktrees — Parallel Development with Claude Code
@@ -964,3 +964,846 @@ After running `/branch feature/auth` and `/branch hotfix/login-bug` from the mai
 ```
 
 The exact location of worktrees depends on the `--path` argument to `/branch` or the `worktreeRootPath` setting in `settings.json`. By default, worktrees are created at `../repo-name-worktrees/branch-name`.
+
+---
+
+## 9. Advanced Worktree Patterns
+
+### Pattern: Feature Branch Isolation with Shared MCP Servers
+
+One of the most powerful patterns is using worktrees to work on multiple feature branches simultaneously, each with their own Claude Code session, while sharing a common set of MCP servers configured at the user level.
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│                    WORKTREE + MCP ARCHITECTURE                         │
+├───────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   /projects/myapp/           (main repo — your working branch)         │
+│     .claude/settings.json    ← project-level settings                  │
+│     CLAUDE.md                ← shared project instructions              │
+│     src/                                                                │
+│                                                                         │
+│   /projects/myapp-worktrees/                                            │
+│     feature-auth/            ← worktree for feature/auth branch         │
+│       .claude/               ← own settings.local.json                  │
+│       CLAUDE.local.md        ← personal overrides (not committed)       │
+│       src/                                                              │
+│                                                                         │
+│     feature-payments/        ← worktree for feature/payments branch     │
+│       .claude/               ← own settings.local.json                  │
+│       CLAUDE.local.md        ← personal overrides (not committed)       │
+│       src/                                                              │
+│                                                                         │
+│   ─────────────────────── SHARED (user-level) ────────────────────────│
+│                                                                         │
+│   ~/.claude/CLAUDE.md        ← loaded in ALL worktrees                 │
+│   ~/.claude/settings.json    ← user settings (applies everywhere)      │
+│   ~/.claude/.mcp.json        ← user-level MCP servers                  │
+│     ├── github MCP server    ← available in ALL sessions               │
+│     ├── postgres MCP server  ← available in ALL sessions               │
+│     └── slack MCP server     ← available in ALL sessions               │
+│                                                                         │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+**What each worktree inherits from user-level config:**
+
+- `~/.claude/CLAUDE.md` — user-level instructions (loaded in every session)
+- `~/.claude/settings.json` — user settings (model, theme, etc.)
+- `~/.claude/.mcp.json` — all user-configured MCP servers
+
+**What each worktree has isolated:**
+
+- Working branch (different git state per worktree)
+- Claude Code session (completely separate session state, separate conversation history)
+- `CLAUDE.local.md` in the worktree root (personal overrides, never committed)
+- `.claude/settings.local.json` in the worktree (local settings override for this branch)
+- Auto-Memory `MEMORY.md` at `<worktree-path>/.claude/MEMORY.md` (separate memory per worktree path)
+
+**Complete shell workflow:**
+
+```bash
+# Step 1: Create worktrees for the branches you want to work on simultaneously
+cd /projects/myapp
+
+git worktree add ../myapp-worktrees/feature-auth feature/auth
+git worktree add ../myapp-worktrees/feature-payments feature/payments
+
+# Step 2: Open a separate terminal for each worktree
+# Terminal A — feature/auth
+cd /projects/myapp-worktrees/feature-auth
+claude   # starts independent Claude Code session on feature/auth
+
+# Terminal B — feature/payments
+cd /projects/myapp-worktrees/feature-payments
+claude   # starts independent Claude Code session on feature/payments
+
+# Terminal C — main repo
+cd /projects/myapp
+claude   # starts Claude Code session on your working branch
+
+# All three sessions run simultaneously, independently, sharing MCP servers
+
+# Step 3: When feature work is done, remove the worktree
+git worktree remove ../myapp-worktrees/feature-auth
+git worktree remove ../myapp-worktrees/feature-payments
+
+# Prune any stale worktree metadata from git
+git worktree prune
+```
+
+**Project-specific MCP servers in worktrees:**
+
+If your project's `.claude/settings.json` configures MCP servers at the project level (not user level), those servers are available in all worktrees for that project — because all worktrees share the same `.claude/settings.json` from the main repository:
+
+```json
+// .claude/settings.json (committed to main repo, shared across all worktrees)
+{
+  "mcpServers": {
+    "project-database": {
+      "command": "npx",
+      "args": ["-y", "@mycompany/db-mcp-server"],
+      "env": {
+        "DATABASE_URL": "${PROJECT_DB_URL}"
+      }
+    }
+  }
+}
+```
+
+### Pattern: Automated Worktree CI via SDK
+
+Using the Claude Code SDK, you can orchestrate parallel worktree sessions programmatically — running automated analysis, code review, or generation on multiple branches simultaneously.
+
+**Python SDK example (parallel branch analysis):**
+
+```python
+import asyncio
+import subprocess
+import json
+from pathlib import Path
+
+async def analyze_branch_in_worktree(repo_path: str, branch: str, worktree_base: str, prompt: str) -> dict:
+    """
+    Creates a git worktree for the given branch, runs Claude Code in it
+    with the given prompt, and returns the result.
+    """
+    worktree_name = branch.replace("/", "-")
+    worktree_path = Path(worktree_base) / worktree_name
+
+    # Create the worktree
+    subprocess.run(
+        ["git", "worktree", "add", str(worktree_path), branch],
+        cwd=repo_path,
+        check=True,
+        capture_output=True
+    )
+
+    try:
+        # Run Claude Code SDK in the worktree directory
+        result = await asyncio.create_subprocess_exec(
+            "claude",
+            "--output-format", "json",
+            "--print",
+            "--max-turns", "10",
+            prompt,
+            cwd=str(worktree_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await result.communicate()
+
+        return {
+            "branch": branch,
+            "worktree": str(worktree_path),
+            "exit_code": result.returncode,
+            "output": json.loads(stdout.decode()) if stdout else None,
+            "error": stderr.decode() if stderr else None,
+        }
+    finally:
+        # Always clean up the worktree, even if Claude fails
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(worktree_path)],
+            cwd=repo_path,
+            check=False,
+            capture_output=True
+        )
+
+async def parallel_branch_analysis(repo_path: str, branches: list[str]) -> list[dict]:
+    """
+    Analyze all branches in parallel using separate worktrees.
+    """
+    worktree_base = str(Path(repo_path).parent / "ci-worktrees")
+    Path(worktree_base).mkdir(exist_ok=True)
+
+    prompt = """
+    Review this branch for:
+    1. Security vulnerabilities in authentication code
+    2. Performance regressions vs main branch
+    3. Missing error handling in API handlers
+    Return a JSON object with keys: security_issues, performance_issues, error_handling_issues
+    """
+
+    # Run all branch analyses in parallel
+    tasks = [
+        analyze_branch_in_worktree(repo_path, branch, worktree_base, prompt)
+        for branch in branches
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    return results
+
+# Usage
+async def main():
+    results = await parallel_branch_analysis(
+        repo_path="/projects/myapp",
+        branches=["feature/auth", "feature/payments", "hotfix/login-bug"]
+    )
+    for r in results:
+        print(f"Branch: {r['branch']} — exit code: {r['exit_code']}")
+
+asyncio.run(main())
+```
+
+**TypeScript SDK example (sequential with worktree):**
+
+```typescript
+import { execSync, spawn } from "child_process";
+import { mkdirSync, rmSync } from "fs";
+import path from "path";
+
+interface WorktreeAnalysisResult {
+  branch: string;
+  output: string;
+  exitCode: number;
+}
+
+async function analyzeInWorktree(
+  repoPath: string,
+  branch: string,
+  prompt: string
+): Promise<WorktreeAnalysisResult> {
+  const worktreeName = branch.replace(/\//g, "-");
+  const worktreePath = path.join(repoPath, "..", `ci-${worktreeName}`);
+
+  // Create worktree
+  execSync(`git worktree add ${worktreePath} ${branch}`, {
+    cwd: repoPath,
+    stdio: "pipe",
+  });
+
+  try {
+    // Run Claude Code in the worktree
+    const output = await new Promise<string>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const proc = spawn(
+        "claude",
+        ["--print", "--output-format", "json", "--max-turns", "5", prompt],
+        { cwd: worktreePath }
+      );
+
+      proc.stdout.on("data", (chunk) => chunks.push(chunk));
+      proc.on("close", (code) => {
+        if (code === 0) resolve(Buffer.concat(chunks).toString());
+        else reject(new Error(`Claude exited with code ${code}`));
+      });
+    });
+
+    return { branch, output, exitCode: 0 };
+  } finally {
+    execSync(`git worktree remove --force ${worktreePath}`, {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
+  }
+}
+```
+
+### Pattern: Agent Teams Across Worktrees
+
+Claude Code Agent Teams (enabled via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) can span multiple worktrees, allowing different specialist agents to work on different branches simultaneously. This pattern is particularly powerful for large feature rollouts that touch multiple branches.
+
+**How Agent Teams + Worktrees interact:**
+
+The Agent Teams filesystem mailbox is stored in `~/.claude/agent-teams/<team-id>/` — at the user level, not the project level. This means:
+
+- All agents in a team share the same mailbox directory regardless of which worktree they run in
+- An orchestrator in the main repo can spawn agents that run in specific worktrees
+- Each agent's `cwd` (current working directory) determines which branch it operates on
+- Claude Code context (CLAUDE.md, settings) is loaded from the worktree the agent is running in
+
+**Cross-worktree Agent Team setup:**
+
+```bash
+# Enable Agent Teams
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+
+# Start the orchestrator in the main repo
+cd /projects/myapp
+claude
+
+# In the orchestrator session, define the cross-worktree team:
+```
+
+```
+/agents create-team feature-rollout
+
+/agents add auth-agent \
+  --worktree ../myapp-worktrees/feature-auth \
+  --role "Implement authentication changes on the feature/auth branch" \
+  --model claude-sonnet-4-6
+
+/agents add payments-agent \
+  --worktree ../myapp-worktrees/feature-payments \
+  --role "Implement payment integration on the feature/payments branch" \
+  --model claude-sonnet-4-6
+
+/agents add integration-agent \
+  --worktree ../myapp-worktrees/feature-integration \
+  --role "Coordinate integration testing across both feature branches" \
+  --model claude-opus-4-8
+
+/agents start feature-rollout
+```
+
+**CLAUDE.md for the orchestrator** (in the main repo):
+
+```markdown
+# CLAUDE.md — Main Repo Orchestrator
+
+You are the orchestration agent for the feature-rollout team. Your responsibilities:
+
+1. Coordinate work across three worktrees: feature-auth, feature-payments, feature-integration
+2. Send implementation tasks to auth-agent and payments-agent
+3. When both signal completion, instruct integration-agent to run integration tests
+4. Collect test results and synthesize a rollout readiness report
+
+## Message Protocol
+
+Send tasks using the filesystem mailbox format. Wait for completion signals
+before proceeding to the next phase.
+
+## Worktree Paths
+
+- feature/auth branch: ../myapp-worktrees/feature-auth
+- feature/payments branch: ../myapp-worktrees/feature-payments
+- Integration testing: ../myapp-worktrees/feature-integration
+```
+
+**Known limitation:** Agent Teams running in different worktrees use the same `~/.claude/agent-teams/` mailbox. Ensure team IDs are unique if you run multiple cross-worktree teams simultaneously to avoid mailbox conflicts.
+
+---
+
+### Worktree State Isolation — Complete Matrix
+
+The following table documents exactly what is isolated vs. shared between the main repository and worktrees for every aspect of Claude Code operation.
+
+| Aspect | Main Repo | Worktrees | Notes |
+|--------|-----------|-----------|-------|
+| **Git** | | | |
+| Committed files | Independent per branch | Independent per branch | Each worktree checks out a different branch |
+| `.git/` directory | Full .git | Symlink to main .git | All worktrees share the same git history |
+| Unstaged changes | Isolated to working tree | Isolated to working tree | Cannot bleed between worktrees |
+| Git index (staging area) | Isolated | Isolated | Separate index per worktree |
+| **Claude Code Config** | | | |
+| `CLAUDE.md` (project) | Loaded from main repo | Loaded from worktree root (same file via git) | Same content, but read from worktree path |
+| `CLAUDE.local.md` | In main repo root | In worktree root (separate file) | Personal overrides; not committed |
+| `.claude/settings.json` | Shared (same repo) | Shared (same file via git) | Project settings apply to all worktrees |
+| `.claude/settings.local.json` | In main .claude/ | In worktree .claude/ (separate file) | Local overrides isolated per worktree |
+| `~/.claude/CLAUDE.md` | Loaded in every session | Loaded in every session | User-level; universal |
+| `~/.claude/settings.json` | Applied | Applied | User-level; universal |
+| **Session State** | | | |
+| Conversation history | Isolated per session | Isolated per session | Sessions are completely independent |
+| Current task context | Isolated | Isolated | No shared task state |
+| `/todo` list state | Isolated | Isolated | Separate TodoRead/Write state per session |
+| **Memory** | | | |
+| `~/.claude/MEMORY.md` | Loaded | Loaded | User-level memory; shared across all sessions |
+| `<project>/.claude/MEMORY.md` | Keyed to main repo path | Keyed to worktree path | SEPARATE memory per worktree path |
+| `/memory` writes | Write to worktree MEMORY.md | Write to worktree MEMORY.md | Each worktree accumulates its own memory |
+| **MCP Servers** | | | |
+| `~/.claude/.mcp.json` servers | Connected | Connected | User-level MCP; universal |
+| `.claude/settings.json` MCP servers | Connected | Connected | Project-level MCP; shared via git |
+| `.claude/settings.local.json` MCP servers | Connected | Isolated | Local MCP overrides per worktree |
+| **Hooks** | | | |
+| `~/.claude/settings.json` hooks | Active | Active | User-level hooks; universal |
+| `.claude/settings.json` hooks | Active | Active | Project hooks; shared via git |
+| `.claude/settings.local.json` hooks | Active | Isolated | Local hook overrides per worktree |
+| **Rules** | | | |
+| `.claude/rules/*.md` | Loaded from main repo | Loaded from worktree | Same rules files via git |
+| **Skills** | | | |
+| `.claude/commands/*.md` | Available | Available | Same skill files via git |
+| `~/.claude/commands/*.md` | Available | Available | User skills; universal |
+| **Agent Teams** | | | |
+| `~/.claude/agent-teams/` mailbox | Shared mailbox directory | Shared mailbox directory | All worktrees share the same mailbox |
+| Agent team state | Isolated per team ID | Isolated per team ID | Teams are isolated by ID |
+| **Plugins** | | | |
+| Installed plugins | Active | Active | Plugins are user-level; universal |
+
+---
+
+## 10. Worktree Cleanup Best Practices
+
+### Why Cleanup Matters
+
+Each active worktree consumes disk space (a full working tree copy of all files) and occupies a branch lock in git. If Claude Code sessions are running in worktrees when the worktree is removed, the session will encounter errors on its next file operation.
+
+Abandoned worktrees also fragment git's internal bookkeeping over time, slowing down `git worktree list` and `git status`.
+
+### Verifying Worktree State Before Cleanup
+
+Always check the state of a worktree before removing it:
+
+```bash
+# List all active worktrees and their branches
+git worktree list
+
+# Expected output:
+# /projects/myapp                          abc1234 [main]
+# /projects/myapp-worktrees/feature-auth  def5678 [feature/auth]
+# /projects/myapp-worktrees/feature-payments ghi9012 [feature/payments]
+
+# Check if any worktree has uncommitted changes before removal
+for worktree_path in $(git worktree list --porcelain | grep "^worktree" | awk '{print $2}'); do
+  if git -C "$worktree_path" status --porcelain | grep -q .; then
+    echo "UNCOMMITTED CHANGES in: $worktree_path"
+    git -C "$worktree_path" status --short
+  fi
+done
+```
+
+### Automated Cleanup Script
+
+The following script safely removes a worktree after verifying there are no uncommitted changes or active Claude Code sessions:
+
+```bash
+#!/usr/bin/env bash
+# cleanup-worktree.sh — safely remove a git worktree
+# Usage: ./cleanup-worktree.sh <worktree-path>
+
+set -euo pipefail
+
+WORKTREE_PATH="${1:?Usage: $0 <worktree-path>}"
+
+# Verify the worktree exists
+if ! git worktree list | grep -q "$WORKTREE_PATH"; then
+  echo "ERROR: Worktree not found: $WORKTREE_PATH"
+  exit 1
+fi
+
+# Check for uncommitted changes
+if git -C "$WORKTREE_PATH" status --porcelain | grep -q .; then
+  echo "ERROR: Worktree has uncommitted changes:"
+  git -C "$WORKTREE_PATH" status --short
+  echo ""
+  echo "Commit or stash your changes before removing the worktree."
+  echo "To force removal anyway: git worktree remove --force $WORKTREE_PATH"
+  exit 1
+fi
+
+# Check for active Claude Code sessions (heuristic: look for .claude session files)
+if ls "$WORKTREE_PATH"/.claude/session-*.json 2>/dev/null | grep -q .; then
+  echo "WARNING: Active or recent Claude Code session detected in worktree."
+  echo "Session files:"
+  ls "$WORKTREE_PATH"/.claude/session-*.json
+  echo ""
+  read -p "Remove worktree anyway? (y/N) " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+# Remove the worktree
+echo "Removing worktree: $WORKTREE_PATH"
+git worktree remove "$WORKTREE_PATH"
+
+# Prune stale references
+git worktree prune
+
+echo "Done. Active worktrees:"
+git worktree list
+```
+
+### Bulk Cleanup for Merged Branches
+
+After feature branches are merged and no longer needed, remove their worktrees in bulk:
+
+```bash
+#!/usr/bin/env bash
+# cleanup-merged-worktrees.sh — remove worktrees for branches already merged to main
+
+MAIN_BRANCH="${1:-main}"
+REPO_PATH="${2:-$(git rev-parse --show-toplevel)}"
+
+echo "Checking for merged branches with active worktrees..."
+
+# Get list of merged branches (excluding main)
+MERGED_BRANCHES=$(git branch --merged "$MAIN_BRANCH" | grep -v "^\* " | grep -v "$MAIN_BRANCH" | tr -d ' ')
+
+for branch in $MERGED_BRANCHES; do
+  # Check if there's a worktree for this branch
+  WORKTREE=$(git worktree list --porcelain | awk "/^branch refs\/heads\/$branch$/{found=1} found && /^worktree/{print \$2; found=0}")
+
+  if [ -n "$WORKTREE" ] && [ "$WORKTREE" != "$REPO_PATH" ]; then
+    echo "Branch '$branch' is merged. Worktree: $WORKTREE"
+
+    # Check for uncommitted changes before removing
+    if git -C "$WORKTREE" status --porcelain | grep -q .; then
+      echo "  SKIPPING — worktree has uncommitted changes"
+    else
+      echo "  Removing worktree..."
+      git worktree remove "$WORKTREE" 2>/dev/null || \
+        echo "  WARNING: Could not remove $WORKTREE (may be in use)"
+    fi
+  fi
+done
+
+git worktree prune
+echo "Prune complete. Active worktrees:"
+git worktree list
+```
+
+### Handling Failed Claude Sessions in Worktrees
+
+If a Claude Code session in a worktree crashes or is killed mid-operation, the session may have left partial changes:
+
+```bash
+# Check if the worktree has any in-progress changes from a failed session
+cd /projects/myapp-worktrees/feature-auth
+
+# See what files were modified
+git status --short
+
+# See what the diff looks like
+git diff --stat
+
+# If changes look wrong or partial:
+# Option 1: Restore specific files
+git checkout -- src/middleware/auth.go
+
+# Option 2: Reset all changes (nuclear option)
+git reset --hard HEAD
+
+# Option 3: Stash and inspect
+git stash
+git stash show -p  # inspect the stash
+git stash drop     # discard if not needed
+```
+
+### Worktree Pruning in CI Environments
+
+In CI/CD pipelines, worktrees can accumulate if CI jobs are cancelled or fail before cleanup steps run. Add prune steps to your pipeline:
+
+```yaml
+# .github/workflows/ci.yml (cleanup job)
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: always()  # Run even if other jobs fail
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for worktree commands
+
+      - name: Prune stale worktrees
+        run: |
+          git worktree list
+          git worktree prune --verbose
+          git worktree list
+```
+
+---
+
+## 11. Worktrees in GitHub Actions
+
+Using git worktrees in GitHub Actions workflows allows you to run Claude Code analysis or generation tasks on multiple branches in parallel within a single CI job, without requiring separate job matrix entries for each branch.
+
+### Basic Worktree + Claude Code Workflow
+
+```yaml
+# .github/workflows/claude-parallel-review.yml
+name: Parallel Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  parallel-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (with full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for worktrees
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Set up worktrees for parallel analysis
+        run: |
+          # Create worktree for the PR branch
+          git fetch origin ${{ github.head_ref }}
+          git worktree add ../pr-worktree origin/${{ github.head_ref }}
+
+          # Create worktree for main branch (for comparison)
+          git worktree add ../main-worktree origin/main
+
+          echo "Worktrees created:"
+          git worktree list
+
+      - name: Run Claude Code analysis on PR branch
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd ../pr-worktree
+          claude \
+            --print \
+            --output-format json \
+            --max-turns 5 \
+            --dangerously-skip-permissions \
+            "Review the changes in this branch for security issues, missing error handling, and test coverage gaps. Return a JSON object with keys: security, error_handling, test_coverage. Each key should have a list of specific issues found, or an empty list if none." \
+          > /tmp/pr-review.json
+
+      - name: Run Claude Code analysis on main branch
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd ../main-worktree
+          claude \
+            --print \
+            --output-format json \
+            --max-turns 5 \
+            --dangerously-skip-permissions \
+            "Identify the main architectural patterns used in this codebase. Return a JSON object with keys: patterns, conventions, areas_to_preserve. Brief descriptions only." \
+          > /tmp/main-analysis.json
+
+      - name: Post review comment to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const prReview = JSON.parse(fs.readFileSync('/tmp/pr-review.json', 'utf8'));
+            const mainAnalysis = JSON.parse(fs.readFileSync('/tmp/main-analysis.json', 'utf8'));
+
+            const body = `## Claude Code Review
+
+            **Security:** ${prReview.security?.length ?? 0} issue(s)
+            ${prReview.security?.map(i => `- ${i}`).join('\n') ?? 'None found'}
+
+            **Error Handling:** ${prReview.error_handling?.length ?? 0} issue(s)
+            ${prReview.error_handling?.map(i => `- ${i}`).join('\n') ?? 'None found'}
+
+            **Test Coverage:** ${prReview.test_coverage?.length ?? 0} gap(s)
+            ${prReview.test_coverage?.map(i => `- ${i}`).join('\n') ?? 'None found'}
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+      - name: Clean up worktrees
+        if: always()  # Run even if previous steps failed
+        run: |
+          git worktree remove --force ../pr-worktree || true
+          git worktree remove --force ../main-worktree || true
+          git worktree prune
+```
+
+### Matrix Build with Worktrees
+
+For workflows that need to analyze multiple branches simultaneously, combine GitHub Actions matrix strategy with git worktrees:
+
+```yaml
+# .github/workflows/multi-branch-analysis.yml
+name: Multi-Branch Claude Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: 'Comma-separated list of branches to analyze'
+        required: true
+        default: 'main,develop,staging'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        branch: ${{ fromJson(format('["{0}"]', join(fromJson(format('["{}"]', replace(github.event.inputs.branches, ',', '","'))), '","'))) }}
+      fail-fast: false  # Analyze all branches even if one fails
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Create worktree for branch
+        run: |
+          BRANCH="${{ matrix.branch }}"
+          SAFE_NAME="${BRANCH//\//-}"
+          git fetch origin "$BRANCH"
+          git worktree add "../analyze-${SAFE_NAME}" "origin/${BRANCH}"
+          echo "WORKTREE_PATH=../analyze-${SAFE_NAME}" >> $GITHUB_ENV
+          echo "SAFE_NAME=${SAFE_NAME}" >> $GITHUB_ENV
+
+      - name: Analyze branch with Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd "${{ env.WORKTREE_PATH }}"
+          claude \
+            --print \
+            --output-format plain \
+            --max-turns 8 \
+            --dangerously-skip-permissions \
+            "Analyze the codebase and identify: (1) any hardcoded credentials or secrets, (2) deprecated API usage, (3) functions with cyclomatic complexity > 10. Be specific about file paths and line numbers." \
+          > /tmp/analysis-${{ env.SAFE_NAME }}.txt
+
+      - name: Upload analysis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-${{ env.SAFE_NAME }}
+          path: /tmp/analysis-${{ env.SAFE_NAME }}.txt
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          git worktree remove --force "${{ env.WORKTREE_PATH }}" || true
+          git worktree prune
+```
+
+### Worktree-Based Automated Code Generation in CI
+
+A pattern for using worktrees in CI to generate code on a feature branch without affecting the CI runner's working directory:
+
+```yaml
+# .github/workflows/generate-and-pr.yml
+name: Claude Code Generation via Worktree
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 9am
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "Claude Code Bot"
+          git config user.email "claude-bot@example.com"
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Create generation branch and worktree
+        run: |
+          BRANCH="claude/auto-update-$(date +%Y-%m-%d)"
+          git checkout -b "$BRANCH"
+          git push -u origin "$BRANCH"
+          # Go back to main
+          git checkout main
+          # Create worktree for the new branch
+          git worktree add ../generation-worktree "$BRANCH"
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+
+      - name: Run Claude Code generation in worktree
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cd ../generation-worktree
+          claude \
+            --print \
+            --max-turns 20 \
+            --dangerously-skip-permissions \
+            "Update all API client mock files in tests/mocks/ to match the current API contracts defined in api/openapi.yaml. Each mock should have accurate response shapes and status codes. After updating, run 'go test ./tests/...' to verify the mocks compile."
+
+      - name: Commit generated changes
+        run: |
+          cd ../generation-worktree
+          git add tests/mocks/
+          if git diff --cached --quiet; then
+            echo "No changes generated"
+          else
+            git commit -m "chore: auto-update API mocks via Claude Code"
+            git push
+          fi
+
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --title "chore: auto-update API mocks ($(date +%Y-%m-%d))" \
+            --body "Automated API mock update generated by Claude Code. Review changes before merging." \
+            --base main \
+            --head "${{ env.BRANCH }}" \
+            --label "automated,api-mocks"
+
+      - name: Cleanup worktree
+        if: always()
+        run: |
+          git worktree remove --force ../generation-worktree || true
+          git worktree prune
+```
+
+### Performance Tips for Worktrees in CI
+
+```yaml
+# Use sparse checkout to reduce disk usage for large monorepos
+- name: Create sparse worktree
+  run: |
+    git worktree add --no-checkout ../sparse-worktree feature/my-branch
+    cd ../sparse-worktree
+    git sparse-checkout init --cone
+    git sparse-checkout set src/api src/middleware tests/api
+    git checkout feature/my-branch
+
+# Cache node_modules across worktree runs (if not using npm/yarn workspaces)
+- name: Cache dependencies
+  uses: actions/cache@v4
+  with:
+    path: |
+      ~/.npm
+      ../sparse-worktree/node_modules
+    key: deps-${{ hashFiles('package-lock.json') }}
+
+# Limit parallelism to avoid API rate limits with Claude Code
+jobs:
+  analyze:
+    strategy:
+      matrix:
+        branch: [main, develop, staging]
+      max-parallel: 2  # Run at most 2 branches simultaneously
+```

@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 15
   label: Memory Management
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Memory Management — Complete Reference

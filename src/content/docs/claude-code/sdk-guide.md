@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 10
   label: Agent SDK
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Claude Code Agent SDK — Complete Guide
@@ -1441,3 +1441,404 @@ type SDKEvent =
 | Set up agent definitions | [Agent Teams Guide](./agent-teams-guide) |
 | Parallel development workflows | [Worktrees Guide](./worktrees-guide) |
 | Integrate with GitHub Actions | [CI/CD Integration](./cicd-integration) |
+
+---
+
+## 12. .NET / C# Subprocess Integration
+
+There is no official C# SDK for the Claude Code Agent SDK. However, .NET and C# applications can integrate Claude Code through subprocess management. The pattern uses `System.Diagnostics.Process` to launch the Claude Code binary with `--output-format stream-json`, then parses the streaming JSON events.
+
+### Basic C# Subprocess Wrapper
+
+```csharp
+using System;
+using System.Diagnostics;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+public class ClaudeCodeClient : IDisposable
+{
+    private readonly string _binaryPath;
+    private readonly string _apiKey;
+
+    public ClaudeCodeClient(string apiKey, string binaryPath = "claude")
+    {
+        _apiKey = apiKey;
+        _binaryPath = binaryPath;
+    }
+
+    public async IAsyncEnumerable<ClaudeEvent> RunAsync(
+        string prompt,
+        string? workingDirectory = null,
+        string model = "claude-sonnet-4-6",
+        decimal maxBudgetUsd = 1.0m,
+        int maxTurns = 30)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = _binaryPath,
+            Arguments = $"--print --output-format stream-json --model {model} --max-turns {maxTurns}",
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory
+        };
+
+        psi.Environment["ANTHROPIC_API_KEY"] = _apiKey;
+        psi.Environment["DISABLE_UPDATES"] = "1";
+        psi.Environment["CLAUDE_CODE_MAX_BUDGET_USD"] = maxBudgetUsd.ToString("F2");
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start claude process");
+
+        // Write prompt and close stdin
+        await process.StandardInput.WriteLineAsync(prompt);
+        process.StandardInput.Close();
+
+        // Stream JSON events from stdout
+        string? line;
+        while ((line = await process.StandardOutput.ReadLineAsync()) != null)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            ClaudeEvent? evt = null;
+            try
+            {
+                evt = ParseEvent(line);
+            }
+            catch (JsonException)
+            {
+                // Skip malformed lines
+                continue;
+            }
+
+            if (evt != null)
+                yield return evt;
+        }
+
+        await process.WaitForExitAsync();
+    }
+
+    private static ClaudeEvent? ParseEvent(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var type = doc.RootElement.GetProperty("type").GetString();
+        return type switch
+        {
+            "system"     => new SystemEvent    { Raw = json },
+            "assistant"  => new AssistantEvent { Raw = json },
+            "tool_result"=> new ToolResultEvent{ Raw = json },
+            "result"     => new ResultEvent    { Raw = json },
+            "error"      => new ErrorEvent     { Raw = json },
+            _            => null
+        };
+    }
+
+    public void Dispose() { }
+}
+
+// Event types
+public abstract class ClaudeEvent { public required string Raw { get; init; } }
+public class SystemEvent     : ClaudeEvent { }
+public class AssistantEvent  : ClaudeEvent { }
+public class ToolResultEvent : ClaudeEvent { }
+public class ResultEvent     : ClaudeEvent { }
+public class ErrorEvent      : ClaudeEvent { }
+```
+
+### Usage Example
+
+```csharp
+var client = new ClaudeCodeClient(
+    apiKey: Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!,
+    binaryPath: "claude"
+);
+
+await foreach (var evt in client.RunAsync(
+    prompt: "Review the authentication module in src/auth/ and report any security issues",
+    workingDirectory: "/path/to/repo",
+    model: "claude-opus-4-8",
+    maxBudgetUsd: 2.0m))
+{
+    if (evt is AssistantEvent asst)
+    {
+        using var doc = JsonDocument.Parse(asst.Raw);
+        var message = doc.RootElement.GetProperty("message");
+        foreach (var content in message.GetProperty("content").EnumerateArray())
+        {
+            if (content.GetProperty("type").GetString() == "text")
+                Console.Write(content.GetProperty("text").GetString());
+        }
+    }
+    else if (evt is ResultEvent result)
+    {
+        using var doc = JsonDocument.Parse(result.Raw);
+        var cost = doc.RootElement.GetProperty("costUsd").GetDecimal();
+        Console.WriteLine($"\n[Session cost: ${cost:F4}]");
+    }
+}
+```
+
+### NuGet Package Considerations
+
+For production use, consider wrapping this pattern in a reusable NuGet package. Key concerns:
+- **Thread safety**: One `ClaudeCodeClient` instance per session; don't share across threads
+- **Cancellation**: Pass `CancellationToken` through `ReadLineAsync` for graceful shutdown
+- **Retry logic**: Wrap the outer `RunAsync` in a Polly retry policy for transient failures
+- **Session persistence**: Parse the `sessionId` from the `system` event; store it for `/resume` support
+
+---
+
+## 13. Session Resumption in SDK Sessions
+
+SDK sessions can be resumed across program runs using the session ID from the initial run.
+
+### Capturing Session ID (Python)
+
+```python
+import anthropic
+import json
+
+async def run_with_session_tracking(prompt: str, project_dir: str):
+    client = anthropic.Anthropic()
+    session_id = None
+    
+    async with client.claude_code.subprocess.stream(
+        prompt=prompt,
+        cwd=project_dir,
+    ) as session:
+        async for event in session:
+            if event.type == "system":
+                session_id = event.session_id
+                print(f"Session started: {session_id}")
+            elif event.type == "result":
+                print(f"Complete. Cost: ${event.cost_usd:.4f}")
+                # Persist session_id for potential resume
+                with open(".last_session_id", "w") as f:
+                    f.write(session_id or "")
+    
+    return session_id
+```
+
+### Resuming a Previous Session (Python)
+
+```python
+async def resume_previous_session(new_prompt: str, project_dir: str):
+    try:
+        with open(".last_session_id") as f:
+            session_id = f.read().strip()
+    except FileNotFoundError:
+        session_id = None
+    
+    if not session_id:
+        print("No previous session to resume — starting fresh")
+        return await run_with_session_tracking(new_prompt, project_dir)
+    
+    client = anthropic.Anthropic()
+    
+    async with client.claude_code.subprocess.stream(
+        prompt=new_prompt,
+        cwd=project_dir,
+        resume=session_id,          # ← resume the previous session
+    ) as session:
+        async for event in session:
+            if event.type == "assistant":
+                for block in event.message.content:
+                    if block.type == "text":
+                        print(block.text, end="", flush=True)
+```
+
+### Session Resumption Behavior
+
+When resuming via the SDK:
+- The previous session's conversation history is restored
+- CLAUDE.md files are reloaded fresh from disk (not from the session snapshot)
+- MEMORY.md is reloaded fresh from disk
+- The same model and settings apply unless overridden in the new call
+- If the previous session was compacted, the compact summary is the starting point
+
+**Important:** Session IDs are project-path-specific. A session started in `/project/a` cannot be resumed in `/project/b`.
+
+---
+
+## 14. Error Taxonomy
+
+The SDK throws typed exceptions for different error conditions. Understanding the full error taxonomy helps write correct retry and recovery logic.
+
+### Python Exception Hierarchy
+
+```
+anthropic.ClaudeCodeError (base)
+├── ClaudeCodeNotFoundError
+│   └── The claude binary is not installed or not in PATH
+│   └── Fix: install the binary; verify PATH
+│
+├── ClaudeCodeAuthenticationError
+│   └── API key invalid, missing, or expired
+│   └── For OAuth: token expired or revoked
+│   └── Fix: set ANTHROPIC_API_KEY; refresh OAuth token
+│
+├── ClaudeCodeSessionError
+│   ├── SessionTimeoutError  — session exceeded the timeout threshold
+│   ├── MaxTurnsExceededError — numTurns exceeded max_turns limit
+│   └── SessionInterruptedError — binary process terminated unexpectedly
+│
+├── ClaudeCodeBudgetError
+│   └── costUsd exceeded max_budget_usd
+│   └── Fix: raise max_budget_usd; use cheaper model; reduce task scope
+│
+├── ClaudeCodeRateLimitError
+│   └── API rate limit hit; response includes retry_after seconds
+│   └── Fix: add exponential backoff; reduce parallel sessions
+│
+└── ClaudeCodeSubprocessError
+    └── Binary crashed or returned non-zero exit code
+    └── Includes binary stderr in error.stderr attribute
+    └── Fix: check stderr; verify binary health with `claude --version`
+```
+
+### TypeScript Error Types
+
+```typescript
+import { ClaudeCodeError } from "@anthropic-ai/sdk";
+
+try {
+  for await (const event of session) {
+    // ... process events
+  }
+} catch (err) {
+  if (err instanceof ClaudeCodeError) {
+    switch (err.code) {
+      case "not_found":
+        console.error("Claude binary not installed");
+        break;
+      case "authentication_error":
+        console.error("Invalid API key or expired OAuth token");
+        break;
+      case "rate_limit_error":
+        const retryAfter = err.headers?.["retry-after"];
+        await sleep(parseInt(retryAfter ?? "60") * 1000);
+        break;
+      case "budget_exceeded":
+        console.error(`Budget of $${err.budget} exceeded`);
+        break;
+      case "session_timeout":
+        console.error("Session timed out — increase timeout or split task");
+        break;
+      default:
+        console.error(`Unexpected error: ${err.code} — ${err.message}`);
+    }
+  }
+}
+```
+
+### Rate Limiting in SDK Context
+
+Rate limiting manifests differently in SDK sessions vs direct API calls:
+
+```
+SDK Rate Limiting Sequence:
+─────────────────────────────────────────────────
+1. SDK session starts → binary makes API call
+2. API returns 429 Too Many Requests
+3. Binary respects retry-after header (built-in retry)
+4. If still rate-limited after 3 retries → ClaudeCodeRateLimitError
+5. SDK propagates the exception to your code
+6. You catch it and implement backoff at the session level
+
+Recommendation: Do NOT retry individual tool calls within a session.
+Instead, retry at the session level (restart the session after backoff).
+The binary handles per-request retries internally.
+```
+
+**Rate limit strategy for parallel sessions:**
+
+```python
+import asyncio
+from asyncio import Semaphore
+
+async def process_files_safely(file_list: list[str], max_concurrent: int = 3):
+    """Process files with a semaphore to avoid rate limits."""
+    sem = Semaphore(max_concurrent)
+    client = anthropic.Anthropic()
+    
+    async def process_one(file_path: str):
+        async with sem:  # Only max_concurrent sessions at a time
+            try:
+                async with client.claude_code.subprocess.stream(
+                    prompt=f"Review {file_path} for issues",
+                    model="claude-haiku-4-5",   # Use cheapest model for bulk
+                ) as session:
+                    result = ""
+                    async for event in session:
+                        if event.type == "result":
+                            return event.stop_reason, event.cost_usd
+            except ClaudeCodeRateLimitError as e:
+                await asyncio.sleep(int(e.retry_after or 60))
+                return "rate_limited", 0.0
+    
+    results = await asyncio.gather(*[process_one(f) for f in file_list])
+    return results
+```
+
+---
+
+## 15. Bedrock Authentication in SDK Sessions
+
+When using AWS Bedrock as the API backend, the SDK authentication uses Bedrock credentials rather than Anthropic API keys.
+
+### Python with Bedrock (boto3)
+
+```python
+import boto3
+import os
+from anthropic import Anthropic
+
+def create_bedrock_claude_client(region: str = "us-east-1") -> Anthropic:
+    """
+    Create an Anthropic SDK client that routes through AWS Bedrock.
+    Uses boto3 for credential discovery (works with IAM roles, instance profiles,
+    environment variables, ~/.aws/credentials, etc.)
+    """
+    # Get credentials from boto3 (handles all AWS credential sources)
+    session = boto3.Session(region_name=region)
+    credentials = session.get_credentials().get_frozen_credentials()
+    
+    # Set environment variables for Claude Code binary
+    os.environ["AWS_ACCESS_KEY_ID"]     = credentials.access_key
+    os.environ["AWS_SECRET_ACCESS_KEY"] = credentials.secret_key
+    os.environ["AWS_SESSION_TOKEN"]     = credentials.token or ""
+    os.environ["ANTHROPIC_AUTH_TYPE"]   = "bedrock"
+    os.environ["ANTHROPIC_BEDROCK_BASE_URL"] = f"https://bedrock-runtime.{region}.amazonaws.com"
+    
+    return Anthropic()
+
+# Usage
+client = create_bedrock_claude_client(region="us-west-2")
+# Now SDK sessions route through Bedrock, using your AWS credentials
+```
+
+### Bedrock Service Tier Selection in SDK
+
+Bedrock supports three service tiers; select via environment variable:
+
+```python
+import os
+
+# Before creating the SDK client or running a session:
+os.environ["CLAUDE_CODE_BEDROCK_SERVICE_TIER"] = "flex"   # Options: default, flex, priority
+
+# Or in settings.json:
+# { "bedrock": { "serviceTier": "flex" } }
+```
+
+| Tier | Cost | Throughput | Best for |
+|------|------|-----------|---------|
+| `default` | Standard | Best-effort | General use, interactive sessions |
+| `flex` | ~40% lower | Lower, async | CI/CD batch processing, cost-sensitive |
+| `priority` | ~20% higher | Reserved throughput | SLA-bound production pipelines |
+
+---

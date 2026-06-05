@@ -8,7 +8,7 @@ description: >
   flow with destinations. v2.1.126 (June 2026).
 sidebar:
   order: 27
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 import PermissionsDiagram from '../../../components/interactive/PermissionsDiagram.jsx';
@@ -367,3 +367,155 @@ Prompt the user ──approve──► Permitted (logged, rule optionally saved)
 ```
 
 This layered evaluation means MDM-pushed deny rules always win regardless of what any project or user settings allow.
+
+---
+
+## Per-Tool Permission Requirements
+
+Not all tools require explicit permission. Here is the complete table of built-in tools and their default permission behavior:
+
+| Tool | Default permission | Can be in allow list | Can be in deny list | Notes |
+|------|-------------------|---------------------|--------------------|----|
+| `Read` | Allowed (project dir) | Yes | Yes | Outside project dir requires approval |
+| `Glob` | Allowed (project dir) | Yes | Yes | Search only; no write access |
+| `Grep` | Allowed (project dir) | Yes | Yes | Search only; no write access |
+| `Write` | Prompts | Yes | Yes | Always prompts unless allowlisted |
+| `Edit` | Prompts | Yes | Yes | Always prompts unless allowlisted |
+| `MultiEdit` | Prompts | Yes | Yes | Same as Edit, multiple changes |
+| `Bash` | Prompts (per-command) | Yes (pattern) | Yes (pattern) | Most granular — allow `Bash(git:*)` |
+| `Task` | Allowed | Yes | Yes | Subagent spawning |
+| `WebFetch` | Prompts | Yes (URL pattern) | Yes | `WebFetch(https://api.example.com:*)` |
+| `WebSearch` | Prompts | Yes | Yes | Prompts first time |
+| `ToolSearch` | Allowed | N/A | Yes | Deferred tool schema loading |
+| `Monitor` | Allowed | Yes | Yes | Background process streaming |
+| MCP tools | Prompts (first use) | Yes (tool pattern) | Yes | `mcp__github__*` pattern syntax |
+
+### Bash Permission Granularity
+
+The `Bash` tool supports the most granular allowlist patterns:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",             // All git commands
+      "Bash(npm run:*)",         // npm run scripts only (not npm install)
+      "Bash(python -m pytest:*)",// pytest only
+      "Bash(cat:*)",             // cat command (read-only)
+      "Bash(echo:*)",            // echo (safe)
+      "Bash(ls:*)",              // ls (read-only)
+      "Bash(grep:*)",            // grep (read-only)
+      "Bash(find:*)"             // find (read-only)
+    ],
+    "deny": [
+      "Bash(rm:*)",              // Block all rm commands
+      "Bash(sudo:*)",            // Block sudo
+      "Bash(curl:*)",            // Block outbound HTTP
+      "Bash(wget:*)",            // Block outbound HTTP
+      "Bash(ssh:*)",             // Block remote access
+      "Bash(chmod:*)",           // Block permission changes
+      "Bash(chown:*)"            // Block ownership changes
+    ]
+  }
+}
+```
+
+**Pattern matching rules:**
+- `Bash(git:*)` — matches any `git` command regardless of subcommand or flags
+- `Bash(npm run:*)` — matches `npm run <anything>` but NOT `npm install`
+- `Bash(cat:*)` — matches `cat` with any arguments
+- Patterns are prefix-based: `Bash(git:*)` also matches `git commit`, `git push --force`, etc.
+
+**Enterprise gotcha:** `Bash(git push --force:*)` in allow list would permit force pushes specifically. Be careful with allow patterns that are too broad.
+
+---
+
+## Sandbox Architecture — macOS Seatbelt and Linux bubblewrap
+
+When Claude Code runs in sandbox mode (the default for `--permission-mode default`), tool calls are executed inside a restricted sandbox environment.
+
+### macOS: Seatbelt (App Sandbox)
+
+macOS Seatbelt uses TrustedBSD mandatory access control. Claude Code generates a Seatbelt policy profile at runtime that permits only what is needed for the current session:
+
+```scheme
+; Seatbelt policy fragment (conceptual — actual policy is generated at runtime)
+(version 1)
+(deny default)
+
+; Allow reading the project directory
+(allow file-read-data
+  (subpath "/path/to/your/project"))
+
+; Allow writing only to specific paths
+(allow file-write-data
+  (subpath "/path/to/your/project")
+  (subpath "/tmp/claude-code-sandbox"))
+
+; Allow network access for API calls
+(allow network-outbound
+  (remote tcp "*:443"))
+
+; Allow spawning child processes (for Bash tool)
+(allow process-fork)
+(allow process-exec)
+```
+
+**Key Seatbelt behaviors:**
+- The policy is generated dynamically based on the project directory
+- Attempts to write outside the allowed paths return `EPERM` immediately
+- The policy is enforced at the kernel level — Claude Code's user-space code cannot bypass it
+
+### Linux: bubblewrap (bwrap)
+
+On Linux, Claude Code uses `bwrap` (bubblewrap) from the `bubblewrap` package. The command line used by Claude Code:
+
+```bash
+# Conceptual bwrap invocation (actual flags generated at runtime)
+bwrap \
+  --ro-bind /usr /usr \
+  --ro-bind /lib /lib \
+  --ro-bind /lib64 /lib64 \
+  --bind /path/to/project /path/to/project \
+  --bind /tmp/claude-code-sandbox /tmp \
+  --dev /dev \
+  --proc /proc \
+  --unshare-pid \
+  --unshare-net \           # Network isolated from host
+  -- /path/to/tool "$@"
+```
+
+**Note:** `--unshare-net` is NOT set when the Bash tool needs network access (for `curl`, `wget`, etc.). Whether network is sandboxed depends on the operation. The Bash tool inherits network access from the sandbox policy.
+
+### Checking If Sandbox Is Active
+
+```bash
+# Inside a Claude Code session
+claude --permission-mode default  # sandbox enabled
+
+# Verify sandbox status
+/status
+# Shows: "Sandbox: active (bwrap)" or "Sandbox: active (Seatbelt)"
+```
+
+### `disableBypassPermissionsMode` Managed Setting
+
+Enterprise admins can prevent users from bypassing the permission sandbox entirely:
+
+```json
+// /etc/claude-code/settings.json (Linux) or managed plist (macOS)
+{
+  "disableBypassPermissionsMode": true
+}
+```
+
+When this is set:
+- `claude --permission-mode bypassPermissions` is silently ignored and treated as `default`
+- The bypass permission mode is never available, even for developers with admin rights on their own machine
+- The setting is enforced at the Claude Code binary level, not just the settings layer
+
+This is the recommended setting for enterprise deployments where security policy must be consistent across all developer machines.
+
+---
+
+→ Full reference: [Permissions & Security](./permissions-security)

@@ -2,7 +2,7 @@
 title: Every Markdown File Claude Code Recognizes — Complete Catalog
 sidebar:
   order: 4
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Every Markdown File Claude Code Recognizes — Complete Catalog

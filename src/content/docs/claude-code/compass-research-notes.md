@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 22
   label: Research Notes
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Compass Research Notes

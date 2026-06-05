@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 8
   label: CI/CD Integration
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # CI/CD Integration — GitHub Actions & Automation
@@ -1415,3 +1415,516 @@ claude_review:
 ```
 
 **For enterprise/managed deployments:** Set `DISABLE_UPDATES: "1"` in `managed-settings.json` so it applies to all sessions organization-wide, without needing to set it in every pipeline definition.
+
+---
+
+## Jenkins Pipeline Integration
+
+Jenkins remains widely used in enterprise environments. Here is a complete Jenkinsfile with Claude Code integration:
+
+### Declarative Jenkinsfile
+
+```groovy
+// Jenkinsfile — Claude Code PR review pipeline
+
+pipeline {
+    agent { label 'linux-amd64' }
+
+    environment {
+        ANTHROPIC_API_KEY = credentials('anthropic-api-key')
+        DISABLE_UPDATES   = '1'
+        CLAUDE_MODEL      = 'claude-sonnet-4-6'
+    }
+
+    stages {
+        stage('Install Claude Code') {
+            steps {
+                sh '''
+                    if ! command -v claude &> /dev/null; then
+                        curl -fsSL https://claude.ai/install.sh | bash
+                        export PATH="$HOME/.local/bin:$PATH"
+                    fi
+                    claude --version
+                '''
+            }
+        }
+
+        stage('Get PR Diff') {
+            steps {
+                script {
+                    env.PR_DIFF = sh(
+                        script: 'git diff origin/main...HEAD',
+                        returnStdout: true
+                    ).trim()
+                }
+            }
+        }
+
+        stage('Claude Code Review') {
+            steps {
+                sh '''
+                    export PATH="$HOME/.local/bin:$PATH"
+                    
+                    REVIEW=$(echo "$PR_DIFF" | claude --print --no-interactive \
+                        "Review this PR diff for correctness, security issues, and code quality. \
+                         Format the output as markdown with sections: Summary, Issues, Suggestions")
+                    
+                    echo "$REVIEW" > review.md
+                    cat review.md
+                '''
+            }
+        }
+
+        stage('Post Review to PR') {
+            when {
+                expression { env.CHANGE_ID != null }  // Only on PRs
+            }
+            steps {
+                publishChecks(
+                    name: 'Claude Code Review',
+                    title: 'Automated Code Review',
+                    summary: readFile('review.md')
+                )
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'review.md', allowEmptyArchive: true
+        }
+    }
+}
+```
+
+### Jenkins with Bedrock Auth
+
+```groovy
+pipeline {
+    agent { label 'linux-amd64' }
+
+    environment {
+        DISABLE_UPDATES          = '1'
+        ANTHROPIC_AUTH_TYPE      = 'bedrock'
+        AWS_DEFAULT_REGION       = 'us-east-1'
+        ANTHROPIC_BEDROCK_BASE_URL = "https://bedrock-runtime.${AWS_DEFAULT_REGION}.amazonaws.com"
+    }
+
+    stages {
+        stage('Assume IAM Role') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+                                  credentialsId: 'aws-claude-bedrock-role']]) {
+                    sh '''
+                        # Credentials automatically injected as env vars by the Jenkins AWS plugin
+                        # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY set automatically
+                        claude --print --no-interactive "Summarise the changes in this commit"
+                    '''
+                }
+            }
+        }
+    }
+}
+```
+
+---
+
+## CircleCI Integration
+
+### Basic `.circleci/config.yml`
+
+```yaml
+version: 2.1
+
+orbs:
+  node: circleci/node@5.2.0
+
+executors:
+  claude-executor:
+    docker:
+      - image: cimg/base:stable
+    environment:
+      DISABLE_UPDATES: "1"
+
+jobs:
+  claude-review:
+    executor: claude-executor
+    steps:
+      - checkout
+
+      - run:
+          name: Install Claude Code
+          command: curl -fsSL https://claude.ai/install.sh | bash
+
+      - run:
+          name: Run Claude Code Review
+          command: |
+            export PATH="$HOME/.local/bin:$PATH"
+            
+            # Get PR diff
+            git fetch origin main:main
+            DIFF=$(git diff main...HEAD)
+            
+            # Run review
+            echo "$DIFF" | claude --print --no-interactive \
+              "Review this diff for bugs and security issues" \
+              > /tmp/review.md
+            
+            cat /tmp/review.md
+
+      - store_artifacts:
+          path: /tmp/review.md
+          destination: claude-review
+
+workflows:
+  pr-review:
+    jobs:
+      - claude-review:
+          filters:
+            branches:
+              ignore: main
+```
+
+### CircleCI with OIDC-based AWS Auth (no stored secrets)
+
+```yaml
+version: 2.1
+
+jobs:
+  claude-bedrock:
+    docker:
+      - image: cimg/base:stable
+    environment:
+      DISABLE_UPDATES: "1"
+      AWS_REGION: "us-east-1"
+    steps:
+      - checkout
+
+      - run:
+          name: Configure AWS credentials via OIDC
+          command: |
+            # CircleCI OIDC token is in $CIRCLE_OIDC_TOKEN
+            ROLE_ARN="arn:aws:iam::123456789:role/CircleCI-Claude-Role"
+            
+            CREDENTIALS=$(aws sts assume-role-with-web-identity \
+              --role-arn "$ROLE_ARN" \
+              --role-session-name "circleci-claude-$CIRCLE_BUILD_NUM" \
+              --web-identity-token "$CIRCLE_OIDC_TOKEN" \
+              --query 'Credentials')
+            
+            export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | jq -r .AccessKeyId)
+            export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | jq -r .SecretAccessKey)
+            export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | jq -r .SessionToken)
+
+      - run:
+          name: Install and run Claude Code via Bedrock
+          command: |
+            export PATH="$HOME/.local/bin:$PATH"
+            curl -fsSL https://claude.ai/install.sh | bash
+            
+            export ANTHROPIC_AUTH_TYPE="bedrock"
+            export ANTHROPIC_BEDROCK_BASE_URL="https://bedrock-runtime.$AWS_REGION.amazonaws.com"
+            
+            claude --print --no-interactive "Analyze this PR" < diff.txt
+```
+
+---
+
+## Bitbucket Pipelines Integration
+
+### Basic `bitbucket-pipelines.yml`
+
+```yaml
+image: atlassian/default-image:4
+
+definitions:
+  caches:
+    claude-binary: ~/.local/bin
+
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: Claude Code Review
+          caches:
+            - claude-binary
+          script:
+            - apt-get update -qq && apt-get install -y -qq curl jq
+            
+            # Install Claude Code (cached after first run)
+            - |
+              if [ ! -f "$HOME/.local/bin/claude" ]; then
+                curl -fsSL https://claude.ai/install.sh | bash
+              fi
+            
+            # Run review
+            - |
+              export PATH="$HOME/.local/bin:$PATH"
+              export DISABLE_UPDATES=1
+              
+              # Get diff against main
+              git fetch origin main
+              git diff origin/main...HEAD > /tmp/pr-diff.txt
+              
+              cat /tmp/pr-diff.txt | claude --print --no-interactive \
+                "Review this PR diff for issues. Be concise." \
+                > /tmp/review.md
+              
+              echo "=== Claude Code Review ==="
+              cat /tmp/review.md
+
+          artifacts:
+            - /tmp/review.md
+```
+
+---
+
+## Cost Attribution Per PR
+
+Track and report Claude Code costs per PR for budget management.
+
+### GitHub Actions: Post Cost as PR Comment
+
+```yaml
+- name: Run Claude Code with cost tracking
+  id: claude-review
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    DISABLE_UPDATES: "1"
+  run: |
+    # Run with JSON output to capture cost
+    RESULT=$(claude --print --output-format json \
+      "Review the PR changes for issues" \
+      < diff.txt)
+    
+    # Extract cost from result event
+    COST=$(echo "$RESULT" | jq -r 'select(.type=="result") | .costUsd // 0')
+    echo "cost=$COST" >> $GITHUB_OUTPUT
+    
+    # Extract the review text
+    echo "$RESULT" | jq -r 'select(.type=="assistant") | .message.content[] | select(.type=="text") | .text' \
+      > review.md
+
+- name: Post review comment with cost
+  uses: marocchino/sticky-pull-request-comment@v2
+  with:
+    message: |
+      ## Claude Code Review
+      
+      $(cat review.md)
+      
+      ---
+      *Cost: ${{ steps.claude-review.outputs.cost }}*
+```
+
+### Budget Alert Hook
+
+Trigger an alert when a single CI run exceeds a budget threshold:
+
+```bash
+#!/bin/bash
+# post-claude.sh — run after each Claude Code job, alert if cost > threshold
+
+COST="$1"         # Pass in the cost_usd from the result event
+THRESHOLD="0.50"  # Alert if a single run costs more than $0.50
+PR_URL="$2"       # Pass in the PR URL for context
+
+if (( $(echo "$COST > $THRESHOLD" | bc -l) )); then
+  curl -s -X POST "$SLACK_WEBHOOK_URL" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"text\": \"⚠️ Claude Code CI cost alert: \$${COST} (threshold: \$${THRESHOLD})\n${PR_URL}\"
+    }"
+fi
+```
+
+---
+
+## Prompt Cache Warming in CI
+
+Prompt caching significantly reduces costs when Claude Code reads the same CLAUDE.md and source files across multiple CI runs on the same PR. Understanding and optimising cache hit rates can reduce Claude Code CI costs by 40–70%.
+
+### How Cache Works in CI
+
+```
+First CI run on a PR:
+  1. CLAUDE.md loaded → cache miss → written to cache
+  2. Source files read → cache miss → written to cache
+  3. Total cost: full input rate ($3.00/M for Sonnet)
+  
+Second CI run (same files, same CLAUDE.md):
+  1. CLAUDE.md loaded → cache hit → $0.30/M (10× cheaper)
+  2. Unchanged source files → cache hit → $0.30/M
+  3. New/changed files → cache miss → $3.00/M
+  
+Savings: ~70% on repeat runs, depending on how much changed
+```
+
+### Maximising Cache Hit Rate
+
+1. **Use a stable CLAUDE.md**: If your CLAUDE.md changes on every commit, it invalidates the cache. Keep project instructions stable; put PR-specific context in the prompt, not in CLAUDE.md.
+
+2. **Use the same model**: Cache is per-model. Switching from `claude-sonnet-4-6` to `claude-opus-4-8` mid-PR loses the cache.
+
+3. **Structure prompts for cache stability**: Put stable content (CLAUDE.md context, tool instructions) first. Put variable content (the PR diff) last. Cache is prefix-based.
+
+4. **Monitor cache metrics in the result event**:
+
+```bash
+# Parse cache metrics from the result JSON event
+RESULT=$(claude --print --output-format json "Review PR" < diff.txt)
+
+CACHE_READ=$(echo "$RESULT" | jq 'select(.type=="result") | .usage.cacheReadTokens')
+CACHE_WRITE=$(echo "$RESULT" | jq 'select(.type=="result") | .usage.cacheWriteTokens')
+TOTAL_INPUT=$(echo "$RESULT" | jq 'select(.type=="result") | .usage.inputTokens')
+
+HIT_RATE=$(echo "scale=2; $CACHE_READ / $TOTAL_INPUT * 100" | bc)
+
+echo "Cache hit rate: ${HIT_RATE}%"
+echo "Cache read tokens: $CACHE_READ"
+echo "Cache write tokens: $CACHE_WRITE"
+```
+
+---
+
+## Multi-Stage CI Pipeline Pattern
+
+Use Claude Code in multiple pipeline stages for a staged review process.
+
+```yaml
+# github-actions/multi-stage.yml
+name: Multi-Stage Claude Review
+
+on: [pull_request]
+
+jobs:
+  # Stage 1: Fast security scan (Haiku — cheap and fast)
+  security-scan:
+    runs-on: ubuntu-latest
+    outputs:
+      security-issues: ${{ steps.scan.outputs.issues }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Install Claude Code
+        run: curl -fsSL https://claude.ai/install.sh | bash
+      - name: Security Scan
+        id: scan
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DISABLE_UPDATES: "1"
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          git diff origin/main...HEAD > diff.txt
+          
+          RESULT=$(claude --print --output-format json \
+            --model claude-haiku-4-5 \
+            "List any security issues in this diff. Reply with a JSON array of issues. Reply [] if none." \
+            < diff.txt)
+          
+          ISSUES=$(echo "$RESULT" | jq -r 'select(.type=="assistant") | .message.content[0].text')
+          echo "issues=$ISSUES" >> $GITHUB_OUTPUT
+
+  # Stage 2: Deep code review (Sonnet — only if security scan passes)
+  code-review:
+    needs: security-scan
+    if: ${{ needs.security-scan.outputs.security-issues == '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Install Claude Code
+        run: curl -fsSL https://claude.ai/install.sh | bash
+      - name: Deep Code Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DISABLE_UPDATES: "1"
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          git diff origin/main...HEAD > diff.txt
+          
+          claude --print --no-interactive \
+            "Do a thorough code review. Focus on correctness, maintainability, and test coverage." \
+            < diff.txt \
+            > review.md
+          
+          cat review.md
+
+  # Stage 3: Architecture review (Opus — only for large changes)
+  arch-review:
+    needs: code-review
+    if: ${{ github.event.pull_request.additions + github.event.pull_request.deletions > 500 }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Install Claude Code
+        run: curl -fsSL https://claude.ai/install.sh | bash
+      - name: Architecture Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DISABLE_UPDATES: "1"
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          git diff origin/main...HEAD > diff.txt
+          
+          claude --print --no-interactive \
+            --model claude-opus-4-8 \
+            "Review the architectural impact of these changes. Are there better approaches?" \
+            < diff.txt \
+            > arch-review.md
+          
+          cat arch-review.md
+```
+
+---
+
+## CI Concurrency Management
+
+When many PRs are open simultaneously, all triggering Claude Code jobs, you can hit API rate limits. Here are strategies to manage concurrency:
+
+### GitHub Actions Concurrency Groups
+
+```yaml
+# Limit Claude Code reviews to one at a time per branch
+concurrency:
+  group: claude-review-${{ github.ref }}
+  cancel-in-progress: false  # Queue, don't cancel
+```
+
+### Rate Limit Retry Wrapper
+
+```bash
+#!/bin/bash
+# claude-with-retry.sh — wrap claude with exponential backoff for rate limits
+
+MAX_RETRIES=4
+RETRY_DELAY=30  # seconds, doubles each retry
+
+for i in $(seq 1 $MAX_RETRIES); do
+  OUTPUT=$(claude --print --no-interactive "$@" 2>&1)
+  EXIT_CODE=$?
+  
+  if [ $EXIT_CODE -eq 0 ]; then
+    echo "$OUTPUT"
+    exit 0
+  fi
+  
+  if echo "$OUTPUT" | grep -q "rate_limit\|429\|TooManyRequests"; then
+    WAIT=$((RETRY_DELAY * (2 ** (i - 1))))
+    echo "[Retry $i/$MAX_RETRIES] Rate limited. Waiting ${WAIT}s..."
+    sleep $WAIT
+  else
+    echo "$OUTPUT" >&2
+    exit $EXIT_CODE
+  fi
+done
+
+echo "Max retries reached. Exiting." >&2
+exit 1
+```
+
+Usage in pipeline:
+```yaml
+- run: bash claude-with-retry.sh "Review this PR" < diff.txt
+```

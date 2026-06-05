@@ -8,7 +8,7 @@ description: >
   pattern with change detection. v2.1.126 (June 2026).
 sidebar:
   order: 29
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 import MonorepoDiagram from '../../../components/interactive/MonorepoDiagram.jsx';
@@ -478,3 +478,182 @@ Different services have different complexity profiles. Match the model to the ta
 | Data pipeline / analytics | `claude-sonnet-4-6` | SQL, data transforms, schema migrations |
 
 The model set in a service's `.claude/settings.json` applies to all Claude Code sessions opened from within that directory tree. Root `settings.json` sets the fallback for any service without its own model preference.
+
+---
+
+## Shared Rules Library Pattern
+
+In a monorepo, multiple services often share common coding standards (security rules, naming conventions, testing patterns). Instead of duplicating these in each service's `.claude/rules/` directory, use a shared rules library with `@import`.
+
+### Directory Structure
+
+```
+.claude/
+  rules/
+    shared/                    ← shared rules imported by services
+      security.md              ← input validation, auth checks, secret handling
+      testing.md               ← test naming, coverage requirements
+      api-conventions.md       ← REST naming, status codes, pagination
+      logging.md               ← log format, sensitive data scrubbing
+  
+services/
+  api/.claude/rules/
+    api-service.md             ← api-specific rules
+    # File content:
+    # ---
+    # paths: ["services/api/**/*.ts"]
+    # ---
+    # @import ../../../../.claude/rules/shared/security.md
+    # @import ../../../../.claude/rules/shared/api-conventions.md
+    #
+    # [api-specific rules below...]
+  
+  payments/.claude/rules/
+    payments.md                ← payments-specific rules
+    # @import ../../../../.claude/rules/shared/security.md
+    # @import ../../../../.claude/rules/shared/testing.md
+    # [PCI-DSS-specific rules below...]
+```
+
+### Why This Works
+
+- `@import` is resolved inline at rule load time — the full content of the shared rule appears in context when the rule fires
+- Each service can import only the shared rules it needs (payments imports security + testing; frontend imports testing + api-conventions)
+- Updating `shared/security.md` immediately affects all services that import it — no duplication to keep in sync
+- Rules still load conditionally (only when matching paths are touched) — 0 tokens at session start even with many imports
+
+### Token Budget Impact
+
+```
+Without shared rules (duplicated content):
+  - Each service rule file: ~1,500 tokens
+  - 5 services × 3 rules each = 15 rule files = 22,500 tokens if all loaded
+  - Duplicate shared content counted multiple times
+
+With shared rules library:
+  - Shared security.md: ~800 tokens (loaded once per service touch)
+  - Service-specific additions: ~300 tokens per file
+  - Still conditional — only loads when service files are touched
+  - De-duplicated across the session
+```
+
+---
+
+## CI/CD Matrix Build with Change Detection
+
+In a monorepo, you typically only want to run Claude Code on services that actually changed in a given PR. Here is a complete GitHub Actions matrix build pattern that detects changed services and scopes Claude Code to those services only.
+
+### Detecting Changed Services
+
+```yaml
+name: Claude Code PR Review — Monorepo
+
+on: [pull_request]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.changed.outputs.matrix }}
+      any_changed: ${{ steps.changed.outputs.any_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Detect changed services
+        id: changed
+        run: |
+          # Get changed files in this PR
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          # Map each file to its service
+          declare -A SERVICES
+          for file in $CHANGED; do
+            if [[ "$file" == services/api/* ]]; then SERVICES["api"]=1; fi
+            if [[ "$file" == services/frontend/* ]]; then SERVICES["frontend"]=1; fi
+            if [[ "$file" == services/payments/* ]]; then SERVICES["payments"]=1; fi
+            if [[ "$file" == services/worker/* ]]; then SERVICES["worker"]=1; fi
+            if [[ "$file" == services/gateway/* ]]; then SERVICES["gateway"]=1; fi
+            # Root changes (shared code) trigger all services
+            if [[ "$file" == lib/* || "$file" == shared/* ]]; then
+              SERVICES["api"]=1; SERVICES["frontend"]=1; SERVICES["payments"]=1
+              SERVICES["worker"]=1; SERVICES["gateway"]=1
+            fi
+          done
+
+          # Build matrix JSON
+          MATRIX_ARRAY=()
+          for service in "${!SERVICES[@]}"; do
+            MATRIX_ARRAY+=("\"$service\"")
+          done
+
+          if [ ${#MATRIX_ARRAY[@]} -eq 0 ]; then
+            echo "any_changed=false" >> $GITHUB_OUTPUT
+            echo 'matrix={"service":[]}' >> $GITHUB_OUTPUT
+          else
+            MATRIX=$(IFS=,; echo "{\"service\":[${MATRIX_ARRAY[*]}]}")
+            echo "any_changed=true" >> $GITHUB_OUTPUT
+            echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          fi
+
+  review:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.any_changed == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+      fail-fast: false          # Review all changed services even if one fails
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Install Claude Code
+        run: curl -fsSL https://claude.ai/install.sh | bash
+
+      - name: Review changed service — ${{ matrix.service }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DISABLE_UPDATES: "1"
+          SERVICE: ${{ matrix.service }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          
+          # Get diff for this specific service only
+          git diff origin/main...HEAD -- services/$SERVICE/ > /tmp/diff-$SERVICE.txt
+          
+          if [ ! -s /tmp/diff-$SERVICE.txt ]; then
+            echo "No changes in services/$SERVICE — skipping"
+            exit 0
+          fi
+          
+          # Run Claude Code in the service directory so CLAUDE.md is loaded
+          cd services/$SERVICE
+          
+          cat /tmp/diff-$SERVICE.txt | claude --print --no-interactive \
+            "Review the changes to the $SERVICE service. Check for: correctness, security, test coverage, and adherence to team conventions." \
+            > /tmp/review-$SERVICE.md
+          
+          echo "=== Review for $SERVICE ==="
+          cat /tmp/review-$SERVICE.md
+
+      - name: Upload review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-${{ matrix.service }}
+          path: /tmp/review-${{ matrix.service }}.md
+```
+
+### Key Pattern Details
+
+1. **Service isolation**: `cd services/$SERVICE` before running `claude` loads that service's CLAUDE.md and rules files — Claude has the right context for each service
+2. **Diff scoping**: `git diff ... -- services/$SERVICE/` limits the diff to only changed files in that service
+3. **Root changes trigger all**: When shared libraries change, all services get reviewed because they could all be affected
+4. **Parallel matrix**: GitHub Actions runs each service review in parallel (up to the concurrency limit)
+5. **fail-fast: false**: Ensures all service reviews complete even if one fails
+
+---
+
+→ Full reference: [Monorepo Guide](./monorepo-guide)

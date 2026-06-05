@@ -8,7 +8,7 @@ description: >
   /advisor pattern). Targets .NET/Azure developers. Covers Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 11
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Elite Claude Code mastery: a complete AI Engineer training program

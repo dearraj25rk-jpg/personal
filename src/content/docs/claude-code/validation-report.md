@@ -7,7 +7,7 @@ description: >
   June 2026 supplementary pass adding 22 validated claims (Section 16).
 sidebar:
   order: 13
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Concept Validation Report

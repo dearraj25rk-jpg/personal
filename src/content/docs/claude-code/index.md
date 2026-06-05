@@ -3,7 +3,7 @@ title: Claude Code
 description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles (with interactive diagram), memory management (7 types), models & pricing, slash commands, context engineering, context window architecture, native binary guide, remote control & cloud sessions, enterprise deployment, monorepo patterns, and 21 interactive diagrams. 48 total resources. Claude Code v2.1.126 · Updated June 2026.
 sidebar:
   order: 1
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
@@ -85,29 +85,38 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 
 ---
 
-## June 2026 — Documentation Update
+## June 2026 — Documentation Update (Comprehensive Depth Pass)
 
-This site received a comprehensive documentation refresh on **2026-06-04**, covering all Claude Code features through **v2.1.126** (the latest stable release as of May 19, 2026).
+This site received its second comprehensive documentation refresh on **2026-06-05**, covering all Claude Code features through **v2.1.126** (the latest stable release as of May 19, 2026). This pass focused on depth, precision, and completeness across all 51 documentation files.
 
-**What was updated in this refresh:**
+**What was added in the June 5, 2026 pass:**
+
+- **3 new reference guides** added:
+  - **Keyboard Shortcuts & Terminal Integration** — complete keybindings reference, `/terminal-setup` for all terminals, readline shortcuts, terminal compatibility matrix, accessibility, troubleshooting
+  - **Session Management & Resumability** — `/resume`, `/rename`, session persistence, Python/TypeScript SDK StatefulClient, cost tracking per session, multi-session patterns, security
+  - **Themes & UI Customization** — built-in themes, `/theme` command, custom theme authoring via `~/.claude/themes/*.md`, team distribution, dark/light auto-switch, CLAUDE_THEME env var
+- **SDK Guide** enriched with .NET/C# subprocess integration, session resumption across SDK runs, complete error taxonomy, Bedrock boto3 auth
+- **CI/CD Integration** expanded with Jenkins, CircleCI, Bitbucket Pipelines examples, cost attribution per PR, prompt cache warming analysis, multi-stage pipeline pattern, concurrency management
+- **Native Binary Guide** extended with binary integrity verification, update mechanism detail, bfs/ugrep behavioral nuances for symlinks and Unicode
+- **Remote Control Guide** extended with full feature availability matrix, latency model explanation, enterprise self-hosted relay configuration, comprehensive troubleshooting
+- **Worktrees Guide** significantly expanded with advanced patterns (Feature Branch Isolation, Automated CI via SDK, Agent Teams Across Worktrees), cleanup best practices, GitHub Actions integration
+- **Agent Teams Guide** significantly expanded with Hub-and-Spoke orchestration, Pipeline and Peer Review patterns, external services integration, debugging guide, performance tuning
+- **Monorepo Diagram** enriched with shared rules library pattern, CI/CD matrix build with change detection
+- **Slash Commands Diagram** enriched with complete alphabetical command reference table, argument parsing deep dive
+- **Permissions Diagram** enriched with per-tool permission requirements table, Seatbelt/bubblewrap sandbox architecture details, `disableBypassPermissionsMode` documentation
+- All 51 files updated to `lastUpdated: 2026-06-05`
+
+**Previous June 4 pass included:**
 
 - All 48 documentation files reviewed and updated for accuracy through v2.1.126
-- 3 new reference guides added: Context Window Architecture, Native Binary Guide, Remote Control & Cloud Sessions
+- 3 new reference guides added (June 4): Context Window Architecture, Native Binary Guide, Remote Control & Cloud Sessions
 - 1 new interactive diagram: Output Styles (with token cost calculator and custom style builder)
 - Fixed data inconsistency: `ModelsDiagram.jsx` now correctly shows Opus 4.6 with 200K context (was incorrectly showing 1M)
-- Fixed pricing data in Compass Research Notes: Opus pricing corrected to $15/M input / $75/M output, Haiku to $0.80/M input / $4/M output, auto-compact trigger corrected to 83.5%
+- Fixed pricing data: Opus at $15/M input / $75/M output, Haiku at $0.80/M input / $4/M output, auto-compact trigger at 83.5%
 - 6 MDX interactive diagram pages enriched with new reference sections
 - 7 reference guide files enriched with missing sections (Agent Teams state machine, Worktrees state sharing, Native binary enterprise deployment, mcp_tool hook matcher security, Azure WIF for CI, and more)
-- New ASCII flow diagrams added throughout: agentic loop detail, model decision trees, cost optimization flowcharts, MCP debugging flows, and configuration hierarchy visuals
-- Pricing tables updated to reflect current rates: Opus 4.8/4.7/4.6 at $15/$75/$1.50 per million tokens; Sonnet 4.6 at $3/$15/$0.30; Haiku 4.5 at $0.80/$4.00/$0.08
-- Extended cost optimization strategies with worked examples: prompt caching ROI, multi-model agent fleet pricing, per-sprint cost projections
-- `claude-opus-4-8` documented as the newest Opus model holding the `opus` alias, with full capability and pricing comparison against Opus 4.7
 - Bedrock service tiers (`default`, `flex`, `priority`) and Vertex AI WIF documented in detail
-- New "Common Beginner Mistakes" reference table with symptom/cause/fix format
-- New "Daily Workflow Patterns" section covering morning standup, feature implementation, debugging session, and PR review workflows
-- Extended thinking mechanics documented in depth: token economics, budget ranges by effort level, when thinking pays off vs. when it wastes budget
-- Hooks system updated with `mcp_tool` matcher and `DISABLE_UPDATES` env var documentation
-- All date references updated to June 2026
+- `claude-opus-4-8` documented as the newest Opus model holding the `opus` alias
 
 ---
 

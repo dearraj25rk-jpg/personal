@@ -8,7 +8,7 @@ description: >
   enterprise hooks for compliance, and organisational rollout playbook. v2.1.126 (May 2026).
 sidebar:
   order: 26
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Enterprise Deployment Guide

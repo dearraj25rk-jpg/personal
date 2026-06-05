@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 25
   label: Context Window Guide
-lastUpdated: 2026-06-04
+lastUpdated: 2026-06-05
 ---
 
 # Context Window Architecture — Complete Reference
@@ -996,3 +996,503 @@ This writes to MEMORY.md, which survives compaction.
 - [MCP Servers Guide](/claude-code/mcp-servers-guide) — MCP server configuration and tool schema management
 - [Slash Commands Reference](/claude-code/slash-commands-reference) — `/compact`, `/context`, `/memory` command reference
 - [Troubleshooting](/claude-code/troubleshooting) — context-related error messages and resolutions
+
+---
+
+## 13. Advanced Context Engineering Techniques
+
+The following techniques go beyond the basic optimizations in Section 10. These are high-leverage patterns for developers who work with Claude Code daily and want to extract maximum value from every token.
+
+---
+
+### Technique 1: Surgical Context Loading
+
+**The problem:** Developers commonly ask Claude to "look at the codebase" before a task. This triggers broad file reads that consume tens of thousands of tokens — much of it irrelevant to the actual task.
+
+**Surgical context loading** is the practice of loading only the precise code the task requires, using a targeted Glob + Grep + Read sequence rather than exploratory file reads.
+
+**Before: Exploratory (wasteful)**
+
+```
+Turn 1: "Let me look at the codebase structure"
+  → Read src/           # reads every file in src/, ~30K tokens
+  → Read tests/         # reads every test, ~15K tokens
+  → Read docs/          # reads docs, ~8K tokens
+  Total loaded: ~53K tokens before any work begins
+```
+
+**After: Surgical (efficient)**
+
+```
+Turn 1: "I need to modify the JWT validation logic"
+  Step 1: Find JWT-related files
+    Grep "jwt" --type go → 3 files: auth.go, middleware.go, token_test.go
+  Step 2: Find the specific function
+    Grep "func.*[Vv]alidate" src/middleware/auth.go → line 42
+  Step 3: Read only the relevant section
+    Read src/middleware/auth.go offset=38 limit=60  ← reads ~60 lines
+  Total loaded: ~180 tokens (99.7% reduction)
+```
+
+**Token cost comparison:**
+
+| Approach | Tokens Used | Relevant Tokens | Efficiency |
+|----------|-------------|-----------------|------------|
+| Exploratory (read all) | ~53,000 | ~2,000 | 3.8% |
+| Surgical (Grep + targeted Read) | ~180 | ~180 | 100% |
+| Savings | **~52,820 tokens** | | |
+
+**The surgical loading pattern:**
+
+```
+PHASE 1: Locate (0 tokens for results, only for the Grep/Glob call)
+  Glob "**/*auth*.go"              → find auth-related files by name
+  Grep "jwt" --type go             → find files containing jwt references
+  Grep "func.*Validate" auth.go    → find the exact function
+
+PHASE 2: Read precisely (tokens proportional to what you read)
+  Read auth.go offset=38 limit=60  → read only the function body
+
+PHASE 3: Expand only if needed
+  If the function calls helpers you need:
+  Grep "func validateClaims" → find definition line
+  Read auth.go offset=... limit=... → read only that helper
+```
+
+**When surgical loading does NOT work:**
+
+- Architectural understanding tasks ("how does the auth system work end to end?") — these genuinely require broad reading
+- Refactors that touch many files — you will eventually need to read most of them
+- First-time codebase exploration — invest tokens upfront in broad reading, then apply surgical loading for subsequent tasks
+
+---
+
+### Technique 2: The @import Composition Pattern
+
+CLAUDE.md files support `@import` directives that load the content of another file inline. This enables a **modular composition pattern** where a lean root CLAUDE.md delegates to specialized reference files, loading them only when needed.
+
+**The naïve approach: monolithic CLAUDE.md**
+
+```markdown
+# CLAUDE.md (3,200 tokens — always in context)
+
+## Go Style Guide
+[800 lines of Go conventions, examples, anti-patterns]
+
+## Security Requirements
+[400 lines of security rules]
+
+## API Design Patterns
+[600 lines of REST API conventions]
+
+## Database Conventions
+[300 lines of PostgreSQL patterns]
+
+## Testing Standards
+[500 lines of test patterns]
+```
+
+This 3,200-token CLAUDE.md is loaded in full on every session, even when you are only writing a test (and don't need the API patterns) or fixing a bug (and don't need the testing standards).
+
+**The @import composition approach:**
+
+```markdown
+# CLAUDE.md (280 tokens — always in context)
+
+Core project: MyApp Go microservice.
+Team: 5 engineers. Code review required for all PRs.
+
+## Quick Reference
+@import .claude/guides/go-style.md       when working with *.go files
+@import .claude/guides/security.md       when modifying auth, api, or db code
+@import .claude/guides/api-patterns.md  when creating or modifying API endpoints
+@import .claude/guides/db-patterns.md   when working with database queries
+@import .claude/guides/test-standards.md when writing or modifying tests
+```
+
+```
+.claude/
+  guides/
+    go-style.md        (800 tokens — imported only for .go work)
+    security.md        (400 tokens — imported only for auth/api/db)
+    api-patterns.md    (600 tokens — imported only for API changes)
+    db-patterns.md     (300 tokens — imported only for DB work)
+    test-standards.md  (500 tokens — imported only for test work)
+```
+
+**Token cost comparison for a 5-task session:**
+
+| Task | Monolithic CLAUDE.md | @import Composition | Savings |
+|------|---------------------|---------------------|---------|
+| Fix bug in auth.go | 3,200 tokens | 280 + 400 = 680 tokens | 2,520 |
+| Write unit tests | 3,200 tokens | 280 + 500 = 780 tokens | 2,420 |
+| Add REST endpoint | 3,200 tokens | 280 + 600 + 400 = 1,280 tokens | 1,920 |
+| Optimize DB query | 3,200 tokens | 280 + 300 = 580 tokens | 2,620 |
+| Code review PR | 3,200 tokens | 280 + 800 = 1,080 tokens | 2,120 |
+| **Total (5 tasks)** | **16,000 tokens** | **4,400 tokens** | **11,600** |
+
+**The 5-file composition example:**
+
+```
+.claude/
+  guides/
+    1-project-overview.md    (always imported — team context, repo structure)
+    2-coding-standards.md    (imported for all code files)
+    3-security-checklist.md  (imported for auth, payments, user data code)
+    4-api-contracts.md       (imported for handler and route files)
+    5-deployment-guide.md    (imported for CI/CD, Dockerfile, terraform files)
+```
+
+**Root CLAUDE.md:**
+
+```markdown
+---
+# Core: always in context (200 tokens)
+Project: MyApp — Go microservice for payment processing.
+Git workflow: feature branches → PR → review → squash merge to main.
+
+# Module imports — loaded when relevant paths are accessed
+@import .claude/guides/1-project-overview.md    # always
+@import .claude/guides/2-coding-standards.md    # when: **/*.go
+@import .claude/guides/3-security-checklist.md  # when: **/auth/**, **/payments/**, **/users/**
+@import .claude/guides/4-api-contracts.md       # when: **/handlers/**, **/routes/**
+@import .claude/guides/5-deployment-guide.md    # when: Dockerfile, *.yml, terraform/**
+```
+
+**@import resolution timing:**
+
+`@import` directives are resolved at session start for unconditional imports (no `when:` qualifier). Conditional `@import` directives with `when:` patterns are resolved lazily — they are loaded the first time Claude accesses a file matching the `when:` glob pattern. After loading, the imported content remains in context for the rest of the session.
+
+---
+
+### Technique 3: Compaction-Aware Session Design
+
+Sessions that work WITH the compaction mechanism — rather than fighting it — achieve better continuity and lower cost. This technique involves designing your session workflow around compaction events.
+
+**The core insight:** Compaction is not a disruption — it is a checkpoint. Treat it as a deliberate phase boundary.
+
+**Using MEMORY.md as Compaction Checkpoints**
+
+Before any compaction (auto or manual), save in-progress state to MEMORY.md. MEMORY.md is re-read from disk after compaction and survives the context reset:
+
+```
+# Pattern: checkpoint before phase boundaries
+
+Phase 1 complete: exploration
+  /memory "Decided to use approach X for the auth refactor. Key files: auth.go, middleware.go, token.go. Do NOT change the public API surface — only internal implementation."
+
+# Run /compact
+# → Context cleared, MEMORY.md re-read
+# → Claude knows the decision from memory even though conversation was discarded
+
+Phase 2: implementation begins with full context headroom
+```
+
+**Designing Prompts That Summarize Well**
+
+Compaction synthesis works better when your prompts and responses are structured. Claude's summarization captures structured information (decisions, file lists, errors) more faithfully than conversational prose.
+
+```
+# Harder to survive compaction (unstructured):
+User: "yeah that thing we talked about earlier with the middleware..."
+Claude: "right so to continue from before, the approach was..."
+
+# Easier to survive compaction (structured):
+User: "Auth middleware refactor — Phase 2: implement JWT validation per the plan"
+Claude: "Implementing JWT validation in src/middleware/auth.go:
+  - Adding validateJWT() function
+  - Modifying AuthMiddleware to call validateJWT
+  - Writing claims extraction helper..."
+```
+
+Structured task descriptions include explicit file paths, function names, and decisions — exactly what the compaction synthesis prompt looks for.
+
+**The `/compact` with Instructions Pattern**
+
+When you run `/compact` manually, you can provide a hint to guide the summarization:
+
+```
+/compact "Preserve: (1) the decision to use RS256 not HS256 for JWT signing, (2) the three files we've edited so far: auth.go, token.go, config.go, (3) the failing test in auth_test.go line 87 that we haven't fixed yet"
+```
+
+This instructs Claude to prioritize specific information in the compaction summary. Without the hint, Claude makes its own judgment about what to summarize — which may omit details you consider important.
+
+**Long Session Architecture:**
+
+```
+Session start
+  └── Phase 1: Exploration (read broadly, understand codebase)
+      └── /memory "Architecture: layered, REST API, PostgreSQL, JWT auth"
+      └── /compact "Preserve: file structure, key design patterns found"
+  └── Phase 2: Planning (design the solution)
+      └── /memory "Plan: refactor auth in 3 steps: 1) extract interface, 2) new impl, 3) swap"
+      └── /compact "Preserve: the 3-step plan and the interface we designed"
+  └── Phase 3: Implementation Step 1
+      └── (work)
+      └── /memory "Step 1 done: auth.Interface extracted to auth/interface.go"
+      └── /compact
+  └── Phase 4: Implementation Steps 2+3
+      └── (work toward natural session end)
+```
+
+---
+
+### Technique 4: Rules as Context Budget Multipliers
+
+Rules files (`.claude/rules/*.md`) are the most token-efficient way to scale guidance in Claude Code. Understanding why requires understanding the deferred loading model.
+
+**The core economics:**
+
+```
+CLAUDE.md instruction (always in context):
+  Every turn: pay for the instruction every time it is in the window
+  200 turns × 100 tokens = 20,000 tokens total cost
+
+Rules file (deferred, path-scoped):
+  Turns without matching files: 0 tokens
+  Turns with matching files: pay once, then cached
+  If 20% of turns touch the relevant files:
+    40 turns × 100 tokens = 4,000 tokens total cost
+    Savings: 16,000 tokens (80% reduction)
+```
+
+**Concrete example: TypeScript type safety rules**
+
+You have 300 tokens of TypeScript type-safety guidance. You can place it in:
+
+**Option A: CLAUDE.md** (always-in-context)
+
+```
+Cost per turn: 300 tokens
+200-turn session: 60,000 tokens
+Even when working on Go code, Python scripts, Dockerfiles — you pay 300 tokens
+```
+
+**Option B: `.claude/rules/typescript-types.md`** (glob: `**/*.{ts,tsx}`)
+
+```
+Cost when NOT touching TypeScript: 0 tokens
+Cost when touching TypeScript: 300 tokens (cached after first load)
+200-turn session (50% TypeScript turns):
+  100 turns × 0 = 0 tokens
+  + 100 turns × 300 tokens (but cached — ~$0.03/MTok vs $3/MTok)
+  ≈ effectively 300 tokens of cache-read cost for the full session
+```
+
+**Token efficiency comparison (1,000-rule instruction set, 200-turn session):**
+
+| Placement | Tokens | Notes |
+|-----------|--------|-------|
+| Everything in CLAUDE.md | 200,000 tokens | 1,000 × 200 turns, uncached |
+| Split across 10 rules files (100-token each) | ~2,000–8,000 tokens | Only relevant rules loaded; cached aggressively |
+| Savings | ~192,000–198,000 tokens | |
+
+**Rules as multipliers:** Each rule file multiplies the effective guidance capacity of your setup. You can maintain 50 highly specific rules at near-zero cost, because any given turn activates only the 2–5 rules relevant to the files being touched.
+
+**Rules file design for maximum token efficiency:**
+
+```markdown
+# .claude/rules/go-error-handling.md
+# Glob: **/*.go
+# ~150 tokens — focused, actionable, no examples needed
+
+Always check errors explicitly:
+- Never discard errors with _
+- Wrap errors with context: fmt.Errorf("context: %w", err)
+- Return errors to caller rather than logging and continuing
+- Only use panic for truly unrecoverable programmer errors
+```
+
+vs
+
+```markdown
+# .claude/rules/go-error-handling-verbose.md (anti-pattern)
+# ~1,200 tokens — verbose, with lengthy examples
+
+Go error handling best practices:
+[200 lines of examples and explanations]
+```
+
+The 150-token version is loaded 100 times cheaper than the 1,200-token version, with the same behavioral effect. Reserve examples for complex patterns where Claude genuinely needs them.
+
+---
+
+### Context Window Budget Calculator
+
+Use this reference table to estimate token costs for different project configurations. All estimates assume Claude Sonnet 4.6, a 200K window, and a 100-turn interactive session.
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                   CONTEXT BUDGET CALCULATOR — SONNET 4.6                         ║
+║                   200K window · 100-turn session · May 2026                      ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                    ║
+║  FIXED OVERHEAD (every session, every turn)                                        ║
+║  ──────────────────────────────────────────────────────────────────────────────   ║
+║  System prompt:                 3,100 tokens × 100 turns = 310,000 token-turns    ║
+║  Eager tool schemas:            4,800 tokens × 100 turns = 480,000 token-turns    ║
+║  Fixed subtotal:                7,900 tokens/turn                                  ║
+║                                                                                    ║
+║  USER-CONTROLLED OVERHEAD (per-session cost)                                       ║
+║  ──────────────────────────────────────────────────────────────────────────────   ║
+║  CLAUDE.md (per 1,000 tokens):  +1,000 tokens × 100 turns = 100,000 token-turns  ║
+║  User CLAUDE.md (typical):      +1,800 tokens/turn                                ║
+║  Project CLAUDE.md (typical):   +2,400 tokens/turn                                ║
+║  MEMORY.md (typical):             +800 tokens/turn                                ║
+║  User-controlled subtotal:       ~5,000 tokens/turn (typical)                     ║
+║                                                                                    ║
+║  MCP OVERHEAD (per server, per turn)                                               ║
+║  ──────────────────────────────────────────────────────────────────────────────   ║
+║  1 MCP server (with deferral):  +~800 tokens/turn (eagerly loaded tools only)     ║
+║  2 MCP servers:                 +~1,600 tokens/turn                               ║
+║  5 MCP servers:                 +~4,000 tokens/turn                               ║
+║  10 MCP servers:                +~8,000 tokens/turn                               ║
+║  Note: without deferral, add ~2,650 tokens per server per turn                    ║
+║                                                                                    ║
+║  CONVERSATION GROWTH (per-turn accumulation)                                       ║
+║  ──────────────────────────────────────────────────────────────────────────────   ║
+║  Average turn (user + assistant + tools): ~2,500 tokens added per turn            ║
+║  Turn 10:   25,000 tokens of history                                               ║
+║  Turn 25:   62,500 tokens of history                                               ║
+║  Turn 50:  125,000 tokens of history  ← approaching compaction in 200K window     ║
+║  Turn 67:  167,500 tokens of history  ← auto-compaction fires at 83.5%            ║
+║                                                                                    ║
+║  RULES (path-scoped, cached after first load)                                      ║
+║  ──────────────────────────────────────────────────────────────────────────────   ║
+║  Simple rule (150 tokens):      150 tokens when loaded (cached ~free afterward)   ║
+║  Complex rule (600 tokens):     600 tokens when loaded (cached ~free afterward)   ║
+║  10 rules, all loaded:         ~2,500 tokens (one-time, then cached)              ║
+║                                                                                    ║
+║  COMPACTION COST (per event)                                                       ║
+║  ──────────────────────────────────────────────────────────────────────────────   ║
+║  Synthesis call input:         ~167,000 tokens @ $0.30/MTok cached = $0.05       ║
+║  Synthesis output (summary):     ~5,000 tokens @ $15/MTok         = $0.075       ║
+║  Total per compaction:           ~$0.125                                           ║
+║  100-turn session: ~1–2 compaction events expected = ~$0.125–$0.25               ║
+║                                                                                    ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                    ║
+║  FORMULA: tokens_at_turn_N = fixed_overhead + user_overhead + mcp_overhead        ║
+║                              + (N × avg_turn_tokens)                               ║
+║                                                                                    ║
+║  Example (typical project, 2 MCP servers):                                         ║
+║    fixed:          7,900 tokens                                                    ║
+║    user:           5,000 tokens                                                    ║
+║    mcp:            1,600 tokens                                                    ║
+║    history at T50: 125,000 tokens                                                  ║
+║    ─────────────────────────────────────────────────────────────────────────────  ║
+║    total at T50:  139,500 tokens (69.75% of 200K window)                          ║
+║    headroom:       60,500 tokens remaining before compaction                       ║
+║                                                                                    ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+```
+
+**CLAUDE.md length formula:**
+
+The optimal CLAUDE.md length balances instruction coverage against per-turn token cost:
+
+```
+optimal_claude_md_tokens = (value_per_instruction × instructions_count) / cost_per_turn
+
+Where:
+  value_per_instruction = reduction in error rate × time saved per correction
+  cost_per_turn = claude_md_tokens × price_per_token × turns_per_session
+
+Practical heuristic:
+  Keep CLAUDE.md under 3,000 tokens for most projects
+  Use rules files for anything that applies to < 80% of turns
+  Use @import for reference material accessed < 30% of sessions
+```
+
+---
+
+### When to Use Haiku vs Sonnet vs Opus Based on Context Needs
+
+Model selection is not only about capability — it is also about context window size and cost per token. The right model depends on how much context your task requires and what quality level is needed.
+
+#### Decision Framework
+
+```
+START: What is the task?
+          │
+          ├── Simple, mechanical, high-volume
+          │   (formatting, search, templating, grep-like)
+          │          └──→ HAIKU 4.5
+          │               200K window, $0.80/$4 per MTok
+          │
+          ├── Complex coding, reasoning, analysis
+          │   (feature development, code review, debugging)
+          │          │
+          │          ├── Task fits in < 150K tokens? ──→ SONNET 4.6
+          │          │                                    200K window
+          │          │                                    $3/$15 per MTok
+          │          │
+          │          └── Task requires > 150K tokens? ──→ OPUS 4.7/4.8
+          │              (huge codebase, multi-hour session)  1M window
+          │                                                   $15/$75 per MTok
+          │
+          └── Highest-stakes decisions
+              (architecture design, security audit, AI safety)
+                     └──→ OPUS 4.8
+                          Best available reasoning
+                          Justified at 5× Sonnet cost
+```
+
+#### Context-Window-Driven Model Selection
+
+| Context Requirement | Model Choice | Why |
+|--------------------|-------------|-----|
+| < 80K tokens (most tasks) | Sonnet 4.6 | Fits comfortably; 200K gives plenty of headroom |
+| 80K–150K tokens (large tasks) | Sonnet 4.6 | Still fits; may compact once per session |
+| 150K–500K tokens (very large tasks) | Opus 4.7/4.8 | 1M window avoids compaction |
+| 500K–1M tokens (massive tasks) | Opus 4.8 | Only option with sufficient window |
+| > 1M tokens | Impossible in one session | Use subagents or segment the work |
+
+#### Quality-Driven Model Selection
+
+| Task Type | Haiku 4.5 | Sonnet 4.6 | Opus 4.8 |
+|-----------|-----------|------------|---------|
+| String formatting / templating | Excellent | Overkill | Overkill |
+| Code search / grep patterns | Good | Excellent | No benefit |
+| Writing unit tests | Adequate | Good | Minimal gain |
+| Complex refactoring | Poor | Excellent | Marginal gain |
+| Architecture design | Not suitable | Good | Best |
+| Security audit | Not suitable | Good | Best |
+| Multi-file feature | Poor | Excellent | Marginal gain |
+| Explaining complex code | Poor | Excellent | Excellent |
+| PR review (style) | Good | Excellent | No benefit |
+| PR review (correctness) | Poor | Good | Best |
+
+#### Cost-Quality Tradeoff Table
+
+For a typical feature implementation task (50-turn session, 100K tokens in, 10K tokens out):
+
+| Model | Input Cost | Output Cost | Total | Notes |
+|-------|-----------|-------------|-------|-------|
+| Haiku 4.5 | $0.08 | $0.04 | **$0.12** | Quality often insufficient for complex features |
+| Sonnet 4.6 | $0.30 | $0.15 | **$0.45** | Best value for most development tasks |
+| Opus 4.8 | $1.50 | $0.75 | **$2.25** | 5× Sonnet; justified for critical or complex work |
+
+#### Practical Model Selection Strategy
+
+For daily development work, the decision is usually:
+
+- **Default to Sonnet 4.6.** It handles 95% of tasks well at a reasonable cost.
+- **Drop to Haiku 4.5** for bulk, mechanical tasks (running 100 analysis calls, generating boilerplate, formatting).
+- **Upgrade to Opus 4.8** for tasks where mistakes are expensive: architecture decisions, security-critical code, debugging subtle race conditions.
+- **Use Opus 4.7/4.8 1M window** when context size — not quality — is the constraint.
+
+**Switching models mid-session:**
+
+You can change models within a session using the `--model` flag in the `/settings` command or by restarting with `claude --model claude-opus-4-8`. Note that changing models mid-session does not affect conversation history — the new model picks up the existing context window contents.
+
+```bash
+# Start with Sonnet for exploration
+claude --model claude-sonnet-4-6
+
+# Escalate to Opus for a specific hard problem
+/settings model claude-opus-4-8
+
+# Return to Sonnet after the hard problem is solved
+/settings model claude-sonnet-4-6
+```

@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 26
   label: Native Binary Guide
-lastUpdated: 2026-06-04
+lastUpdated: 2026-06-05
 ---
 
 # Native Binary — Installation, Performance & Enterprise Deployment
@@ -849,6 +849,213 @@ echo $PATH | tr ':' '\n'
 # Always run claude from your project root
 cd /path/to/your/project
 claude
+```
+
+---
+
+## 12. Binary Integrity Verification
+
+### SHA256 Checksum Verification
+
+Every Claude Code binary release is accompanied by a `checksums.txt` file at:
+```
+https://releases.claude.ai/claude-code/{version}/checksums.txt
+```
+
+The file contains one line per platform artifact:
+
+```
+a3f9b2c1d4e5f6a7b8c9d0e1f2a3b4c5  darwin-arm64/claude
+b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9  darwin-amd64/claude
+c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0  linux-amd64/claude
+d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1  linux-arm64/claude
+e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2  windows-amd64/claude.exe
+```
+
+**Verifying on macOS/Linux:**
+
+```bash
+VERSION="2.1.126"
+PLATFORM="darwin-arm64"  # Adjust to your platform
+
+# Download binary and checksums
+curl -fO "https://releases.claude.ai/claude-code/${VERSION}/${PLATFORM}/claude"
+curl -fO "https://releases.claude.ai/claude-code/${VERSION}/checksums.txt"
+
+# Verify — should print: claude: OK
+shasum -a 256 -c <(grep "${PLATFORM}/claude" checksums.txt | awk '{print $1, "claude"}')
+```
+
+**Verifying on Windows (PowerShell):**
+
+```powershell
+$VERSION = "2.1.126"
+$PLATFORM = "windows-amd64"
+
+# Download binary and checksums
+Invoke-WebRequest "https://releases.claude.ai/claude-code/$VERSION/$PLATFORM/claude.exe" -OutFile "claude.exe"
+$checksums = Invoke-WebRequest "https://releases.claude.ai/claude-code/$VERSION/checksums.txt"
+
+# Get expected hash
+$expectedHash = ($checksums.Content -split "`n" | Where-Object { $_ -match "$PLATFORM/claude.exe" }) -split "\s+" | Select-Object -First 1
+
+# Verify
+$actualHash = (Get-FileHash "claude.exe" -Algorithm SHA256).Hash.ToLower()
+if ($actualHash -eq $expectedHash) { Write-Host "✓ Binary verified" } else { Write-Host "✗ Checksum mismatch!" }
+```
+
+### For Internal Distribution
+
+When distributing the binary via an internal artifact store, always:
+1. Download the official binary and verify its checksum
+2. Store the binary AND its expected checksum together in your artifact store
+3. Re-verify the checksum when pulling from the artifact store (detects storage corruption)
+4. Never skip verification for security-sensitive environments
+
+---
+
+## 13. Update Mechanism in Detail
+
+### How `claude update` Works
+
+The native binary has a built-in update command distinct from `npm update`:
+
+```bash
+# Check for available updates (non-destructive — just shows what's available)
+claude update --check
+
+# Apply the update
+claude update
+
+# Pin to a specific version (with DISABLE_UPDATES to prevent auto-override)
+claude update --to 2.1.126
+export DISABLE_UPDATES=1
+```
+
+**What `claude update` does step-by-step:**
+
+```
+1. Check https://releases.claude.ai/claude-code/latest.json
+   → Returns: { "version": "2.1.xxx", "url": "...", "sha256": "..." }
+
+2. Compare with current version
+   → If same: print "Already up to date"
+   → If newer: proceed to download
+
+3. Download new binary to a temp file next to the current binary
+   e.g., /usr/local/bin/claude.tmp-2.1.xxx
+
+4. Verify SHA256 checksum of downloaded binary
+
+5. Atomic swap: rename current binary to .bak, rename .tmp to current path
+   → Failure at this step leaves the old binary in place (no half-update state)
+
+6. Verify new binary starts correctly (runs `claude --version`)
+
+7. Delete the .bak file on success; restore .bak on failure
+```
+
+The atomic swap design means an interrupted update never leaves Claude Code in a broken state. If the download or verification fails, the old binary continues to work.
+
+### Update Check Frequency
+
+By default, Claude Code checks for updates once per 24 hours:
+
+```
+~/.claude/last-update-check  ← timestamp of last check
+```
+
+If `DISABLE_UPDATES=1` is set, this file is never read or written.
+
+### Auto-Update vs Managed Updates
+
+| Scenario | Auto-update | `claude update` | MDM push | Recommendation |
+|----------|------------|----------------|----------|---------------|
+| Personal dev machine | ✓ (default) | Available | N/A | Auto-update is fine |
+| Team workstation | Configurable | Available | Possible | Set a team standard version |
+| CI/CD | ✗ (DISABLE_UPDATES) | Not needed | N/A | Always DISABLE_UPDATES |
+| Enterprise MDM fleet | ✗ (DISABLE_UPDATES) | Not recommended | ✓ preferred | MDM push tested versions |
+
+---
+
+## 14. bfs Behavioral Nuances
+
+### Symlink Handling
+
+`bfs` and the old Node.js `fast-glob` handle symlinks differently:
+
+| Behavior | Node.js fast-glob (pre-v2.1.113) | Native bfs (v2.1.113+) |
+|----------|----------------------------------|------------------------|
+| Follow symlinks in traversal | Yes by default | No by default |
+| Include symlinked files in results | Yes | Yes (the symlink itself appears) |
+| Follow symlinked directories | Yes (can cause infinite loops) | No (safer default) |
+| Circular symlink detection | Via `followSymbolicLinks: false` option | Built-in, always enabled |
+
+**Practical implication:** If your project uses symlinked node_modules or monorepo symlinks, `Glob("**/*.ts")` in pre-v2.1.113 could follow those links and find TypeScript files deep in `node_modules`. With native bfs, it will not follow the symlinks by default.
+
+Claude Code's `.gitignore`-aware filtering means `node_modules` is typically excluded anyway, so this behavioral difference rarely matters in practice. But for projects with unusual symlink structures, be aware of the change.
+
+### Unicode Filename Handling
+
+`bfs` handles Unicode filenames correctly on all platforms. The old Node.js implementation occasionally produced garbled output for files with non-ASCII names on macOS (due to macOS's NFD Unicode normalization). Native bfs normalizes to NFC throughout, ensuring consistent results.
+
+### Hidden File Handling
+
+`bfs` does not traverse hidden directories (starting with `.`) unless explicitly requested:
+
+```bash
+# This pattern will NOT find src/.hidden/file.ts by default
+Glob("src/**/*.ts")
+
+# To explicitly include hidden directories:
+Glob("src/{.,}**/*.ts")
+# or
+Glob("{src/**/*.ts,src/.hidden/**/*.ts}")
+```
+
+Note: Claude Code's gitignore awareness handles `.git/` correctly — it is excluded before `bfs` even traverses it, so the hidden-file behavior doesn't affect git repository traversal.
+
+---
+
+## 15. ugrep Behavioral Nuances
+
+### What PCRE2 Adds
+
+`ugrep`'s PCRE2 support enables patterns that the old system `grep` (BRE/ERE) couldn't handle:
+
+```bash
+# Look-ahead and look-behind
+Grep("(?<=function )\\w+")   # function names without the keyword
+Grep("\\w+(?= extends)")     # class names followed by extends
+
+# Named capture groups (useful with --output)
+Grep("(?P<name>\\w+)\\(")    # function calls with named group
+
+# Possessive quantifiers (prevent catastrophic backtracking)
+Grep("a++b")                 # possessive match, never backtracks
+
+# Unicode categories
+Grep("\\p{Lu}\\p{Ll}+")      # CamelCase words (uppercase + lowercase)
+Grep("\\p{Sc}\\d+")          # currency symbol followed by digits
+```
+
+### Performance on Different File Types
+
+| Scenario | ugrep advantage over system grep |
+|----------|----------------------------------|
+| Large binary files | Detects binary, skips content (no false positives) |
+| UTF-16 files | Auto-detects encoding, converts for matching |
+| Very long lines (>4KB) | Handles without buffering issues |
+| Files with null bytes | Binary-safe processing |
+| Compressed files | Can search inside .gz with `--decompress` flag |
+
+### Case-Insensitive Unicode
+
+`ugrep`'s case-insensitive mode (`(?i)`) is Unicode-aware, unlike many system greps:
+
+```bash
+# This matches: error, Error, ERROR, Ошибка (if Unicode case folding applies)
+Grep("(?i)error")
 ```
 
 ---

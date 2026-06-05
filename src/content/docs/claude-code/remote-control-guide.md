@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 27
   label: Remote Control Guide
-lastUpdated: 2026-06-04
+lastUpdated: 2026-06-05
 ---
 
 # Remote Control & Cloud Sessions — Mobile and Web Integration
@@ -666,6 +666,206 @@ For environments where remote control must be completely disabled:
 ```
 
 This prevents remote control sessions from being started on managed machines, even if users attempt to use the `--remote-control` flag.
+
+---
+
+## 12. Feature Availability Matrix — Remote Control vs Cloud Sessions
+
+A definitive comparison of every Claude Code feature across both remote execution modes and local terminal sessions.
+
+| Feature | Local Terminal | Remote Control | Cloud Sessions |
+|---------|---------------|----------------|----------------|
+| File system access | Full local | Full local (via local process) | Cloned repo only |
+| Bash / shell execution | Full | Full (runs on local machine) | Restricted (container) |
+| CLAUDE.md loading | Full hierarchy | Full hierarchy (local) | Only CLAUDE.md in cloned repo |
+| User CLAUDE.md (~/.claude/CLAUDE.md) | Yes | Yes (from local machine) | No |
+| Path-scoped rules (.claude/rules/) | Yes | Yes (from local machine) | Only if in repo |
+| Skills (.claude/skills/) | Yes | Yes (from local machine) | Only if in repo |
+| Hooks (PreToolUse, PostToolUse, etc.) | Yes | Yes (run locally) | No |
+| MCP servers (stdio) | Yes | Yes (local stdio servers) | No |
+| MCP servers (HTTP) | Yes | Yes | Only public endpoints |
+| Auto-Memory (MEMORY.md) | Yes | Yes (stored locally) | Session-only (ephemeral) |
+| /resume (session persistence) | Yes | Yes (stored locally) | No (sessions are ephemeral) |
+| Git operations | Full | Full (local git) | Yes (in cloned repo) |
+| Git push to GitHub | Yes | Yes | Yes (via OAuth token) |
+| Worktrees (/branch) | Yes | Yes | No |
+| Agent Teams (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS) | Yes | Yes | No |
+| Interactive tool approval | Yes | Yes (in browser) | Yes (in browser) |
+| /compact command | Yes | Yes | Yes |
+| /context command | Yes | Yes | Yes |
+| /model command | Yes | Yes | Yes |
+| /fast toggle | Yes | Yes | Yes |
+| /advisor command | Yes | Yes | Yes |
+| Custom themes | Yes | Yes (from local machine) | Default theme only |
+| Custom keybindings | Yes | Mobile keyboard limitations apply | Mobile keyboard limitations apply |
+| Anthropic API key | From env/settings | From local machine env | From cloud session token |
+| Bedrock/Vertex AI auth | Yes | Yes (local machine credentials) | Not supported (as of May 2026) |
+| DISABLE_UPDATES | Yes | Yes (applies to local process) | N/A (cloud process, no updates) |
+| Node.js requirement | No (native binary) | No | N/A (cloud manages runtime) |
+
+---
+
+## 13. Latency Model
+
+### Understanding Round-Trip Latency in Remote Control
+
+When using Remote Control, every interaction traverses a network path. Understanding this helps set expectations for responsiveness.
+
+```
+Local terminal session:
+─────────────────────────────────────────────────────────────
+You type → Claude API call → Tool execution → Response
+Latency: API round-trip time only (~500ms–2s typical)
+
+Remote Control session (browser → local machine):
+─────────────────────────────────────────────────────────────
+You type in browser
+  ↓ ~10–50ms (browser → Anthropic relay: WSS, TLS)
+Relay receives your message
+  ↓ ~10–50ms (relay → your local machine: WSS)
+Local claude process receives prompt
+  ↓ ~500ms–2s (Claude API call from local machine)
+Claude generates response + tool calls
+  ↓ (tool execution time on local machine)
+Tool results stream back through relay to browser
+  ↓ ~10–50ms × 2 (reverse path)
+Browser displays output
+
+Total additional latency vs local: ~40–200ms per interaction
+(the relay overhead is the extra cost; API latency dominates)
+```
+
+**Key insight:** For most interactive sessions, the 40–200ms relay overhead is imperceptible. The dominant latency is always the Claude API call itself (~500ms to first token). Remote Control feels nearly identical to a local session in practice.
+
+**Where latency matters more:** For long agentic tasks with many tool calls (e.g., 50+ Bash operations), the per-tool relay overhead adds up. A task with 50 tool calls incurs an extra ~5–10 seconds of accumulated relay latency vs the same task in a local terminal. This is why Remote Control is primarily suited for interactive monitoring + approval workflows, not unattended long-running batch automation (use the CLI directly or SDK for that).
+
+### Connection Recovery
+
+If the WebSocket connection is interrupted (mobile network switch, brief Wi-Fi drop), Remote Control automatically reconnects:
+
+```
+Connection drop detected
+  → Local process retains full session state (still running)
+  → Bridge URL remains valid (session token unchanged)
+  → Browser reconnects via same bridge URL automatically
+  → Session resumes exactly where it left off
+
+Connection timeout (e.g., mobile app backgrounded for >5 min):
+  → Bridge URL may expire depending on CLAUDE_REMOTE_CONTROL_TIMEOUT setting
+  → If expired: open the bridge URL to see a "Session ended" message
+  → Start a new session with a fresh bridge URL
+```
+
+---
+
+## 14. Enterprise Self-Hosted Relay
+
+For enterprise environments that require data sovereignty or cannot allow WebSocket connections to `remote.claude.ai`, Anthropic offers a **self-hosted relay** option under enterprise contracts.
+
+### What the Self-Hosted Relay Provides
+
+- All WebSocket traffic between developers' browsers and local Claude Code processes routes through an on-premises relay server you control
+- No chat content, file data, or tool output transits through Anthropic's infrastructure
+- Audit logs of all remote control sessions are captured locally
+- Works with existing enterprise firewalls — traffic stays on your network
+
+### Configuration
+
+```bash
+# Point Claude Code to your self-hosted relay (on all developer machines)
+export CLAUDE_REMOTE_CONTROL_HOST="wss://claude-relay.internal.company.com"
+
+# Or set in managed enterprise settings (/etc/claude-code/settings.json):
+{
+  "remoteControl": {
+    "relayHost": "wss://claude-relay.internal.company.com",
+    "relayPort": 443
+  }
+}
+```
+
+### Relay Server Requirements
+
+| Requirement | Detail |
+|-------------|--------|
+| Connectivity | Reachable from both developer machines AND browsers |
+| Protocol | WebSocket (WSS, TLS 1.2+) |
+| Auth | Supports Anthropic account token validation (requires internet for initial token verify) |
+| Port | Default 443; configurable with `CLAUDE_REMOTE_CONTROL_PORT` |
+| Capacity | ~10KB/s bandwidth per active session (text-only, no file transfer through relay) |
+
+Contact Anthropic enterprise sales to provision self-hosted relay software.
+
+---
+
+## 15. Troubleshooting Remote Control
+
+### Problem: Browser shows "Connection failed" immediately after opening the bridge URL
+
+**Cause:** Your local `claude --remote-control` process has already terminated, or the bridge URL token expired.
+
+**Fix:**
+```bash
+# Verify the process is still running
+pgrep -l claude
+
+# If terminated, start a new session
+claude --remote-control
+
+# Check that the terminal where claude --remote-control was started shows the bridge URL
+```
+
+### Problem: WebSocket connection drops behind a corporate proxy
+
+**Symptom:** Connection established briefly, then drops. May show "websocket: close 1006 (abnormal closure)" in debug logs.
+
+**Cause:** Corporate HTTP proxies that inspect SSL traffic may break WebSocket upgrades (the HTTP→WebSocket protocol upgrade requires specific headers that some proxies strip).
+
+**Diagnosis:**
+```bash
+export CLAUDE_REMOTE_CONTROL_LOG_LEVEL="debug"
+claude --remote-control 2>&1 | head -50
+# Look for: "WebSocket handshake failed" or "proxy error"
+```
+
+**Fix options:**
+1. Configure your corporate proxy to allow WebSocket connections to `remote.claude.ai`
+2. Use the self-hosted relay (avoids the external connection entirely)
+3. Use SSH port forwarding to bypass the proxy for the relay connection
+
+### Problem: iOS Safari drops the connection when the screen locks
+
+**Cause:** iOS suspends background network connections when the screen locks (to save battery). The WebSocket to the relay is terminated.
+
+**Fix:**
+- Keep the iOS screen awake while monitoring tasks: Settings → Display & Brightness → Auto-Lock → Never (for the duration of the session)
+- Or set `CLAUDE_REMOTE_CONTROL_TIMEOUT` to a higher value so the session isn't terminated immediately:
+  ```bash
+  export CLAUDE_REMOTE_CONTROL_TIMEOUT=300  # 5 minutes of idle tolerance
+  ```
+- The session will be reconnectable after unlocking the screen, as long as the timeout hasn't expired
+
+### Problem: Can't connect — "session already has a connected client"
+
+**Symptom:** A second browser window or device trying to connect gets this error.
+
+**Cause:** By design, Remote Control allows only one connected client at a time to prevent split-brain control (two people simultaneously approving tool calls).
+
+**Fix:**
+- Close the first browser connection before opening the bridge URL on the second device
+- Or use the `--remote-control-multi-client` flag to allow multiple read-only observers (only the first connected client can send prompts and approve tools; additional clients can watch in real time)
+
+### Problem: The bridge URL opened in the browser but shows a blank page
+
+**Cause:** This typically indicates an authentication mismatch — you're not logged into the same Anthropic account that started the local session, or your session cookie is expired.
+
+**Fix:**
+```
+1. Log out and log back in to claude.ai in the browser
+2. Ensure you are using the same Anthropic account as the local session
+3. Clear browser cookies for claude.ai if the issue persists
+4. Try in an incognito/private window to rule out extension interference
+```
 
 ---
 

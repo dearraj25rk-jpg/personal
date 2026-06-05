@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 7
   label: Agent Teams
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Agent Teams & Subagents — Complete Guide
@@ -1102,3 +1102,806 @@ Common failure modes and how to recover:
 | Mailbox fills up | Messages dropped; agents report "mailbox full" | Use `/agents clear-mailbox` to remove completed messages; increase `maxMailboxSize` in team config |
 | Env var not set | `/agents` doesn't show "Agent Teams: enabled" | Set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and restart Claude Code |
 | Tool permission blocked | Agent task fails on PreToolUse hook | Check `permissions.allow` includes the tools your agents need; subagents inherit parent permissions |
+
+---
+
+## Advanced Agent Teams Patterns
+
+### The Hub-and-Spoke Orchestration Pattern
+
+The hub-and-spoke pattern designates a single **orchestrator** (hub) that manages several **specialist** agents (spokes). The orchestrator holds the high-level plan and task queue; each spoke is a narrow expert that receives well-defined subtasks and reports results back.
+
+```
+                    ┌─────────────────────────────┐
+                    │        ORCHESTRATOR          │
+                    │   (Hub — Claude Opus 4.8)    │
+                    │                              │
+                    │  • Holds master task plan    │
+                    │  • Decomposes work into      │
+                    │    subtasks                  │
+                    │  • Routes subtasks to        │
+                    │    correct spoke             │
+                    │  • Assembles final result    │
+                    └──────┬──────┬──────┬─────────┘
+                           │      │      │
+              ┌────────────┘  ┌───┘  └────────────┐
+              ▼               ▼                    ▼
+   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+   │  CODE WRITER    │ │  CODE REVIEWER  │ │  TEST GENERATOR │
+   │ (Sonnet 4.6)    │ │ (Sonnet 4.6)    │ │ (Sonnet 4.6)    │
+   │                 │ │                 │ │                 │
+   │ • Implements    │ │ • Reviews PRs   │ │ • Writes unit   │
+   │   features      │ │ • Checks style  │ │   tests         │
+   │ • Writes docs   │ │ • Security scan │ │ • Runs tests    │
+   │ • Refactors     │ │ • Reports bugs  │ │ • Reports gaps  │
+   └─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+**Orchestrator CLAUDE.md:**
+
+```markdown
+# CLAUDE.md — Orchestrator (Hub)
+
+You are the orchestrator for a hub-and-spoke Agent Team. Your specialists are:
+
+- **code-writer**: Implements features, writes documentation, performs refactoring
+- **code-reviewer**: Reviews code for correctness, style, and security issues
+- **test-generator**: Writes unit tests, runs the test suite, and identifies coverage gaps
+
+## Your Workflow
+
+1. Receive a task from the user
+2. Decompose it into parallel subtasks where possible, sequential where dependencies exist
+3. Dispatch subtasks to the appropriate specialist via the mailbox
+4. Wait for completion signals before proceeding to dependent steps
+5. Assemble the final result and report back to the user
+
+## Dispatch Format
+
+When sending a task to a specialist, use this message format:
+
+```json
+{
+  "task_id": "unique-id-here",
+  "assigned_to": "code-writer",
+  "priority": "high",
+  "task": "Description of the specific subtask",
+  "context": "Any context the specialist needs",
+  "expected_output": "What the specialist should return when done",
+  "deadline_turns": 10
+}
+```
+
+## Completion Protocol
+
+Wait for a message with `"status": "complete"` from each specialist before
+declaring a phase done. If a specialist reports `"status": "blocked"` or
+`"status": "failed"`, escalate to the user immediately.
+
+## Parallel vs Sequential
+
+Dispatch in parallel when subtasks are independent.
+Dispatch sequentially when output of one subtask is input to another.
+```
+
+**Code Writer CLAUDE.md (spoke):**
+
+```markdown
+# CLAUDE.md — Code Writer Specialist
+
+You are the code-writer specialist in a hub-and-spoke Agent Team.
+
+## Your Role
+
+Receive implementation tasks from the orchestrator via the mailbox.
+Execute them using your available tools (Read, Write, Edit, Bash).
+Report results back via the mailbox when done.
+
+## Task Protocol
+
+1. Read incoming task from mailbox
+2. Parse the `task_id`, `task`, and `context` fields
+3. Execute the implementation work
+4. Write a completion message to the mailbox:
+
+```json
+{
+  "task_id": "<same task_id>",
+  "from": "code-writer",
+  "status": "complete",
+  "summary": "Brief description of what was done",
+  "files_modified": ["list", "of", "files"],
+  "notes": "Any issues encountered or decisions made"
+}
+```
+
+## Implementation Standards
+
+- Follow the coding style established in CLAUDE.md
+- Add docstrings/comments for all public functions
+- Do not write tests (that is test-generator's responsibility)
+- If you encounter ambiguity, make a reasonable decision and note it in your completion message
+```
+
+**Code Reviewer CLAUDE.md (spoke):**
+
+```markdown
+# CLAUDE.md — Code Reviewer Specialist
+
+You are the code-reviewer specialist in a hub-and-spoke Agent Team.
+
+## Your Role
+
+Receive review tasks from the orchestrator. Review specified files or diffs
+for correctness, style compliance, and security issues.
+
+## Review Checklist
+
+For each review task, check:
+- [ ] No hardcoded credentials or secrets
+- [ ] All error paths are handled
+- [ ] No SQL injection vectors
+- [ ] Input validation is present for all user-supplied data
+- [ ] No obvious N+1 query patterns
+- [ ] Function/method complexity is reasonable (< 20 lines preferred)
+- [ ] Exported symbols are documented
+
+## Output Format
+
+```json
+{
+  "task_id": "<task_id>",
+  "from": "code-reviewer",
+  "status": "complete",
+  "verdict": "approved" | "changes_requested" | "blocked",
+  "issues": [
+    {
+      "severity": "critical" | "major" | "minor" | "nit",
+      "file": "src/api/auth.go",
+      "line": 42,
+      "description": "SQL query not parameterized — injection risk"
+    }
+  ],
+  "summary": "Overall assessment"
+}
+```
+```
+
+**Team configuration (`.claude/agent-teams.yaml`):**
+
+```yaml
+# .claude/agent-teams.yaml
+teams:
+  development:
+    description: "Hub-and-spoke development team"
+    orchestrator:
+      agent_id: orchestrator
+      model: claude-opus-4-8
+      effort: high
+      claude_md: .claude/agents/orchestrator/CLAUDE.md
+    spokes:
+      - agent_id: code-writer
+        model: claude-sonnet-4-6
+        effort: normal
+        claude_md: .claude/agents/code-writer/CLAUDE.md
+        max_concurrent_tasks: 1
+      - agent_id: code-reviewer
+        model: claude-sonnet-4-6
+        effort: normal
+        claude_md: .claude/agents/code-reviewer/CLAUDE.md
+        max_concurrent_tasks: 2
+      - agent_id: test-generator
+        model: claude-sonnet-4-6
+        effort: normal
+        claude_md: .claude/agents/test-generator/CLAUDE.md
+        max_concurrent_tasks: 1
+    mailbox:
+      maxMailboxSize: 100
+      messageRetentionTurns: 50
+```
+
+---
+
+### The Pipeline Pattern
+
+The pipeline pattern arranges agents in a sequential chain where each agent's output feeds directly into the next agent's input. This is ideal for multi-stage processing workflows: generate → review → test → deploy.
+
+```
+   User Input
+       │
+       ▼
+┌─────────────────┐
+│   STAGE 1       │
+│  Requirements   │ ──→ writes requirements.md to mailbox
+│  Analyst        │
+└─────────────────┘
+                            │
+                            ▼
+                    ┌─────────────────┐
+                    │   STAGE 2       │
+                    │  Implementor    │ ──→ writes implementation to mailbox
+                    │                 │
+                    └─────────────────┘
+                                                │
+                                                ▼
+                                        ┌─────────────────┐
+                                        │   STAGE 3       │
+                                        │  Reviewer       │ ──→ writes review to mailbox
+                                        │                 │
+                                        └─────────────────┘
+                                                                    │
+                                                                    ▼
+                                                            ┌─────────────────┐
+                                                            │   STAGE 4       │
+                                                            │  Test Runner    │ ──→ Result
+                                                            │                 │
+                                                            └─────────────────┘
+```
+
+**Filesystem mailbox message passing protocol:**
+
+The pipeline uses Claude Code's filesystem mailbox at `~/.claude/agent-teams/<team-id>/`. Each stage writes a well-structured message file when it completes, and the next stage polls for it.
+
+```
+~/.claude/agent-teams/pipeline-team-001/
+  mailbox/
+    stage1-to-stage2.json      ← written by Stage 1, read by Stage 2
+    stage2-to-stage3.json      ← written by Stage 2, read by Stage 3
+    stage3-to-stage4.json      ← written by Stage 3, read by Stage 4
+    stage4-final-result.json   ← written by Stage 4, read by orchestrator
+```
+
+**Message format between stages:**
+
+```json
+// stage1-to-stage2.json
+{
+  "pipeline_run_id": "run-2026-06-05-001",
+  "from_stage": "requirements-analyst",
+  "to_stage": "implementor",
+  "timestamp": "2026-06-05T10:23:41Z",
+  "status": "complete",
+  "payload": {
+    "requirements_file": "~/.claude/agent-teams/pipeline-team-001/artifacts/requirements.md",
+    "scope": "Auth middleware JWT validation",
+    "acceptance_criteria": [
+      "All requests to /api/* must include a valid JWT",
+      "Expired tokens must return 401 with message 'token expired'",
+      "Missing tokens must return 401 with message 'authorization required'",
+      "Token validation must not add more than 5ms p99 latency"
+    ],
+    "out_of_scope": [
+      "Token issuance (handled by auth service)",
+      "Role-based access control (separate ticket)"
+    ]
+  }
+}
+```
+
+**Stage CLAUDE.md template (parameterized per stage):**
+
+```markdown
+# CLAUDE.md — Pipeline Stage: Implementor
+
+You are Stage 2 of the development pipeline.
+
+## Trigger
+
+Wait for the file: ~/.claude/agent-teams/pipeline-team-001/mailbox/stage1-to-stage2.json
+Check every turn by reading that path. When the file exists and contains
+`"status": "complete"`, begin your work.
+
+## Your Work
+
+Read the requirements from the `requirements_file` path in the message payload.
+Implement all acceptance criteria as working code.
+Write your implementation in: src/middleware/auth.go
+
+## Completion Protocol
+
+When done, write the following file:
+~/.claude/agent-teams/pipeline-team-001/mailbox/stage2-to-stage3.json
+
+```json
+{
+  "pipeline_run_id": "<same run_id>",
+  "from_stage": "implementor",
+  "to_stage": "reviewer",
+  "timestamp": "<current ISO timestamp>",
+  "status": "complete",
+  "payload": {
+    "files_written": ["src/middleware/auth.go"],
+    "test_command": "go test ./middleware/...",
+    "notes": "<any implementation decisions or open questions>"
+  }
+}
+```
+
+## Error Protocol
+
+If you cannot complete the task, write:
+~/.claude/agent-teams/pipeline-team-001/mailbox/stage2-error.json
+
+```json
+{
+  "pipeline_run_id": "<run_id>",
+  "from_stage": "implementor",
+  "status": "failed",
+  "error": "<description of what went wrong>"
+}
+```
+```
+
+---
+
+### The Peer Review Pattern
+
+The peer review pattern uses exactly two agents: a **writer** agent and a **reviewer** agent. The writer produces output; the reviewer critiques it. If they disagree, a configurable **resolution protocol** determines the outcome.
+
+```
+     User Task
+          │
+          ▼
+   ┌─────────────────┐
+   │     WRITER      │ ─────────────────────┐
+   │  (Produces      │                      │
+   │   initial code) │                      ▼
+   └─────────────────┘              ┌─────────────────┐
+          ▲                         │    REVIEWER     │
+          │ revision                │  (Critiques,    │
+          │ request                 │   approves, or  │
+          │                        │   requests edits)│
+          └────────────────────────┘
+                    │
+                    │ approved
+                    ▼
+              Final Output
+```
+
+**Writer CLAUDE.md:**
+
+```markdown
+# CLAUDE.md — Writer Agent (Peer Review Pattern)
+
+You are the writer in a two-agent peer review system.
+
+## Workflow
+
+### Round 1 (Initial Writing)
+1. Read the task from the mailbox
+2. Implement the requested code
+3. Send to reviewer via mailbox with `"type": "review_request"`
+
+### Rounds 2+ (Revision)
+If the reviewer sends `"verdict": "changes_requested"`:
+1. Read the reviewer's specific issues from the `issues` field
+2. Address each issue in your code
+3. Send updated code to reviewer again
+4. Maximum revisions: 3. After 3 failed rounds, escalate to user.
+
+### When Approved
+When reviewer sends `"verdict": "approved"`:
+1. Write the final accepted code to the correct file path
+2. Notify the orchestrator or user that the task is complete
+
+## Quality Bar
+Produce high-quality code on the first attempt. Aim for reviewer approval
+in round 1. Common reviewer requests:
+- Add error handling you forgot
+- Add docstrings
+- Extract overly long functions
+- Remove code duplication
+```
+
+**Reviewer CLAUDE.md:**
+
+```markdown
+# CLAUDE.md — Reviewer Agent (Peer Review Pattern)
+
+You are the reviewer in a two-agent peer review system.
+
+## Workflow
+
+When you receive a `"type": "review_request"` message:
+1. Read the code from the `code` or `file_path` field
+2. Review it against the acceptance criteria in the original task
+3. Send verdict:
+
+### Verdict: approved
+```json
+{
+  "type": "review_verdict",
+  "verdict": "approved",
+  "comments": "Optional positive feedback"
+}
+```
+
+### Verdict: changes_requested
+```json
+{
+  "type": "review_verdict",
+  "verdict": "changes_requested",
+  "issues": [
+    {
+      "severity": "major",
+      "location": "line 42",
+      "issue": "Missing nil check before dereferencing",
+      "suggestion": "Add: if user == nil { return ErrUserNotFound }"
+    }
+  ]
+}
+```
+
+## Conflict Resolution Protocol
+
+If the writer has revised the code 3 times and you still cannot approve:
+1. Document the specific unresolvable issue
+2. Send `"verdict": "escalate"` to the orchestrator mailbox
+3. Include both your concern and the writer's counterargument
+
+The orchestrator will make the final call or involve the human user.
+
+## Review Standards
+
+Approve if:
+- All acceptance criteria are met
+- No critical or major security issues
+- Code follows project conventions
+- Error paths are handled
+```
+
+---
+
+### Agent Teams with External Services
+
+Agent Teams can interact with external services through MCP servers configured at the user or project level. Because each agent in a team inherits the MCP server configuration of the session, all agents share access to the same MCP tools.
+
+**Shared MCP architecture for Agent Teams:**
+
+```
+~/.claude/.mcp.json (user level — shared across all agents)
+  ├── github MCP server       → mcp__github__* tools available to ALL agents
+  ├── slack MCP server        → mcp__slack__* tools available to ALL agents
+  └── database MCP server     → mcp__db__* tools available to ALL agents
+
+.claude/settings.json (project level — shared via git)
+  └── project-api MCP server  → mcp__project_api__* tools available to ALL agents
+```
+
+**Webhook integration pattern (agent sends results to Slack):**
+
+```markdown
+# CLAUDE.md — Notifier Agent
+
+You are the notifier agent. After the code-writer and test-generator complete,
+receive their results via mailbox and post a summary to Slack.
+
+## Tools Available
+
+You have access to:
+- mcp__slack__post_message — post to Slack channels
+- mcp__github__add_issue_comment — comment on GitHub issues
+
+## Notification Flow
+
+1. Wait for completion messages from code-writer and test-generator
+2. Compile a summary of:
+   - Files changed
+   - Tests added/modified
+   - Test pass/fail status
+3. Post to #engineering-updates channel:
+   mcp__slack__post_message({
+     channel: "#engineering-updates",
+     text: "<summary>"
+   })
+4. If tests failed, also comment on the relevant GitHub issue
+```
+
+**API call pattern (agent fetches external data before implementing):**
+
+```markdown
+# CLAUDE.md — API-Aware Implementor
+
+Before implementing any endpoint changes, fetch the current OpenAPI spec
+from the API gateway:
+
+1. Use mcp__project_api__get_spec to fetch the current spec
+2. Use mcp__project_api__validate_schema to validate your proposed changes
+3. Implement only after validation passes
+
+Never modify an endpoint contract without first validating against the spec.
+```
+
+**Rate limiting and quota management:**
+
+When multiple agents share an MCP server with API rate limits, add coordination via the mailbox to prevent quota exhaustion:
+
+```markdown
+# CLAUDE.md — Rate-Limited Agent
+
+Before making more than 3 API calls in a turn, send a rate-limit check message:
+
+```json
+{
+  "type": "rate_limit_check",
+  "from": "your-agent-id",
+  "service": "github",
+  "planned_calls": 5
+}
+```
+
+Wait for acknowledgment from the rate-limit coordinator before proceeding.
+If you do not receive an ack within 2 turns, proceed with conservative rate
+limiting (1 call per turn).
+```
+
+---
+
+### Debugging Agent Teams
+
+When Agent Teams behave unexpectedly — tasks not progressing, agents stuck, messages not flowing — use the following systematic debugging approach.
+
+#### Step 1: Check Basic Team Health
+
+```bash
+# In the Claude Code session running the orchestrator
+/debug agents
+
+# Expected healthy output:
+Team: feature-rollout-001 (created 14 minutes ago)
+  orchestrator     ACTIVE    — 12 messages sent, 8 received
+  code-writer      WAITING   — 4 messages sent, 4 received (waiting for task)
+  code-reviewer    ACTIVE    — 3 messages sent, 3 received
+  test-generator   WAITING   — 2 messages sent, 2 received
+
+# Unhealthy pattern: all agents in WAITING with no progress
+Team: stuck-team-001 (created 47 minutes ago)
+  orchestrator     WAITING   — 2 messages sent, 2 received  ← possible deadlock
+  writer           WAITING   — 2 messages sent, 2 received  ← possible deadlock
+```
+
+#### Step 2: Inspect the Mailbox Directly
+
+The mailbox is a filesystem directory. You can inspect it directly in any shell:
+
+```bash
+# Find your team's mailbox
+ls ~/.claude/agent-teams/
+
+# Inspect messages in the mailbox
+ls -la ~/.claude/agent-teams/<team-id>/mailbox/
+
+# Read recent messages (most recent files)
+ls -t ~/.claude/agent-teams/<team-id>/mailbox/*.json | head -5 | xargs -I {} sh -c 'echo "=== {} ===" && cat {}'
+
+# Check message timestamps to identify stale messages
+find ~/.claude/agent-teams/<team-id>/mailbox/ -name "*.json" -older-than 30m
+```
+
+#### Step 3: Trace Inter-Agent Communication
+
+Enable verbose mailbox logging in settings:
+
+```json
+// .claude/settings.json
+{
+  "agentTeams": {
+    "debugLogging": true,
+    "logMailboxPath": "/tmp/claude-agent-mailbox.log"
+  }
+}
+```
+
+With debug logging enabled, every mailbox read and write is logged:
+
+```
+2026-06-05T10:23:41Z [orchestrator] WRITE mailbox/task-001.json (412 bytes)
+2026-06-05T10:23:41Z [code-writer]  READ  mailbox/task-001.json (found, processing)
+2026-06-05T10:23:55Z [code-writer]  WRITE mailbox/result-001.json (834 bytes)
+2026-06-05T10:23:55Z [orchestrator] READ  mailbox/result-001.json (found, processing)
+```
+
+A stalled trace would look like:
+
+```
+2026-06-05T10:23:41Z [orchestrator] WRITE mailbox/task-001.json (412 bytes)
+2026-06-05T10:23:41Z [code-writer]  READ  mailbox/task-001.json (found, processing)
+# — nothing after this for 15+ minutes — code-writer is stuck
+```
+
+#### Step 4: Identify Deadlocked Agents
+
+A deadlock occurs when two (or more) agents are each waiting for a message from the other. Signs:
+
+- All agents in `WAITING` state
+- No new messages being written to mailbox
+- `/debug agents` shows message counts stopped incrementing
+
+**Resolution:**
+
+```bash
+# Terminate the deadlocked team
+/agents terminate
+
+# Redesign the workflow to break the circular dependency
+# Common fixes:
+# 1. Introduce a timeout: agent sends a "deadline exceeded" message after N turns
+# 2. Use the orchestrator as the single coordinator (agents only message orchestrator)
+# 3. Add an explicit "ready" protocol where each agent signals readiness before expecting input
+```
+
+#### Step 5: Recover from a Failed Agent
+
+When one agent in a team fails (crashes, hits token limit, gets a tool permission error):
+
+```bash
+# Identify the failed agent
+/debug agents
+# Look for: agent-id  FAILED  — reason: context window exceeded
+
+# Restart just that agent (preserves other agents' state)
+/agents restart code-writer
+
+# The restarted agent re-reads its CLAUDE.md and resumes from mailbox state
+# It will see any pending messages it had not processed
+```
+
+**If an agent fails repeatedly:**
+
+1. Check the agent's CLAUDE.md — it may be asking the agent to do too much in a single task
+2. Check the agent's token budget — reduce the scope of tasks sent to it
+3. Check tool permissions — the agent may be hitting a denied tool
+
+```bash
+# View the last error from a failed agent
+cat ~/.claude/agent-teams/<team-id>/agents/<agent-id>/last-error.txt
+```
+
+#### Step 6: Mailbox Overflow Recovery
+
+When the mailbox fills up (default max: 200 messages per team), new messages are dropped and agents report "mailbox full" errors:
+
+```bash
+# Check current mailbox size
+ls ~/.claude/agent-teams/<team-id>/mailbox/ | wc -l
+
+# Clear processed messages (messages with status: complete or processed: true)
+/agents clear-mailbox --processed-only
+
+# If that does not free enough space, clear all non-active messages
+/agents clear-mailbox --all
+
+# Increase the limit in .claude/settings.json:
+# "agentTeams": { "maxMailboxSize": 500 }
+```
+
+---
+
+### Agent Teams Performance Tuning
+
+#### Choosing the Right Model Per Agent
+
+Not all agents in a team need the same model. Matching model capability to task complexity significantly reduces cost without sacrificing quality.
+
+| Agent Role | Recommended Model | Reasoning |
+|------------|------------------|-----------|
+| Orchestrator / Planner | Claude Opus 4.8 | Needs strong reasoning to decompose complex tasks |
+| Code Writer (complex logic) | Claude Sonnet 4.6 | Good code generation at lower cost than Opus |
+| Code Writer (simple changes) | Claude Haiku 4.5 | Straightforward edits do not need Sonnet |
+| Reviewer (security-critical) | Claude Opus 4.8 | Security review benefits from highest capability |
+| Reviewer (style/formatting) | Claude Haiku 4.5 | Style checks are mechanical |
+| Test Generator | Claude Sonnet 4.6 | Test writing needs good code understanding |
+| Notifier / Formatter | Claude Haiku 4.5 | Simple formatting tasks |
+| Documentation Writer | Claude Sonnet 4.6 | Documentation needs clear writing ability |
+
+**Cost comparison: uniform Opus vs mixed model team (same workflow):**
+
+```
+Uniform Opus 4.8 team (3 agents, 50 turns each):
+  Total input:   ~300K tokens × $15/MTok  = $4.50
+  Total output:  ~30K tokens  × $75/MTok  = $2.25
+  Total cost:    ~$6.75
+
+Mixed model team (same workflow):
+  Orchestrator (Opus): 50 turns
+    Input: ~100K tokens × $15/MTok = $1.50
+    Output: ~10K tokens × $75/MTok = $0.75
+  Code Writer (Sonnet): 50 turns
+    Input: ~100K tokens × $3/MTok  = $0.30
+    Output: ~10K tokens × $15/MTok = $0.15
+  Reviewer (Haiku): 50 turns
+    Input: ~100K tokens × $0.80/MTok = $0.08
+    Output: ~10K tokens × $4/MTok   = $0.04
+  Total cost: ~$2.82  (58% cheaper than uniform Opus)
+```
+
+#### Effort Level Configuration Per Agent
+
+The `effort` level (`minimal`, `low`, `normal`, `high`, `max`) controls how thoroughly an agent reasons before responding. Higher effort means more deliberate thinking and fewer mistakes, but uses more tokens per turn.
+
+```yaml
+# agent-teams.yaml — per-agent effort levels
+teams:
+  development:
+    orchestrator:
+      effort: high      # Orchestrator needs careful planning
+    spokes:
+      - agent_id: code-writer
+        effort: normal  # Normal effort for implementation
+      - agent_id: code-reviewer
+        effort: high    # Reviewer should be thorough
+      - agent_id: formatter
+        effort: minimal # Simple formatting needs no deep thinking
+```
+
+#### Parallel vs Serial Coordination
+
+Design agent workflows to maximize parallelism. Sequential bottlenecks multiply latency; parallel tasks overlap.
+
+```
+SLOW — Serial coordination (total latency = sum of all stages):
+
+User → [Requirements: 5min] → [Implementation: 10min] → [Review: 5min] → [Tests: 8min] → Done
+Total: 28 minutes
+
+FAST — Parallel coordination (total latency = longest critical path):
+
+User → [Requirements: 5min] ──┬──→ [Implementation: 10min] ──→ [Integration: 3min] → Done
+                               └──→ [Test Templates: 6min]  ──┘
+Total: 18 minutes (35% faster)
+```
+
+**How to identify parallel opportunities:**
+- Tasks that do not depend on each other's output can always run in parallel
+- Reading-only tasks (analysis, review of existing code) can often run in parallel with writing tasks
+- Multiple agents reviewing different files can always run in parallel
+
+#### Token Budget Allocation Across Teams
+
+Each agent in a team has its own independent context window. Token budgets are not shared between agents — one agent exhausting its context does not affect others.
+
+However, you can set per-agent `contextBudget` in settings to prevent runaway agents from consuming excessive API budget:
+
+```json
+// .claude/settings.json
+{
+  "agentTeams": {
+    "perAgentContextBudget": {
+      "maxTokens": 80000,
+      "hardLimit": true,
+      "warnAt": 60000
+    }
+  }
+}
+```
+
+With `hardLimit: true`, an agent that reaches its token budget stops and sends a `"status": "budget_exceeded"` message to the orchestrator rather than auto-compacting and continuing. This gives you explicit control over cost.
+
+**Budget allocation strategy by agent type:**
+
+| Agent Type | Suggested `maxTokens` | Reasoning |
+|------------|----------------------|-----------|
+| Orchestrator | 150,000 | Needs room to accumulate all agent results |
+| Code Writer (large feature) | 100,000 | Complex implementation may require many reads |
+| Code Writer (small task) | 40,000 | Small tasks should not need large windows |
+| Reviewer | 60,000 | Review needs to read files + conversation |
+| Test Generator | 60,000 | Similar to reviewer requirements |
+| Notifier/Formatter | 15,000 | Simple tasks need minimal context |
+
+#### Monitoring Team Progress
+
+Use the `/debug agents` command periodically during long-running team workflows. Key metrics to watch:
+
+```
+/debug agents --verbose
+
+Team: development-001 (created 23 minutes ago)
+  orchestrator  ACTIVE   — 28 msgs sent, 26 received — last active: 12s ago
+                         context: 67,234 / 200,000 tokens (33.6%)
+  code-writer   WAITING  — 14 msgs sent, 14 received — last active: 45s ago
+                         context: 88,441 / 80,000 tokens [!!! NEAR BUDGET LIMIT]
+  code-reviewer ACTIVE   — 12 msgs sent, 10 received — last active: 8s ago
+                         context: 42,114 / 60,000 tokens (70.2%)
+```
+
+If `code-writer` is near its budget limit, the orchestrator should send a `"compact"` instruction via the mailbox before the next large task, prompting the agent to run `/compact` to free context window space.

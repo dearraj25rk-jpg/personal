@@ -8,7 +8,7 @@ description: >
   examples for common workflows. v2.1.126 (June 2026).
 sidebar:
   order: 30
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 import SlashCommandsDiagram from '../../../components/interactive/SlashCommandsDiagram.jsx';
@@ -396,5 +396,100 @@ Command content goes here. Use $ARGUMENTS for inline substitution.
 | `@./path/to/file.md` | Inline the content of a file at that path |
 | `$CLAUDE_CWD` | Current working directory |
 | `$CLAUDE_SESSION_ID` | Unique ID for the current session |
+
+---
+
+## Complete Slash Command Alphabetical Reference (v2.1.126)
+
+Every built-in slash command, alphabetically sorted, with one-line description and the version it was introduced in.
+
+| Command | Description | Since | In `--bare`? |
+|---------|-------------|-------|-------------|
+| `/advisor` | Invoke dual-model Sonnet executor + Opus advisor for the session | v2.1.92 | No |
+| `/agents` | List available agent definitions in `.claude/agents/` | v2.1.32 | Yes |
+| `/branch` | Create a git worktree on a new branch for parallel Claude Code sessions | v2.1.84 | No |
+| `/changelog` | Display Claude Code release notes for the installed version | v2.1.126 | Yes |
+| `/clear` | Clear the current conversation and start fresh in the same session | v1.0 | Yes |
+| `/compact` | Compact conversation history to reduce context window usage | v1.0 | Yes |
+| `/config` | Open the settings UI — set model, effort, permissions, output style | v2.1.119 | Yes |
+| `/context` | Show the current context window breakdown (tokens used per category) | v2.1.32 | Yes |
+| `/cost` | Display the cost breakdown for the current session | v1.0 | Yes |
+| `/doctor` | Run health checks with guided auto-repair (`f` key) | v2.1.105 | Yes |
+| `/effort` | Set effort level: `low`, `normal`, `high`, or `xhigh` | v2.1.92 | Yes |
+| `/exit` | Exit the Claude Code session | v1.0 | Yes |
+| `/fast` | Toggle Fast Mode for Opus models (faster output, same model) | v2.1.113 | Yes |
+| `/help` | List all available commands with descriptions | v1.0 | Yes |
+| `/hooks` | List configured hooks from the active settings files | v2.1.63 | Yes |
+| `/keybindings` | Open or create `~/.claude/keybindings.json` for custom key bindings | v2.1.119 | Yes |
+| `/mcp` | List connected MCP servers and their available tools | v2.1.32 | Yes |
+| `/memory` | View or edit the Auto-Memory (MEMORY.md) for the current project | v2.1.32 | Yes |
+| `/model` | Switch the active model (e.g., `/model claude-opus-4-8`) | v1.0 | Yes |
+| `/permissions` | Show or modify active permissions (allow/deny rules) | v2.1.32 | Yes |
+| `/plan` | Generate a plan for the current task before execution | v2.1.63 | Yes |
+| `/rename` | Rename the current session for easy retrieval with `/resume` | v2.1.63 | Yes |
+| `/resume` | Resume a previous session by name or session ID | v2.1.63 | Yes |
+| `/rewind` | Open the rewind menu to go back to a previous turn | v2.1.32 | Yes |
+| `/skills` | List available skill definitions in `.claude/skills/` | v2.1.63 | Yes |
+| `/status` | Display live session status: model, mode, context %, permission mode | v2.1.120 | Yes |
+| `/team-onboarding` | Generate a codebase-aware onboarding guide for new teammates | v2.1.104 | No |
+| `/terminal-setup` | Configure terminal scroll, clipboard, and multiline binding | v2.1.116 | No |
+| `/theme` | List or set the active Claude Code theme | v2.1.119 | Yes |
+| `/todos` | Show or update the current session's TODO list | v2.1.32 | Yes |
+| `/usage` | Display API usage statistics for the current and recent sessions | v1.0 | Yes |
+
+**Note:** `--bare` mode skips non-essential initialisation. Commands touching terminal UI (`/terminal-setup`, `/team-onboarding`) are not available in `--bare` mode.
+
+---
+
+## Argument Parsing Deep Dive
+
+### `$ARGUMENTS` — Full Verbatim Capture
+
+```markdown
+# .claude/commands/summarize.md
+---
+name: summarize
+description: Summarize a file in 3 bullet points
+---
+
+Summarize the file at `$ARGUMENTS` in 3 bullet points.
+Focus on: purpose, key functions, side effects.
+```
+
+Usage: `/summarize src/auth/login.ts`
+→ Claude sees: `Summarize the file at src/auth/login.ts in 3 bullet points.`
+
+### Positional Arguments: `$ARG_1`, `$ARG_2`...
+
+```markdown
+# .claude/commands/refactor.md
+Refactor the function `$ARG_1` in `$ARG_2`.
+Goal: $ARG_3
+```
+
+Usage: `/refactor processPayment src/payments.ts improve error handling`
+→ `$ARG_1=processPayment`, `$ARG_2=src/payments.ts`, `$ARG_3=improve error handling`
+
+### Shell Execution in Commands
+
+```markdown
+# .claude/commands/git-summary.md
+Summarize changes across the last $(git log --oneline -10 | wc -l) commits.
+Log: $(git log --oneline -10)
+Branch: $(git branch --show-current)
+Changed files: $(git diff --name-only HEAD~1)
+```
+
+Shell commands run at invocation time, not at load time — commands are always dynamic.
+
+### Optional Argument Defaults
+
+```markdown
+Run tests for the `${ARG_1:-all services}` suite.
+```
+
+Usage: `/test-service` → `all services` | `/test-service auth` → `auth`
+
+---
 
 → Full reference: [Slash Commands — Complete Reference](./slash-commands-reference)

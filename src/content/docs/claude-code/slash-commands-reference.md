@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 12
   label: Slash Commands
-lastUpdated: 2026-06-03
+lastUpdated: 2026-06-05
 ---
 
 # Slash Commands — Complete Reference
