@@ -9,7 +9,7 @@ description: >
 sidebar:
   order: 14
   label: Output Styles
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 # Output Styles — Complete Reference

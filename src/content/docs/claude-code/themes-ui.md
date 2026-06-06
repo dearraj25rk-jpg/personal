@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 30
   label: Themes & UI
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 # Themes & UI Customization — Complete Reference

@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 5
   label: Hooks System
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 # Hooks System — Complete Reference

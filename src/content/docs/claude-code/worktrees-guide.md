@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 11
   label: Worktrees & Parallel Dev
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 # Git Worktrees — Parallel Development with Claude Code

@@ -7,7 +7,7 @@ description: >
   sandbox permission errors, and health-check commands. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 25
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 # Troubleshooting Guide

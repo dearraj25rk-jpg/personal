@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 26
   label: Native Binary Guide
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 # Native Binary — Installation, Performance & Enterprise Deployment

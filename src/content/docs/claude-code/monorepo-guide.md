@@ -9,7 +9,7 @@ description: >
   v2.1.126 (May 2026).
 sidebar:
   order: 27
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 # Monorepo & Multi-Service Guide

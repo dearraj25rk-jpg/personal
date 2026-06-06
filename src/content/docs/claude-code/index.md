@@ -109,7 +109,7 @@ This site received its second comprehensive documentation refresh on **2026-06-0
 - **CI/CD Integration** expanded with Jenkins, CircleCI, Bitbucket Pipelines examples, cost attribution per PR, prompt cache warming analysis, multi-stage pipeline pattern, concurrency management
 - **Native Binary Guide** extended with binary integrity verification, update mechanism detail, bfs/ugrep behavioral nuances for symlinks and Unicode
 - **Remote Control Guide** extended with full feature availability matrix, latency model explanation, enterprise self-hosted relay configuration, comprehensive troubleshooting
-- All 51 files updated to `lastUpdated: 2026-06-05`
+- All 51 files updated to `lastUpdated: 2026-06-06`
 
 **Previous June 4 pass included:**
 

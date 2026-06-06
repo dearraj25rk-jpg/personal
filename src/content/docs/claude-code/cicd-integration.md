@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 8
   label: CI/CD Integration
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 # CI/CD Integration — GitHub Actions & Automation

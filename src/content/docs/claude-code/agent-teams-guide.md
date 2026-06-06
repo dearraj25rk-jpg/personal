@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 7
   label: Agent Teams
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 # Agent Teams & Subagents — Complete Guide
