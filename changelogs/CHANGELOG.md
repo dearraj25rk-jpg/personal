@@ -5,6 +5,46 @@ This file is NOT published to the website.
 
 ---
 
+## [2026-06-06] — Feature Branch: feature/rag-hub — June 6 Diagrams Expansion
+
+### Summary
+
+Comprehensive diagrams expansion adding 6 new interactive diagram pages and 6 new React components. All 50 existing documentation files updated to `lastUpdated: 2026-06-06`. Total Claude Code documentation now stands at **57 files with 27 interactive diagrams**, providing dedicated visual coverage for every major feature area.
+
+This refresh was performed on branch `feature/rag-hub` on 2026-06-06.
+
+---
+
+### New Files Created
+
+| File | Component | Coverage |
+|------|-----------|----------|
+| `src/content/docs/claude-code/keyboard-shortcuts-diagram.mdx` | `KeyboardShortcutsDiagram.jsx` | Complete keyboard shortcuts visual reference; platform tables (macOS/Linux/Windows); custom keybindings via `~/.claude/keybindings.json` |
+| `src/content/docs/claude-code/session-management-diagram.mdx` | `SessionManagementDiagram.jsx` | Session state machine; `/resume` flow; per-session cost tracking; Python `StatefulClient` and TypeScript `cc.session()` patterns |
+| `src/content/docs/claude-code/themes-ui-diagram.mdx` | `ThemesUIDiagram.jsx` | All 15 built-in themes; `/theme` picker; `CLAUDE_THEME` env var; custom theme YAML schema; team distribution patterns |
+| `src/content/docs/claude-code/context-window-diagram.mdx` | `ContextWindowDiagram.jsx` | Context window anatomy; 200K vs 1M comparison (all 5 models); auto-compaction mechanics; ToolSearch deferred loading; 7-step optimization checklist |
+| `src/content/docs/claude-code/native-binary-diagram.mdx` | `NativeBinaryDiagram.jsx` | Node.js vs v2.1.113+ native binary comparison; embedded `bfs`/`ugrep` tools; performance benchmarks; enterprise airgap deployment |
+| `src/content/docs/claude-code/remote-control-diagram.mdx` | `RemoteControlDiagram.jsx` | Remote Control bridge architecture; Cloud Sessions vs Remote Control comparison; 15+ feature availability matrix; mobile use guide; enterprise self-hosted relay |
+
+### All-File Updates
+
+- All 50 existing documentation files updated `lastUpdated: 2026-06-05` → `2026-06-06`
+- `src/content/docs/index.mdx` — 6 new diagram cards added to Interactive Tools section
+- `src/content/docs/claude-code/index.md` — 6 new entries added to Diagrams & Interactive Tools table
+
+### Version Tracking
+
+| Metric | Before (June 5) | After (June 6) |
+|--------|-----------------|----------------|
+| lastUpdated dates | 2026-06-05 (all) | 2026-06-06 (all) |
+| Total documentation files | 51 | 57 |
+| Interactive diagram pages | 21 | 27 |
+| New MDX diagram pages | — | 6 |
+| New React components | — | 6 |
+| Branch | feature/rag-hub | feature/rag-hub |
+
+---
+
 ## [2026-06-03] — Feature Branch: feature/rag-hub — Comprehensive June 2026 Refresh
 
 ### Summary
