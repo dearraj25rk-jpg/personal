@@ -1,9 +1,9 @@
 ---
 title: Claude Code
-description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles (with interactive diagram), memory management (7 types), models & pricing, slash commands, context engineering, context window architecture, native binary guide, remote control & cloud sessions, enterprise deployment, monorepo patterns, and 21 interactive diagrams. 48 total resources. Claude Code v2.1.126 · Updated June 2026.
+description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles (with interactive diagram), memory management (7 types), models & pricing, slash commands, context engineering, context window architecture, native binary guide, remote control & cloud sessions, enterprise deployment, monorepo patterns, keyboard shortcuts & terminal integration, session management & resumability, themes & UI customization, and 27 interactive diagrams. 57 total resources. Claude Code v2.1.126 · Updated June 2026.
 sidebar:
   order: 1
-lastUpdated: 2026-06-05
+lastUpdated: 2026-06-06
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
@@ -87,9 +87,19 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 
 ## June 2026 — Documentation Update (Comprehensive Depth Pass)
 
-This site received its second comprehensive documentation refresh on **2026-06-05**, covering all Claude Code features through **v2.1.126** (the latest stable release as of May 19, 2026). This pass focused on depth, precision, and completeness across all 51 documentation files.
+This site received its second comprehensive documentation refresh on **2026-06-06**, covering all Claude Code features through **v2.1.126** (the latest stable release as of May 19, 2026). This pass focused on depth, precision, and completeness across all 57 documentation files.
 
-**What was added in the June 5, 2026 pass:**
+**What was added in the June 6, 2026 pass:**
+
+- **6 new interactive diagram pages** added:
+  - **Keyboard Shortcuts — Visual Reference** — complete keybindings reference, all categories (session, editing, history, multiline), platform differences (macOS/Linux/Windows), `/terminal-setup` walkthrough, iTerm2 and Warp integration, readline shortcuts, vi mode, custom keybindings via `~/.claude/keybindings.json`
+  - **Session Management — Lifecycle Diagram** — session state machine (new→initializing→active→compacting→ending→ended), `/resume` flow, session naming and retrieval, per-session cost tracking (`/usage`, `/context`), Python/TypeScript StatefulClient, parallel session pooling, session security
+  - **Themes & UI — Visual Reference** — all 15 built-in themes, `/theme` interactive picker, custom theme authoring via `~/.claude/themes/*.md` with full YAML schema, `CLAUDE_THEME` env var, team distribution via plugins and `settings.json`
+  - **Context Window — Architecture Diagram** — full context window anatomy (all layers), 200K vs 1M model comparison, auto-compaction at 83.5% with circuit breaker, token measurement with `/context`, ToolSearch deferred loading, prompt caching ROI, 7-step optimization checklist
+  - **Native Binary — Architecture Diagram** — v2.1.113+ before/after comparison, embedded `bfs` vs `find`, embedded `ugrep` vs ripgrep, 30-50% faster cold start benchmarks, all installation methods, enterprise airgap deployment, `DISABLE_UPDATES` version pinning, binary integrity verification
+  - **Remote Control & Cloud Sessions — Diagram** — Remote Control bridge topology (browser ↔ relay ↔ local CLI), Cloud Sessions (Anthropic-hosted, ephemeral), complete feature availability matrix, iOS/Android mobile use guide, E2E encryption security model, latency characteristics, enterprise self-hosted relay configuration
+
+**Previous June 5 pass included:**
 
 - **3 new reference guides** added:
   - **Keyboard Shortcuts & Terminal Integration** — complete keybindings reference, `/terminal-setup` for all terminals, readline shortcuts, terminal compatibility matrix, accessibility, troubleshooting
@@ -99,11 +109,6 @@ This site received its second comprehensive documentation refresh on **2026-06-0
 - **CI/CD Integration** expanded with Jenkins, CircleCI, Bitbucket Pipelines examples, cost attribution per PR, prompt cache warming analysis, multi-stage pipeline pattern, concurrency management
 - **Native Binary Guide** extended with binary integrity verification, update mechanism detail, bfs/ugrep behavioral nuances for symlinks and Unicode
 - **Remote Control Guide** extended with full feature availability matrix, latency model explanation, enterprise self-hosted relay configuration, comprehensive troubleshooting
-- **Worktrees Guide** significantly expanded with advanced patterns (Feature Branch Isolation, Automated CI via SDK, Agent Teams Across Worktrees), cleanup best practices, GitHub Actions integration
-- **Agent Teams Guide** significantly expanded with Hub-and-Spoke orchestration, Pipeline and Peer Review patterns, external services integration, debugging guide, performance tuning
-- **Monorepo Diagram** enriched with shared rules library pattern, CI/CD matrix build with change detection
-- **Slash Commands Diagram** enriched with complete alphabetical command reference table, argument parsing deep dive
-- **Permissions Diagram** enriched with per-tool permission requirements table, Seatbelt/bubblewrap sandbox architecture details, `disableBypassPermissionsMode` documentation
 - All 51 files updated to `lastUpdated: 2026-06-05`
 
 **Previous June 4 pass included:**
@@ -299,6 +304,12 @@ claude
 | [Enterprise Deployment — Diagram](./enterprise-diagram) | Managed settings hierarchy, auth provider comparison (Direct/Bedrock/Vertex WIF), audit logging destinations, cost governance dashboard, and phased rollout playbook |
 | [Monorepo Patterns — Diagram](./monorepo-diagram) | CLAUDE.md hierarchy tree for multi-service repos, path-scoped rules matching visualizer, shared MCP server architecture, Agent Teams cross-service orchestration, and CI/CD matrix build patterns |
 | [Slash Commands — Visual Reference](./slash-commands-diagram) | Interactive slash command browser — filter by category (session, memory, config, agents, git, debug), see usage examples, custom command anatomy, and special variable reference |
+| [Keyboard Shortcuts Diagram](./keyboard-shortcuts-diagram) | Complete keyboard shortcuts visual reference — all categories, platform differences (macOS/Linux/Windows), /terminal-setup walkthrough, iTerm2 integration, readline and vi mode shortcuts, custom keybindings |
+| [Session Management Diagram](./session-management-diagram) | Session lifecycle state machine, /resume flow, session naming, per-session cost tracking, Python/TypeScript StatefulClient, parallel session pooling |
+| [Themes & UI Diagram](./themes-ui-diagram) | All built-in themes, /theme command, custom theme authoring (~/.claude/themes/*.md), CLAUDE_THEME env var, team distribution |
+| [Context Window Diagram](./context-window-diagram) | Full context window anatomy, 200K vs 1M model comparison, auto-compaction mechanics, token measurement, ToolSearch deferred loading, optimization checklist |
+| [Native Binary Diagram](./native-binary-diagram) | v2.1.113+ architecture (no Node.js), embedded bfs/ugrep, 30-50% faster cold starts, all installation methods, enterprise airgap, DISABLE_UPDATES |
+| [Remote Control & Cloud Sessions Diagram](./remote-control-diagram) | Remote Control bridge architecture, Cloud Sessions, feature availability matrix, mobile use, security model, latency guide |
 
 ---
 
