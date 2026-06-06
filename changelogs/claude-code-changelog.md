@@ -5,6 +5,113 @@
 
 ---
 
+## [2026-06-06] — June 6 Documentation Refresh (Diagrams Expansion)
+
+### Overview
+Comprehensive documentation expansion adding 6 new interactive diagram pages and their
+corresponding React components. This update brings the total Claude Code documentation
+to **57 files with 27 interactive diagrams**, ensuring every major feature area has
+dedicated visual coverage.
+
+### New Interactive Diagram Pages (6 files)
+
+#### Keyboard Shortcuts Diagram (`keyboard-shortcuts-diagram.mdx`)
+- New interactive `KeyboardShortcutsDiagram.jsx` React component
+- Complete keyboard shortcuts reference organized by category
+- Platform-specific tables: macOS vs Linux vs Windows/WSL differences  
+- `/terminal-setup` walkthrough for iTerm2, Warp, VS Code Terminal
+- Readline shortcuts, vi mode toggle documentation
+- Custom keybindings via `~/.claude/keybindings.json`
+- Multi-line input methods per terminal (Shift+Enter, Ctrl+Enter, Option+Enter)
+
+#### Session Management Diagram (`session-management-diagram.mdx`)
+- New interactive `SessionManagementDiagram.jsx` React component
+- Session state machine diagram: new → initializing → active → compacting → ended
+- `/resume` flow diagram showing session picker and restoration process
+- Session storage paths and persistence model
+- Per-session cost tracking with `/usage` command output examples
+- Python `StatefulClient` and TypeScript `cc.session()` multi-turn patterns
+- Parallel session pooling with `asyncio.gather` examples
+- Session security model and data privacy considerations
+
+#### Themes & UI Diagram (`themes-ui-diagram.mdx`)
+- New interactive `ThemesUIDiagram.jsx` React component
+- All 15 built-in themes with preview descriptions (dark, light, solarized variants, monokai, dracula, github dark/light, catppuccin, tokyo-night, nord, gruvbox variants)
+- `/theme` interactive picker command documentation
+- `CLAUDE_THEME` env var (session-level, shell-level, `auto` for system preference)
+- Complete custom theme YAML frontmatter schema
+- Team distribution patterns: plugin-based, CLAUDE.md, settings.json
+- Dark/light auto-switch via `CLAUDE_THEME=auto`
+
+#### Context Window Diagram (`context-window-diagram.mdx`)
+- New interactive `ContextWindowDiagram.jsx` React component
+- Full context window anatomy with ASCII art showing all layers
+- 200K vs 1M window comparison table for all 5 models (Opus 4.8/4.7/4.6, Sonnet 4.6, Haiku 4.5)
+- Auto-compaction mechanics: 83.5% threshold, circuit breaker (v2.1.89+), post-compact level
+- What survives compaction (MEMORY.md, filesystem changes, session summary)
+- Token measurement via `/context` command with output example
+- ToolSearch deferred loading: 0 tokens until searched vs all-tools-loaded cost
+- 7-step optimization checklist
+
+#### Native Binary Diagram (`native-binary-diagram.mdx`)
+- New interactive `NativeBinaryDiagram.jsx` React component
+- Before/after comparison: Node.js-based vs v2.1.113+ native binary
+- Embedded `bfs` tool: BFS algorithm, .gitignore-aware, symlink handling
+- Embedded `ugrep` tool: Unicode-first, PCRE2, multiline, parallel threads
+- Performance benchmarks: cold start 800ms → 300-500ms (30-50% improvement)
+- All installation methods: curl (recommended), npm (legacy), homebrew, manual
+- Enterprise airgap deployment: download → distribute → version-pin flow
+- `DISABLE_UPDATES=1` mechanics and interaction with managed settings
+
+#### Remote Control & Cloud Sessions Diagram (`remote-control-diagram.mdx`)
+- New interactive `RemoteControlDiagram.jsx` React component
+- Remote Control bridge architecture: browser ↔ relay ↔ local CLI
+- Cloud Sessions vs Remote Control comparison
+- Complete feature availability matrix: 15+ features across 3 modes
+- iOS and Android mobile use guide with typing tips
+- End-to-end encryption security model, relay trust boundaries
+- Latency impact model with per-operation timing estimates
+- Enterprise self-hosted relay configuration
+
+### All-File Updates
+- All 50 existing documentation files updated `lastUpdated: 2026-06-05` → `2026-06-06`
+- Homepage (`src/content/docs/index.mdx`) updated with 6 new diagram cards
+- Claude Code index (`src/content/docs/claude-code/index.md`) expanded with 6 new entries in Diagrams table
+- Stats updated: 51 → 57 documentation files, 21 → 27 interactive diagrams
+
+### Documentation Coverage Map (post-update)
+All major Claude Code feature areas now have dedicated interactive visual coverage:
+
+| Feature Area | Reference Guide | Interactive Diagram |
+|-------------|-----------------|---------------------|
+| Core architecture | architecture (full lifecycle) | ArchDiagram.jsx ✓ |
+| Configuration hierarchy | claude-code-config-guide | PrecedenceDiagram.jsx ✓ |
+| File types (23) | claude-code-all-markdown-files-catalog | FileCatalog.jsx ✓ |
+| Hooks system | hooks-deep-dive | HooksDiagram.jsx ✓ |
+| MCP servers | mcp-servers-guide | MCPDiagram.jsx ✓ |
+| Memory management | memory-management | MemoryDiagram.jsx ✓ |
+| Models & pricing | models-pricing | ModelsDiagram.jsx ✓ |
+| Permissions & security | permissions-security | PermissionsDiagram.jsx ✓ |
+| Plugins | plugins-guide | PluginsDiagram.jsx ✓ |
+| Agent teams | agent-teams-guide | AgentTeamsDiagram.jsx ✓ |
+| CI/CD integration | cicd-integration | CICDDiagram.jsx ✓ |
+| SDK (Python/TS) | sdk-guide | SDKDiagram.jsx ✓ |
+| Worktrees | worktrees-guide | WorktreesDiagram.jsx ✓ |
+| Enterprise | enterprise-guide | EnterpriseDiagram.jsx ✓ |
+| Monorepo | monorepo-guide | MonorepoDiagram.jsx ✓ |
+| Slash commands | slash-commands-reference | SlashCommandsDiagram.jsx ✓ |
+| Output styles | output-styles-guide | OutputStylesDiagram.jsx ✓ |
+| Context engineering | context-window-guide | ContextEngineeringCE.jsx ✓ |
+| /advisor command | quick-start | AdvisorDiagram.jsx ✓ |
+| **Keyboard shortcuts** | **keyboard-shortcuts** | **KeyboardShortcutsDiagram.jsx ✓ NEW** |
+| **Session management** | **session-management** | **SessionManagementDiagram.jsx ✓ NEW** |
+| **Themes & UI** | **themes-ui** | **ThemesUIDiagram.jsx ✓ NEW** |
+| **Context window arch.** | **context-window-guide** | **ContextWindowDiagram.jsx ✓ NEW** |
+| **Native binary** | **native-binary-guide** | **NativeBinaryDiagram.jsx ✓ NEW** |
+| **Remote control** | **remote-control-guide** | **RemoteControlDiagram.jsx ✓ NEW** |
+
+---
+
 ## [2026-06-04] — June 2026 Depth Pass (feature/rag-hub)
 
 ### Overview
