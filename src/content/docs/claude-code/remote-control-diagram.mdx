@@ -1,0 +1,260 @@
+---
+tableOfContents: false
+title: Remote Control & Cloud Sessions — Diagram
+description: >
+  Architecture diagram for Claude Code Remote Control and Cloud Sessions —
+  Remote Control bridge topology (browser ↔ relay ↔ local CLI), Cloud Sessions
+  (browser-native, Anthropic-hosted), complete feature availability matrix
+  comparing local/remote/cloud modes, iOS and Android mobile use guide,
+  security model (E2E encryption, relay trust, data flow), latency
+  characteristics, and enterprise self-hosted relay configuration.
+  v2.1.126 (May 2026).
+sidebar:
+  order: 50
+lastUpdated: 2026-06-06
+---
+
+import RemoteControlDiagram from '../../../components/interactive/RemoteControlDiagram.jsx';
+
+<div class="interactive-tool">
+  <RemoteControlDiagram client:only="react" />
+</div>
+
+## Remote Control & Cloud Sessions Quick Reference
+
+### Architecture Overview
+
+```
+REMOTE CONTROL MODE
+─────────────────────────────────────────────────────────────
+
+  Your Phone/Tablet          Relay Service         Your Machine
+  (Browser / Mobile App)                           (Local CLI)
+  ┌──────────────────┐      ┌───────────┐      ┌──────────────┐
+  │                  │      │           │      │              │
+  │  claude.ai/code  │◄────►│  Relay    │◄────►│  claude CLI  │
+  │  (web UI)        │ WSS  │  (WSS)    │ WSS  │  (running)   │
+  │                  │      │           │      │              │
+  └──────────────────┘      └───────────┘      └──────────────┘
+  End-to-End Encrypted: browser ↔↔↔↔↔↔↔↔↔↔↔↔↔↔ local CLI
+  (relay cannot read message content)
+
+  Data flow:
+  1. Browser opens session at claude.ai/code
+  2. Enters Remote Control pairing code from local CLI
+  3. Relay establishes WebSocket tunnel
+  4. Commands typed in browser → encrypted → relay → local CLI
+  5. Local CLI executes, responses → encrypted → relay → browser
+  6. All file access, bash execution on LOCAL machine
+
+
+CLOUD SESSIONS MODE
+─────────────────────────────────────────────────────────────
+
+  Your Phone/Tablet          Anthropic Infrastructure
+  (Browser / Mobile App)
+  ┌──────────────────┐      ┌────────────────────────────────┐
+  │                  │      │  Cloud Session Container       │
+  │  claude.ai/code  │◄────►│                                │
+  │  (web UI)        │ HTTPS│  ├── Claude Code CLI           │
+  │                  │      │  ├── Ephemeral filesystem      │
+  │                  │      │  ├── Git clone of your repo    │
+  │                  │      │  └── Network access            │
+  └──────────────────┘      └────────────────────────────────┘
+
+  Data flow:
+  1. Browser initiates Cloud Session at claude.ai/code
+  2. Anthropic spins up isolated container
+  3. Container clones your repo (OAuth GitHub/GitLab integration)
+  4. All execution happens on Anthropic infrastructure
+  5. Session destroyed after use (ephemeral, no persistence)
+```
+
+### Feature Availability Matrix
+
+| Feature | Local CLI | Remote Control | Cloud Sessions |
+|---------|-----------|---------------|----------------|
+| File system access | Full (local FS) | Full (local FS via relay) | Ephemeral container FS |
+| Bash execution | Yes | Yes (runs locally) | Yes (runs in container) |
+| MCP servers | Yes | Yes (local MCP servers) | Limited (pre-installed only) |
+| Custom CLAUDE.md | Yes | Yes (from local repo) | Yes (from cloned repo) |
+| Hooks | Yes | Yes (local hooks) | No (container doesn't run hooks) |
+| /resume sessions | Yes | Yes (accesses local sessions) | No (ephemeral) |
+| /branch (worktrees) | Yes | Yes | No |
+| Plugins | Yes | Yes (local plugins) | No |
+| Custom themes | Yes | Yes | Built-in themes only |
+| Cost tracking | Yes | Yes | Yes |
+| Screen reader support | Terminal-based | Browser-based | Browser-based |
+| Mobile keyboard | N/A | Yes (browser keyboard) | Yes (browser keyboard) |
+| Offline use | Yes (cached) | No | No |
+| Multi-tab sessions | No | No | Yes |
+
+### Remote Control — Setup
+
+```bash
+# Step 1: Start a session with Remote Control enabled
+claude --remote
+# → Outputs a pairing code: RC-XXXX-XXXX
+# → Prints: "Visit claude.ai/code and enter your pairing code"
+
+# Step 2: On your browser/mobile:
+# → Go to claude.ai/code
+# → Click "Connect to Local Machine"
+# → Enter the pairing code
+# → Click "Connect"
+
+# Session is now mirrored in browser
+# All commands run on your local machine
+# Press Ctrl+C locally or close the browser to end Remote Control
+```
+
+Alternatively, start Remote Control from within a running session:
+```
+> /remote-control
+→ Pairing code: RC-7843-2291
+→ Expires in: 5 minutes
+→ Connect at: claude.ai/code
+```
+
+### Cloud Sessions — Setup
+
+```
+Cloud Sessions are launched from claude.ai/code:
+
+1. Go to claude.ai/code
+2. Click "New Cloud Session"
+3. Connect your GitHub/GitLab account (one-time OAuth)
+4. Select a repository and branch
+5. Choose compute tier:
+   - Standard (2 vCPU, 4GB RAM) — free tier
+   - Pro (4 vCPU, 8GB RAM) — Pro subscription
+   - Max (8 vCPU, 16GB RAM) — Enterprise
+6. Container initializes (~30 seconds)
+7. Repo is cloned, CLAUDE.md loaded
+8. Session starts — identical to local CLI experience
+
+Cloud Session ends:
+- When you close the browser tab
+- After 1 hour of inactivity (auto-terminate)
+- When you explicitly end it
+→ All container state is destroyed (ephemeral)
+→ Any committed git changes persist via push
+```
+
+### Mobile Use Guide
+
+**iOS:**
+- Safari and Chrome both supported for Remote Control and Cloud Sessions
+- Enable "Request Desktop Website" for best experience on iPad
+- Hardware keyboard (Magic Keyboard) recommended for heavy use
+- Software keyboard: Ctrl+C shortcut via long-press on terminal area
+- Clipboard integration: tap-and-hold → paste works in both modes
+
+**Android:**
+- Chrome is the recommended browser
+- Samsung DeX (desktop mode) provides best experience
+- Gboard physical keyboard shortcuts work in Remote Control mode
+- Screen size: Remote Control renders the full CLI interface — use landscape mode
+
+**Practical mobile workflow (Remote Control):**
+1. Start a long-running task on your desktop: `claude --remote "Refactor the auth module"`
+2. Copy the pairing code
+3. Open claude.ai/code on mobile, enter pairing code
+4. Monitor progress and provide guidance from mobile
+5. Task completes on your local machine
+
+### Security Model
+
+**Remote Control encryption:**
+- All communication is end-to-end encrypted using session-specific keys
+- The relay server cannot decrypt message content (zero-knowledge relay)
+- Keys are exchanged out-of-band via the pairing code mechanism
+- Sessions expire after 24 hours (re-pairing required)
+- No data is logged by the relay beyond connection metadata
+
+**Cloud Sessions security:**
+- Each session runs in an isolated container (gVisor sandbox)
+- Containers have no access to other users' data or containers
+- Network access: outbound HTTP/HTTPS only (no inbound)
+- Repository access via short-lived OAuth tokens (1-hour TTL)
+- All container data destroyed on session end
+- Compute runs in `us-east-1` (or EU region for GDPR compliance)
+
+**Data residency:**
+- Remote Control: data flows through Anthropic relay (`relay.claude.ai`)
+  encrypted; content never stored
+- Cloud Sessions: compute in Anthropic-managed cloud (AWS)
+  with data residency options for Enterprise
+
+### Latency Characteristics
+
+```
+Round-trip latency comparison:
+
+  Local CLI (baseline):          0ms   ─
+  Remote Control (same city):   15ms   ─
+  Remote Control (cross-US):    45ms   ──
+  Remote Control (transatlantic): 85ms ───
+  Cloud Sessions (US region):   35ms   ──
+  Cloud Sessions (EU region):   50ms   ──
+
+Perceptible impact:
+  < 50ms:  Imperceptible for typing and commands
+  50–100ms: Slight delay noticeable on fast typists
+  > 100ms: Noticeable lag — consider closer region or VPN
+
+Large file transfers (Remote Control):
+  Relay adds ~10% overhead for file contents vs direct API
+  Files > 1MB are compressed before relay transmission
+  Very large repos (>100K files): initial bfs traversal may take 5–10s
+```
+
+### Enterprise Self-Hosted Relay
+
+For enterprises requiring data to stay on-premises or in their own cloud:
+
+```yaml
+# docker-compose.yml for self-hosted relay
+version: '3.8'
+services:
+  claude-relay:
+    image: ghcr.io/anthropics/claude-code-relay:latest
+    ports:
+      - "443:443"
+    environment:
+      - RELAY_TLS_CERT=/certs/server.crt
+      - RELAY_TLS_KEY=/certs/server.key
+      - RELAY_AUTH_SECRET=${RELAY_AUTH_SECRET}
+      - RELAY_MAX_SESSIONS=500
+      - RELAY_SESSION_TTL=86400
+    volumes:
+      - ./certs:/certs:ro
+      - relay-data:/var/relay
+volumes:
+  relay-data:
+```
+
+Configure Claude Code to use self-hosted relay:
+```json
+// .claude/settings.json (enterprise managed)
+{
+  "remoteControl": {
+    "relayUrl": "wss://relay.yourcompany.com",
+    "authToken": "${COMPANY_RELAY_TOKEN}"
+  }
+}
+```
+
+### Troubleshooting Remote Control
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Pairing code not accepted | Code expired (5-minute TTL) | Generate new code with `/remote-control` |
+| "Cannot connect to relay" | Corporate firewall blocking WebSocket | Ensure WSS (port 443) is allowed; try VPN |
+| Commands slow/laggy | High latency to relay | Check `ping relay.claude.ai`; use regional relay |
+| Session disconnects frequently | Network interruptions | Use wired connection; relay auto-reconnects |
+| Mobile keyboard not working | Browser compatibility | Use Chrome on Android, Safari/Chrome on iOS |
+| Remote Control works but file edits not visible | Display lag | Refresh browser tab (session state preserved) |
+| Enterprise relay: "auth failed" | Token mismatch | Verify `COMPANY_RELAY_TOKEN` env var is set |
+
+→ Full reference: [Remote Control & Cloud Sessions](./remote-control-guide)

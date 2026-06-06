@@ -1,0 +1,188 @@
+---
+tableOfContents: false
+title: Themes & UI — Visual Reference
+description: >
+  Complete guide to Claude Code themes and UI customization — all built-in
+  themes with preview descriptions, /theme command for interactive selection,
+  custom theme authoring via ~/.claude/themes/*.md with full YAML frontmatter
+  schema, CLAUDE_THEME environment variable for scripted/CI use, team theme
+  distribution via plugins and shared CLAUDE.md, and dark/light auto-switch.
+  v2.1.126 (May 2026).
+sidebar:
+  order: 47
+lastUpdated: 2026-06-06
+---
+
+import ThemesUIDiagram from '../../../components/interactive/ThemesUIDiagram.jsx';
+
+<div class="interactive-tool">
+  <ThemesUIDiagram client:only="react" />
+</div>
+
+## Themes Quick Reference
+
+### Built-in Themes
+
+| Theme | Type | Character |
+|-------|------|-----------|
+| `dark` | Dark | GitHub-style dark, high contrast |
+| `light` | Light | Clean white, high contrast |
+| `solarized-dark` | Dark | Warm amber tones, low contrast |
+| `solarized-light` | Light | Warm beige, soft contrast |
+| `monokai` | Dark | Classic Monokai — greens, pinks, yellows |
+| `dracula` | Dark | Purple-dominant dark theme |
+| `github-dark` | Dark | GitHub's official dark theme |
+| `github-light` | Light | GitHub's official light theme |
+| `one-dark-pro` | Dark | Atom One Dark Pro |
+| `catppuccin-mocha` | Dark | Catppuccin Mocha pastel dark |
+| `catppuccin-latte` | Light | Catppuccin Latte pastel light |
+| `tokyo-night` | Dark | Tokyo Night deep blue theme |
+| `nord` | Dark | Arctic Nord color palette |
+| `gruvbox-dark` | Dark | Retro groove dark theme |
+| `gruvbox-light` | Light | Retro groove light theme |
+
+### /theme Command
+
+```
+claude
+> /theme
+  Opens interactive theme picker:
+    ┌─────────────────────────────────────┐
+    │ Select a theme                      │
+    │                                     │
+    │ ● dark (current)                    │
+    │   light                             │
+    │   solarized-dark                    │
+    │   solarized-light                   │
+    │   monokai                           │
+    │   dracula                           │
+    │   github-dark                       │
+    │   github-light                      │
+    │   [custom themes listed here]       │
+    └─────────────────────────────────────┘
+  Arrow keys to preview, Enter to apply
+```
+
+**Apply instantly (no restart):** Theme changes take effect immediately in the current session.
+
+### CLAUDE_THEME Environment Variable
+
+```bash
+# Set theme for all Claude Code sessions (add to ~/.zshrc or ~/.bashrc)
+export CLAUDE_THEME="monokai"
+
+# Override for a specific session
+CLAUDE_THEME="github-light" claude "Review this PR"
+
+# Auto-detect system dark/light preference
+export CLAUDE_THEME="auto"
+
+# Disable color (for CI/CD or accessibility)
+export CLAUDE_THEME="none"
+export NO_COLOR=1
+```
+
+### Custom Theme Authoring
+
+Create a custom theme at `~/.claude/themes/<name>.md`:
+
+```markdown
+---
+name: my-custom-theme
+description: A high-contrast dark theme optimized for bright monitors
+type: dark
+colors:
+  background: "#0a0a0a"
+  foreground: "#f0f0f0"
+  accent: "#00d4ff"
+  accent-secondary: "#ff6b6b"
+  success: "#00ff88"
+  warning: "#ffcc00"
+  error: "#ff4444"
+  muted: "#666666"
+  border: "#333333"
+  code-bg: "#141414"
+  selection-bg: "#1a3a4a"
+---
+```
+
+**Required fields:** `name`, `type` (dark or light), `colors.background`, `colors.foreground`, `colors.accent`
+
+**Optional fields:** All other color slots. Unspecified colors fall back to the base dark or light theme defaults.
+
+### Full Color Slot Reference
+
+| Slot | Purpose | Used in |
+|------|---------|--------|
+| `background` | Main terminal background | All UI |
+| `foreground` | Primary text color | All text |
+| `accent` | Primary accent (links, highlights) | Headers, focus rings |
+| `accent-secondary` | Secondary accent | Tool use indicators |
+| `success` | Success state color | Completed actions |
+| `warning` | Warning state color | Caution messages |
+| `error` | Error state color | Error messages |
+| `muted` | Dimmed text | Secondary info, timestamps |
+| `border` | UI borders and dividers | Panels, separators |
+| `code-bg` | Code block background | Inline and fenced code |
+| `selection-bg` | Text selection background | Copy operations |
+| `prompt-color` | Input prompt color | The `>` prompt |
+| `tool-name-color` | Tool call display | Tool execution lines |
+| `cost-color` | Cost display color | /usage output |
+
+### Team Distribution
+
+**Via plugin** (recommended for team-wide distribution):
+
+Place custom theme files in your plugin directory:
+```
+.claude/plugins/my-company-theme/
+  plugin.json
+  themes/
+    company-dark.md
+    company-light.md
+```
+
+`plugin.json`:
+```json
+{
+  "name": "my-company-theme",
+  "version": "1.0.0",
+  "themes": ["themes/company-dark.md", "themes/company-light.md"]
+}
+```
+
+**Via shared CLAUDE.md:**
+
+Add to your project's `CLAUDE.md` (visible to all team members):
+```markdown
+## Team Theme
+We use the `company-dark` theme. Apply with `/theme` → select `company-dark`.
+Or set in your shell: `export CLAUDE_THEME="company-dark"`
+```
+
+**Via settings.json** (project-level):
+```json
+{
+  "theme": "company-dark"
+}
+```
+Commit `.claude/settings.json` to git so all team members get the theme automatically.
+
+### Dark/Light Auto-switch
+
+```bash
+# Auto mode detects macOS/Linux system preference
+export CLAUDE_THEME="auto"
+```
+
+On macOS, `auto` reads `defaults read -g AppleInterfaceStyle` to detect dark/light mode. On Linux, checks `DESKTOP_SESSION` and `GTK_THEME` environment variables.
+
+### Accessibility Notes
+
+- All built-in themes meet WCAG AA contrast ratios for primary text
+- `dark` and `light` themes are tuned for maximum legibility
+- `NO_COLOR=1` disables all ANSI color output (useful for screen readers)
+- `CLAUDE_THEME=none` removes color while keeping unicode box-drawing characters
+- For terminal multiplexers (tmux, screen): ensure `TERM=xterm-256color` or `TERM=xterm-truecolor` is set
+
+→ Full reference: [Themes & UI Customization](./themes-ui-guide)

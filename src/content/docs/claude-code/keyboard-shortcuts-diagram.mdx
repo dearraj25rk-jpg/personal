@@ -1,0 +1,205 @@
+---
+tableOfContents: false
+title: Keyboard Shortcuts — Visual Reference
+description: >
+  Complete keyboard shortcuts reference for Claude Code — all categories
+  (session, editing, navigation, history, multiline), platform differences
+  between macOS, Linux, WSL, and Windows, /terminal-setup walkthrough for
+  iTerm2 and other terminals, readline shortcuts, vi mode, custom keybindings
+  via ~/.claude/keybindings.json. v2.1.126 (May 2026).
+sidebar:
+  order: 45
+lastUpdated: 2026-06-06
+---
+
+import KeyboardShortcutsDiagram from '../../../components/interactive/KeyboardShortcutsDiagram.jsx';
+
+<div class="interactive-tool">
+  <KeyboardShortcutsDiagram client:only="react" />
+</div>
+
+## Keyboard Shortcuts Quick Reference
+
+### Session Control
+
+| Shortcut | Action | Notes |
+|----------|--------|-------|
+| `Ctrl+C` | Interrupt current operation | Session stays alive; use in tool loop to stop Claude |
+| `Ctrl+D` | Exit (EOF) | Prompts if unsaved context; second `Ctrl+D` force-exits |
+| `Ctrl+L` | Clear terminal | Clears visible buffer; conversation context preserved |
+| `Escape` | Cancel current line | Clears typed input without submitting |
+| `Ctrl+Z` | Suspend to background | Resume with `fg` in shell |
+
+### Line Editing
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+A` | Move to beginning of line |
+| `Ctrl+E` | Move to end of line |
+| `Ctrl+W` | Delete word backward |
+| `Ctrl+U` | Delete from cursor to beginning |
+| `Ctrl+K` | Delete from cursor to end |
+| `Ctrl+Y` | Yank (paste) last deleted text |
+| `Alt+B` / `Alt+←` | Move word backward |
+| `Alt+F` / `Alt+→` | Move word forward |
+| `Alt+D` | Delete word forward |
+
+### History Navigation
+
+| Shortcut | Action |
+|----------|--------|
+| `↑` / `Ctrl+P` | Previous command in history |
+| `↓` / `Ctrl+N` | Next command in history |
+| `Ctrl+R` | Reverse incremental search |
+| `Ctrl+S` | Forward incremental search |
+| `Ctrl+G` | Cancel search, restore line |
+| `Alt+.` | Insert last argument of previous command |
+
+### Multi-line Input
+
+| Method | Shortcut | Terminal |
+|--------|----------|----------|
+| New line (not submit) | `Shift+Enter` | iTerm2 (after /terminal-setup) |
+| New line (not submit) | `Ctrl+Enter` | VS Code Terminal |
+| New line (not submit) | `Option+Enter` | Warp |
+| Submit multi-line | `Enter` on final line | All terminals |
+| Paste multi-line | Paste directly | Works in all terminals |
+
+### Slash Command Shortcuts
+
+| Action | Shortcut |
+|--------|----------|
+| Autocomplete command | `Tab` after `/` |
+| Browse commands | `/` + `↓` arrow |
+| Execute command | `Enter` |
+| Cancel command | `Escape` |
+
+### Platform Differences
+
+| Shortcut | macOS | Linux | Windows/WSL |
+|----------|-------|-------|-------------|
+| Jump word backward | `Alt+B` | `Alt+B` | `Ctrl+←` |
+| Jump word forward | `Alt+F` | `Alt+F` | `Ctrl+→` |
+| Delete word backward | `Ctrl+W` | `Ctrl+W` | `Ctrl+Backspace` |
+| Terminal clear | `Ctrl+L` or `⌘+K` | `Ctrl+L` | `Ctrl+L` |
+| Paste | `⌘+V` | `Ctrl+Shift+V` | `Ctrl+Shift+V` |
+| Copy | `⌘+C` | `Ctrl+Shift+C` | `Ctrl+Shift+C` |
+
+### /terminal-setup Configuration
+
+The `/terminal-setup` command (v2.1.116+) provides guided configuration:
+
+```
+/terminal-setup
+→ Configures:
+   • Scroll sensitivity (lines per wheel tick)
+   • Clipboard integration (system clipboard vs internal)
+   • iTerm2 Shift+Enter → new line (multiline input)
+   • Line height and font size hints
+   • TERM and COLORTERM environment variables
+```
+
+**iTerm2 Shift+Enter binding:**
+After running `/terminal-setup`, iTerm2 is configured so that `Shift+Enter` sends a newline (`\n`) without submitting the prompt. This enables multi-line message composition.
+
+Manual iTerm2 configuration (if /terminal-setup isn't available):
+1. Open iTerm2 → Preferences → Keys → Key Bindings
+2. Add: `Shift+Return` → Action: Send text `\n`
+
+**Warp terminal:**
+Warp uses `Option+Enter` for new line by default. No additional setup needed.
+
+**Windows Terminal / VS Code Terminal:**
+Use `Ctrl+Enter` for new line. Or paste multi-line text directly.
+
+### Custom Keybindings
+
+Create `~/.claude/keybindings.json` to override any key binding:
+
+```json
+{
+  "bindings": [
+    {
+      "key": "ctrl+shift+c",
+      "command": "/compact",
+      "description": "Compact conversation"
+    },
+    {
+      "key": "ctrl+shift+r",
+      "command": "/resume",
+      "description": "Open session picker"
+    },
+    {
+      "key": "ctrl+shift+m",
+      "command": "/memory",
+      "description": "View memory files"
+    }
+  ]
+}
+```
+
+View and edit keybindings from within Claude Code: `/keybindings`
+
+### Vi Mode
+
+Claude Code supports readline vi mode. Enable it:
+
+```bash
+# Add to ~/.inputrc
+set editing-mode vi
+```
+
+In vi mode:
+- `Escape` → command mode
+- `i` → insert mode (default)
+- `0` / `$` → jump to start/end of line
+- `w` / `b` → move word forward/backward
+- `dd` → delete entire line
+- `u` → undo
+- `/pattern` → search history forward
+
+### Terminal Compatibility Matrix
+
+| Terminal | Shift+Enter | Option+Enter | Ctrl+Enter | Vi Mode | True Color |
+|----------|-------------|--------------|------------|---------|------------|
+| iTerm2 (macOS) | After /terminal-setup | Yes | No | Yes | Yes |
+| Warp (macOS) | No | Yes (default) | No | Yes | Yes |
+| Terminal.app (macOS) | No | No | No | Yes | Partial |
+| VS Code Terminal | No | No | Yes | Yes | Yes |
+| Windows Terminal | No | No | Yes | Yes | Yes |
+| GNOME Terminal | No | No | No | Yes | Yes |
+| Alacritty | Configurable | No | No | Yes | Yes |
+| tmux | Passthrough | Passthrough | Passthrough | Yes | Yes |
+
+### Readline Configuration Reference
+
+Full readline configuration options relevant to Claude Code, placed in `~/.inputrc`:
+
+```bash
+# ~/.inputrc — readline configuration for Claude Code
+
+# Enable vi mode
+set editing-mode vi
+
+# Show vi mode indicator in prompt
+set show-mode-in-prompt on
+set vi-ins-mode-string \1\e[6 q\2
+set vi-cmd-mode-string \1\e[2 q\2
+
+# Better history search
+"\e[A": history-search-backward
+"\e[B": history-search-forward
+
+# Case-insensitive completion
+set completion-ignore-case on
+
+# Show all completions immediately (no 'Display all X possibilities?')
+set page-completions off
+set completion-query-items 200
+
+# Colored completion output
+set colored-stats on
+set colored-completion-prefix on
+```
+
+→ Full reference: [Keyboard Shortcuts & Terminal Integration](./keyboard-shortcuts-guide)

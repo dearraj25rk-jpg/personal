@@ -1,0 +1,224 @@
+---
+tableOfContents: false
+title: Session Management — Lifecycle Diagram
+description: >
+  Visual guide to Claude Code session lifecycle — session state machine
+  (new→initializing→active→compacting→ending→ended), /resume command and
+  session picker, session naming and retrieval, per-session cost tracking
+  (/usage, /context), Python and TypeScript StatefulClient for multi-turn
+  SDK sessions, parallel session pooling, session security and persistence.
+  v2.1.126 (May 2026).
+sidebar:
+  order: 46
+lastUpdated: 2026-06-06
+---
+
+import SessionManagementDiagram from '../../../components/interactive/SessionManagementDiagram.jsx';
+
+<div class="interactive-tool">
+  <SessionManagementDiagram client:only="react" />
+</div>
+
+## Session Management Quick Reference
+
+### Session State Machine
+
+```
+                    new
+                     │
+                     ▼
+               initializing
+               (CLAUDE.md loaded,
+                tools registered,
+                hooks fired)
+                     │
+                     ▼
+               ─────────────
+              │    active    │◄──────────────────────┐
+              │ (tool loop)  │                       │
+               ─────────────                        │
+                  │    │                           │
+           80% full  user cmd               /rewind (roll back)
+                │    │                           │
+                ▼    ▼                           │
+            compacting  ending                   │
+                │    │                           │
+                ▼    ▼                           │
+              active  ended ──────────────────────
+```
+
+### Session Storage
+
+Sessions are persisted at: `~/.claude/projects/<project-hash>/sessions/`
+
+Each session stores:
+- Conversation history (all turns)
+- Cost tracking data (tokens, cache hits, USD)
+- Session name (if set with `/rename`)
+- Start time, last active time
+- Working directory when session started
+
+### /resume Command
+
+```
+claude /resume
+  └─► Opens interactive session picker
+       ├── Shows last 20 sessions
+       ├── Sorted by last active (most recent first)
+       ├── Shows: name (or hash), date, cost, turn count
+       └── Arrow keys to browse, Enter to resume
+
+Resuming a session:
+  1. Conversation history is restored
+  2. Cost tracking continues from where it left off
+  3. Configuration (CLAUDE.md, rules, settings) reloaded fresh
+  4. Previous tool results NOT restored (fresh tool state)
+  5. Auto-memory (MEMORY.md) preserved separately
+```
+
+### Session Commands Reference
+
+| Command | What it does |
+|---------|-------------|
+| `/resume` | Open session picker and resume a previous session |
+| `/rename [name]` | Name or rename current session for easy retrieval |
+| `/usage` | Show current session cost, token count, cache hit rate |
+| `/context` | Display token usage breakdown (system/conversation/tools/available) |
+| `/compact [instruction]` | Manually compact conversation to free context |
+| `/clear` | Start fresh conversation (keeps config, resets history) |
+| `/rewind` | Roll back last N file changes AND last N conversation turns |
+
+### Cost Tracking
+
+Claude Code tracks cost per session. See it with `/usage`:
+
+```
+Session: my-feature-branch (started 2026-06-06 10:23)
+──────────────────────────────────────────────────────
+Input tokens:   142,384   ($0.43)
+Output tokens:   18,291   ($0.27)
+Cache writes:    89,123   ($0.13)
+Cache reads:    634,721   ($0.19)  ← 81% cache hit rate
+──────────────────────────────────────────────────────
+Session total:             $1.02
+```
+
+**Budget cap:** `claude --max-budget-usd 5.00` stops the session when $5 is reached.
+
+### Python SDK — StatefulClient
+
+```python
+from claude_code_sdk import ClaudeCode, SessionConfig
+
+# Create a stateful client (persists session across calls)
+cc = ClaudeCode()
+
+# Start or resume a named session
+async with cc.session(name="feature-x-analysis") as session:
+    result1 = await session.run("Read the auth module and explain it")
+    result2 = await session.run("Now refactor it to use async/await")
+    # Both runs share the same conversation history
+
+# Resume the same session in a later script run
+async with cc.session(name="feature-x-analysis", resume=True) as session:
+    result3 = await session.run("What did we change last time?")
+    # Has full context from previous runs
+```
+
+### TypeScript SDK — StatefulClient
+
+```typescript
+import { ClaudeCode } from '@anthropic-ai/claude-code';
+
+const cc = new ClaudeCode();
+
+// Named persistent session
+const session = cc.session({ name: 'feature-analysis', resume: true });
+
+const result1 = await session.run('Analyse the codebase structure');
+const result2 = await session.run('Now write tests for the main module');
+
+// Each .run() continues the same conversation
+await session.close(); // Persists session for future resumption
+```
+
+### Parallel Sessions
+
+Run multiple independent sessions simultaneously:
+
+```python
+import asyncio
+from claude_code_sdk import ClaudeCode
+
+cc = ClaudeCode()
+
+async def analyze_module(module_name: str):
+    async with cc.session(name=f"analyze-{module_name}") as s:
+        return await s.run(f"Analyse {module_name} and find all bugs")
+
+# Run 3 parallel analysis sessions
+results = await asyncio.gather(
+    analyze_module("auth"),
+    analyze_module("payments"),
+    analyze_module("notifications"),
+)
+```
+
+### Session Lifecycle Events
+
+Hooks fire at key points in the session lifecycle:
+
+| Event | When it fires | Blockable |
+|-------|--------------|----------|
+| `PreSessionStart` | Before session initializes | Yes |
+| `PostSessionStart` | After session fully initializes | No |
+| `PreCompact` | Before context compaction | Yes |
+| `PostCompact` | After compaction completes | No |
+| `Stop` | When session is ending | Yes (exit 2 = keep going) |
+| `PostSessionEnd` | After session terminates | No |
+
+Use `Stop` hook with exit code 2 to prevent premature session termination:
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "handler": {
+        "type": "command",
+        "command": "npm test --silent; if [ $? -ne 0 ]; then echo 'Tests failing'; exit 2; fi"
+      }
+    }]
+  }
+}
+```
+
+### Session Security
+
+- Session files are stored at `~/.claude/projects/` — user-readable only (chmod 700)
+- Sessions contain conversation text — do not commit `~/.claude/` to git
+- Enterprise environments can configure `sessionStoragePath` to a managed location
+- Sessions are not encrypted at rest — treat `~/.claude/` as sensitive
+- `/clear` does NOT delete the session file; use `rm -rf ~/.claude/projects/<hash>/sessions/` to purge
+
+### Session Persistence Architecture
+
+```
+~/.claude/
+├── auth.json                    ← OAuth credentials
+├── settings.json                ← Global preferences
+├── CLAUDE.md                    ← Global project context
+├── keybindings.json             ← Custom key bindings
+├── themes/                      ← Custom themes
+└── projects/
+    └── <project-hash>/          ← One directory per project root
+        ├── memory/
+        │   └── MEMORY.md        ← Auto-memory (persists across sessions)
+        └── sessions/
+            ├── <session-id-1>.json   ← Conversation history + cost
+            ├── <session-id-2>.json
+            └── ...
+```
+
+The `<project-hash>` is derived from the absolute path of the project root when Claude Code starts. This means the same project on different machines (or different clones) will produce different hashes.
+
+→ Full reference: [Session Management & Resumability](./session-management-guide)

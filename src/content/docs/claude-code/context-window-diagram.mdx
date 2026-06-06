@@ -1,0 +1,223 @@
+---
+tableOfContents: false
+title: Context Window — Architecture Diagram
+description: >
+  Visual guide to Claude Code's context window architecture — full anatomy
+  showing all layers (system prompt, tool schemas, conversation history, tool
+  results), 200K vs 1M window comparison for all models, auto-compaction
+  mechanics (83.5% threshold, circuit breaker), token measurement with /context,
+  ToolSearch deferred tool loading, prompt caching ROI, and practical
+  optimization strategies. v2.1.126 (May 2026).
+sidebar:
+  order: 48
+lastUpdated: 2026-06-06
+---
+
+import ContextWindowDiagram from '../../../components/interactive/ContextWindowDiagram.jsx';
+
+<div class="interactive-tool">
+  <ContextWindowDiagram client:only="react" />
+</div>
+
+## Context Window Quick Reference
+
+### Full Anatomy
+
+```
+CLAUDE CODE CONTEXT WINDOW (example: Sonnet 4.6 — 200K tokens = ~150,000 words)
+┌──────────────────────────────────────────────────────────┐
+│  SYSTEM PROMPT (read-only, cached)                       │
+│                                                          │
+│  ├── CLAUDE.md (project root)           ~2K–8K tokens    │
+│  │     + imported @files                                 │
+│  ├── CLAUDE.local.md                    ~0–2K tokens     │
+│  ├── ~/.claude/CLAUDE.md (user global)  ~0–2K tokens     │
+│  ├── Active Rules (path-matched)        ~0–4K tokens     │
+│  ├── Active Skills (loaded on demand)   ~0–3K tokens     │
+│  ├── Tool schemas (built-in tools)      ~3K–5K tokens    │
+│  ├── Tool schemas (MCP tools, loaded)   ~0–8K tokens     │
+│  └── Output Style (if active)          ~0–1K tokens     │
+│                                                          │
+│  SUBTOTAL system: typically 5K–28K tokens                │
+├──────────────────────────────────────────────────────────┤
+│  CONVERSATION HISTORY (turns 1..N)                       │
+│                                                          │
+│  ├── Turn 1: user message + assistant response           │
+│  ├── Turn 2: user message + assistant response           │
+│  │   ... (grows with each turn)                         │
+│  └── Turn N: most recent exchange                        │
+│                                                          │
+│  Auto-compacts at 83.5% of total window                  │
+│  (~167K tokens for 200K window)                          │
+├──────────────────────────────────────────────────────────┤
+│  TOOL RESULTS (last N turns)                             │
+│                                                          │
+│  ├── Read results (file contents)                        │
+│  ├── Bash output                                         │
+│  ├── Glob/Grep results                                   │
+│  └── MCP tool responses                                  │
+│                                                          │
+│  Large tool results are truncated automatically          │
+├──────────────────────────────────────────────────────────┤
+│  RESPONSE HEADROOM                                       │
+│  Reserved for Claude's next response (~4K–32K tokens)   │
+│  Effort level affects this: xhigh = up to 32K thinking  │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Model Context Windows
+
+| Model | Total | System prompt zone | Effective conversation |
+|-------|-------|-------------------|----------------------|
+| `claude-opus-4-8` | **1M tokens** | ~28K | ~972K |
+| `claude-opus-4-7` | **1M tokens** | ~28K | ~972K |
+| `claude-opus-4-6` | 200K tokens | ~28K | ~172K |
+| `claude-sonnet-4-6` | 200K tokens | ~28K | ~172K |
+| `claude-haiku-4-5` | 200K tokens | ~28K | ~172K |
+
+> 1M context for Opus 4.7 and Opus 4.8 is at **standard pricing** — no surcharge since March 14, 2026.
+
+### Compaction Mechanics
+
+```
+Context usage over time:
+
+  100% ──────────────────────────────────────────
+   83.5% ─ ─ ─ ─ ─ ─ ─ AUTO-COMPACT THRESHOLD ─ ─
+                                          ↓
+   40% ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ POST-COMPACT LEVEL─ ─
+
+  Timeline:
+  Turn 1  Turn 10  Turn 20  Turn 30  Turn 31  Turn 40
+  ████░░  ████████ ████████ ████████ ████░░░░ ████████
+                            ^^^^^^^^          (after compact)
+                            Compact fires at 83.5%
+                            Summary replaces history (≈40% usage)
+```
+
+**What survives compaction:**
+- Auto-memory (`MEMORY.md`) — persists independently, always reloaded
+- CLAUDE.md, Rules, Settings — reloaded fresh each turn (not in conversation)
+- Summary of conversation — Claude generates a summary before wiping history
+- All file edits — filesystem changes are permanent, not in context
+
+**Circuit breaker (v2.1.89+):** If compaction fires more than 3 times within a configurable hysteresis window, it backs off to prevent thrash loops in long agentic sessions.
+
+### Token Measurement
+
+Use `/context` to see current token usage:
+
+```
+/context output example:
+┌─────────────────────────────────────────────────┐
+│  Context usage (current turn)                   │
+├─────────────────┬───────────┬───────────────────┤
+│ Component       │  Tokens   │ % of 200K         │
+├─────────────────┼───────────┼───────────────────┤
+│ System prompt   │    8,421  │  4.2%  ████░░░   │
+│ Conversation    │   47,832  │ 23.9%  ████████░  │
+│ Tool results    │    6,129  │  3.1%  ████░░░   │
+│ Available       │  137,618  │ 68.8%             │
+└─────────────────┴───────────┴───────────────────┘
+  Cache hit rate: 87%   Session cost: $0.34
+```
+
+### ToolSearch — Deferred Tool Loading
+
+Tools not immediately needed can be deferred to save token budget:
+
+```
+ALL tools schema (immediately loaded):   ~8K tokens each schema
+DEFERRED tools (via ToolSearch):         0 tokens until searched
+                                         ~2-4K tokens when loaded
+
+Example: GitHub MCP server with 20 tools
+  All tools loaded: 20 × 300 tokens = 6,000 tokens per turn
+  Deferred:         0 tokens        (until ToolSearch is called)
+                    ~300 tokens     (when specific tool needed)
+```
+
+Configure deferred loading in `.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "deferred": true
+    }
+  }
+}
+```
+
+### Prompt Caching ROI
+
+The system prompt (CLAUDE.md + rules + tool schemas) is automatically cached after the first turn:
+
+```
+Without caching (turn 1):
+  System prompt: 10,000 tokens × $3/M = $0.030
+  Conversation:   5,000 tokens × $3/M = $0.015
+  Total turn 1: $0.045
+
+With caching (turns 2–N, 90%+ hit rate):
+  Cache read:  10,000 tokens × $0.30/M = $0.003  ← 90% cheaper
+  Conversation:  5,000 tokens × $3/M   = $0.015
+  Total turn 2+: $0.018  ← 60% cheaper than turn 1
+
+Over a 20-turn session:
+  Without caching: 20 × $0.045 = $0.90
+  With caching:    $0.045 + 19 × $0.018 = $0.387
+  Savings: 57%
+```
+
+**Key to maintaining high cache hit rates:** Keep CLAUDE.md stable during a session. Any edit to CLAUDE.md invalidates the cache for that turn.
+
+### Optimization Checklist
+
+```
+Context budget optimization checklist:
+
+1. ✓ Keep CLAUDE.md under 8K tokens
+   Use @import for large sections:
+     @~/.claude/company-standards.md (loaded only when needed)
+
+2. ✓ Use claudeMdExcludes for irrelevant sections
+   In .claude/settings.json:
+     {"claudeMdExcludes": ["## Debug Notes", "## Archived"]}
+
+3. ✓ Scope Rules tightly
+   rules/*.md with paths: ["src/auth/**"] only loads for auth files
+   Avoid glob: ["**/*"] — loads for EVERY tool call
+
+4. ✓ Use @import chains for on-demand loading
+   In CLAUDE.md:
+     See detailed API docs: @./docs/api-reference.md
+   (Only loaded when Claude is asked about the API)
+
+5. ✓ Monitor cache hit rate
+   /usage → check cache hit rate (target: >80%)
+   Low hit rate = CLAUDE.md changing between turns → fix it
+
+6. ✓ Use /compact proactively for long sessions
+   /compact "keep context about the auth refactor"
+   Better than waiting for auto-compaction
+
+7. ✓ Use Opus 4.7/4.8 for very long tasks
+   1M context window means no compaction needed
+   Cost tradeoff: $15/M in vs $3/M in for Sonnet
+```
+
+### Token Cost Comparison by Component
+
+| Component | Typical size | Cost per session (Sonnet) | Cached? |
+|-----------|-------------|--------------------------|--------|
+| CLAUDE.md | 2K–8K tokens | $0.006–$0.024 (turn 1 only) | Yes |
+| Rules (all loaded) | 0–4K tokens | $0–$0.012 (turn 1 only) | Yes |
+| MCP tool schemas | 0–8K tokens | $0–$0.024 (turn 1 only) | Yes |
+| Conversation history | Grows per turn | $0.003/1K tokens/turn | No |
+| Tool results | Varies | $0.003/1K tokens/turn | No |
+| Output (assistant) | Varies | $0.015/1K tokens/turn | No |
+
+→ Full reference: [Context Window Architecture](./context-window-guide)
