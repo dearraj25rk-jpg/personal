@@ -1846,6 +1846,209 @@ pipelines:
             - /tmp/review.md
 ```
 
+### Multi-Stage Bitbucket Pipeline with Cost Tracking
+
+```yaml
+# bitbucket-pipelines.yml — Full multi-stage pipeline with security gate and cost attribution
+image: atlassian/default-image:4
+
+definitions:
+  caches:
+    claude-binary: ~/.local/bin
+
+  # Reusable step for installing Claude Code
+  steps:
+    - step: &install-claude
+        name: Install Claude Code
+        script:
+          - apt-get update -qq && apt-get install -y -qq curl jq bc
+          - |
+            if [ ! -f "$HOME/.local/bin/claude" ]; then
+              curl -fsSL https://claude.ai/install.sh | bash
+            fi
+          - echo "$HOME/.local/bin" >> "$BASH_ENV"
+        caches:
+          - claude-binary
+
+pipelines:
+  pull-requests:
+    '**':
+      - parallel:
+          - step:
+              name: 1. Security Scan (fast)
+              caches:
+                - claude-binary
+              script:
+                - apt-get update -qq && apt-get install -y -qq curl jq
+                - export PATH="$HOME/.local/bin:$PATH"
+                - export DISABLE_UPDATES=1
+                
+                # Install if not cached
+                - if [ ! -f "$HOME/.local/bin/claude" ]; then curl -fsSL https://claude.ai/install.sh | bash; fi
+                
+                - git fetch origin "$BITBUCKET_PR_DESTINATION_BRANCH"
+                - git diff "origin/$BITBUCKET_PR_DESTINATION_BRANCH"...HEAD > /tmp/diff.txt
+                
+                # Run fast security scan with Haiku
+                - |
+                  STREAM=$(claude --print \
+                    --output-format stream-json \
+                    --model claude-haiku-4-5 \
+                    --permission-mode bypassPermissions \
+                    --max-turns 10 \
+                    --max-budget-usd 0.25 \
+                    --bare \
+                    "Scan this diff for: hardcoded secrets, SQL injection, XSS, SSRF. Output CLEAN or ISSUES: <list>" \
+                    < /tmp/diff.txt)
+                  
+                  echo "$STREAM" | jq -r 'select(.type=="assistant") | .message.content[].text // empty' > /tmp/security-scan.txt
+                  COST=$(echo "$STREAM" | jq -r 'select(.type=="result") | .cost_usd // 0')
+                  echo "Security scan cost: \$$COST"
+                  cat /tmp/security-scan.txt
+                  
+                  # Block PR if critical issues found
+                  if grep -qi "^ISSUES:" /tmp/security-scan.txt; then
+                    echo "SECURITY GATE FAILED — review /tmp/security-scan.txt"
+                    exit 1
+                  fi
+              artifacts:
+                - /tmp/security-scan.txt
+
+          - step:
+              name: 2. Code Quality Review (parallel)
+              caches:
+                - claude-binary
+              script:
+                - apt-get update -qq && apt-get install -y -qq curl jq
+                - export PATH="$HOME/.local/bin:$PATH"
+                - export DISABLE_UPDATES=1
+                - if [ ! -f "$HOME/.local/bin/claude" ]; then curl -fsSL https://claude.ai/install.sh | bash; fi
+                
+                - git fetch origin "$BITBUCKET_PR_DESTINATION_BRANCH"
+                - git diff "origin/$BITBUCKET_PR_DESTINATION_BRANCH"...HEAD > /tmp/diff.txt
+                
+                - |
+                  STREAM=$(claude --print \
+                    --output-format stream-json \
+                    --model claude-sonnet-4-6 \
+                    --permission-mode bypassPermissions \
+                    --max-turns 20 \
+                    --max-budget-usd 1.00 \
+                    --bare \
+                    "Review this PR for code quality, performance, and test coverage.
+                     Format your response as: ## Summary\n## Issues\n## Suggestions" \
+                    < /tmp/diff.txt)
+                  
+                  echo "$STREAM" | jq -r 'select(.type=="assistant") | .message.content[].text // empty' > /tmp/code-review.md
+                  COST=$(echo "$STREAM" | jq -r 'select(.type=="result") | .cost_usd // 0')
+                  TURNS=$(echo "$STREAM" | jq -r 'select(.type=="result") | .num_turns // 0')
+                  echo "Code review cost: \$$COST ($TURNS turns)"
+                  cat /tmp/code-review.md
+              artifacts:
+                - /tmp/code-review.md
+
+      - step:
+          name: 3. Post review to PR (Bitbucket API)
+          script:
+            - apt-get update -qq && apt-get install -y -qq curl jq
+            - |
+              REVIEW=$(cat /tmp/code-review.md 2>/dev/null || echo "Review not available")
+              SECURITY=$(cat /tmp/security-scan.txt 2>/dev/null || echo "Security scan not available")
+              
+              # Post comment via Bitbucket REST API
+              curl -s -X POST \
+                "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/pullrequests/$BITBUCKET_PR_ID/comments" \
+                -H "Authorization: Bearer $BITBUCKET_ACCESS_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"content\": {
+                    \"raw\": \"## Claude Code Review\n\n### Security Scan\n\`\`\`\n${SECURITY}\n\`\`\`\n\n### Code Quality\n${REVIEW}\"
+                  }
+                }"
+              
+              echo "Review posted to PR #$BITBUCKET_PR_ID"
+          trigger: automatic
+
+  # Schedule: weekly security audit
+  custom:
+    weekly-security-audit:
+      - step:
+          name: Full Security Audit
+          caches:
+            - claude-binary
+          script:
+            - apt-get update -qq && apt-get install -y -qq curl jq
+            - export PATH="$HOME/.local/bin:$PATH"
+            - export DISABLE_UPDATES=1
+            - if [ ! -f "$HOME/.local/bin/claude" ]; then curl -fsSL https://claude.ai/install.sh | bash; fi
+            - |
+              STREAM=$(claude --print \
+                --output-format stream-json \
+                --model claude-opus-4-7 \
+                --permission-mode bypassPermissions \
+                --max-turns 50 \
+                --max-budget-usd 10.00 \
+                --bare \
+                "Perform a comprehensive OWASP Top 10 security audit of this codebase.
+                 Output a JSON report: {critical:[], high:[], medium:[], info:[]}
+                 Each item: {file, line, issue, recommendation}")
+              
+              echo "$STREAM" | jq -r 'select(.type=="result") | .cost_usd' | xargs -I{} echo "Audit cost: \${}"
+              echo "$STREAM" | jq -r 'select(.type=="assistant") | .message.content[].text // empty' > /tmp/security-audit.json
+          artifacts:
+            - /tmp/security-audit.json
+```
+
+### Bitbucket with AWS Bedrock (OIDC)
+
+Bitbucket Pipelines supports OIDC for keyless AWS authentication:
+
+```yaml
+# bitbucket-pipelines.yml
+image: atlassian/default-image:4
+
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: Claude Review via Bedrock
+          oidc: true   # Enable OIDC — provides $BITBUCKET_STEP_OIDC_TOKEN
+          script:
+            - apt-get update -qq && apt-get install -y -qq curl jq awscli
+            - if [ ! -f "$HOME/.local/bin/claude" ]; then curl -fsSL https://claude.ai/install.sh | bash; fi
+            - export PATH="$HOME/.local/bin:$PATH"
+            
+            # Exchange OIDC token for AWS credentials
+            - |
+              CREDENTIALS=$(aws sts assume-role-with-web-identity \
+                --role-arn "arn:aws:iam::$AWS_ACCOUNT_ID:role/BitbucketClaudeRole" \
+                --role-session-name "bb-claude-$BITBUCKET_BUILD_NUMBER" \
+                --web-identity-token "$BITBUCKET_STEP_OIDC_TOKEN" \
+                --query 'Credentials' --output json)
+              
+              export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | jq -r .AccessKeyId)
+              export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | jq -r .SecretAccessKey)
+              export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | jq -r .SessionToken)
+              export CLAUDE_CODE_USE_BEDROCK=1
+              export AWS_DEFAULT_REGION=us-east-1
+              export DISABLE_UPDATES=1
+            
+            - git diff origin/main...HEAD > /tmp/diff.txt
+            - |
+              claude --print \
+                --output-format stream-json \
+                --model claude-sonnet-4-6 \
+                --permission-mode bypassPermissions \
+                --max-turns 20 \
+                --max-budget-usd 1.00 \
+                --bare \
+                "Review this PR for issues" \
+                < /tmp/diff.txt \
+                | jq -r 'select(.type=="assistant") | .message.content[].text // empty'
+          variables:
+            AWS_ACCOUNT_ID: "123456789012"
+```
+
 ---
 
 ## Cost Attribution Per PR
