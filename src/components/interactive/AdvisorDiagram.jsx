@@ -96,7 +96,7 @@ export default function AdvisorDiagram() {
 
   const tips = {
     run:       { title: "Run /advisor",               body: "Available from Claude Code v2.1.101. Opens an interactive model picker. Session-scoped — re-run it each new session. Re-running mid-session lets you swap the advisor model without restarting." },
-    model:     { title: "Select advisor model",       body: "Currently Sonnet 4.6 or Opus 4.6. No Haiku, no custom endpoints. The advisor must be at least as capable as the executor — you can't set a weaker model as advisor." },
+    model:     { title: "Select advisor model",       body: "Available advisor models: Opus 4.8 (newest, most capable), Opus 4.7, Opus 4.6. No Haiku, no custom endpoints. The advisor must be at least as capable as the executor — you can't set a weaker model as advisor. claude-opus-4-8 is recommended for the highest quality advice." },
     active:    { title: "Advisor active · whole session", body: "From this point Sonnet autonomously decides when to call Opus. You never trigger it manually. The configuration resets when the session ends. Running /compact collapses accumulated advice into a summary." },
     task:      { title: "User sends task",            body: "Advisor is armed but completely silent here. No calls happen just from receiving a task — Sonnet needs to orient first before it knows enough to benefit from advice." },
     orient:    { title: "Read & orient",              body: "Reading files, fetching URLs, checking directory structure — this is orientation, not substantive work. The advisor stays silent. Only once Sonnet is about to commit to an interpretation does it escalate." },

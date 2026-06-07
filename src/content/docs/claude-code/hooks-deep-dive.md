@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 5
   label: Hooks System
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Hooks System — Complete Reference
@@ -26,6 +26,27 @@ Hooks are shell commands (or sub-agents) that fire automatically at well-defined
 - Run tests after code edits
 - Inject additional context into every session
 - Validate that generated code compiles before accepting it
+
+### Why Hooks Are the Right Abstraction
+
+Before hooks existed, enforcing policy on Claude's actions required either (a) constant human supervision, or (b) modifying Claude Code itself. Neither scales. Hooks solve this by separating *policy* from *capability*: Claude Code handles what it knows how to do, your hooks enforce what it's allowed to do in your specific context.
+
+The key insight is that hooks fire at the boundary between Claude's intention and the actual effect. A `PreToolUse:Bash` hook fires after Claude has decided to run a command but before the shell executes it — which is exactly when a security gate needs to act. A `PostToolUse` hook fires after the tool succeeds but before Claude incorporates the result — which is when a compile check or formatter should run.
+
+**When to reach for each hook event:**
+
+| Situation | Use this event | Why |
+|-----------|---------------|-----|
+| Block dangerous shell commands | `PreToolUse` (matcher: Bash) | Fires before execution — you can stop it entirely |
+| Auto-format every file Claude writes | `PostToolUse` (matcher: Edit\|Write\|MultiEdit) | File is written; formatter runs on the final content |
+| Inject project context into every session | `SessionStart` | Runs once at startup; stdout becomes system context |
+| Enforce "tests pass before done" | `Stop` | Exit 2 forces Claude to continue; shows test failures |
+| Scan for secrets before file writes | `PreToolUse` (matcher: Write\|Edit) | Blocks the write entirely if secrets found |
+| Audit all tool calls for compliance | `PreToolUse` + `PostToolUse` (matcher: .*) | Before+after gives intent and outcome |
+| Route to external observability system | `http` or `mcp_tool` handler on any event | Non-blocking; doesn't add latency to the tool loop |
+| Gate subagent results | `SubagentStop` or `PostTask` | Exit 2 rejects the subagent's work; orchestrator retries |
+
+The reason hooks are more powerful than a simple allowlist is that they receive the full tool payload as structured JSON — so you can make contextual decisions. A `PreToolUse:Bash` hook can read the exact command string, the current branch, the `ENVIRONMENT` env var, and the session transcript before deciding whether to block. That context-awareness is what makes sophisticated policies possible.
 
 ---
 
@@ -194,6 +215,51 @@ For `PostToolUse`, the payload also includes:
 }
 ```
 
+> **Note on MCP tool names in `PreToolUse` vs `PreMCPTool`:** MCP tool calls also fire `PreToolUse` with a `tool_name` in the format `mcp__{server}__{tool}` (double underscores). `PreMCPTool` is a more specific event that includes the parsed `server_name` field. Use `PreMCPTool` when you only care about MCP tools; use `PreToolUse` with a matcher like `mcp__github__.*` when you want to gate MCP calls alongside native tool calls in one hook.
+
+### Payload Fields Present on Every Hook
+
+Regardless of event type, the following fields are always included in the stdin JSON:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_name` | string | e.g. `"PreToolUse"`, `"Stop"`, `"SessionStart"` |
+| `session_id` | string | Unique session identifier, e.g. `"sess_01XYZ..."` |
+| `project_dir` | string | Absolute path to the project root directory |
+| `model` | string | Active model name, e.g. `"claude-sonnet-4-6"` |
+| `transcript` | array | Recent conversation messages (truncated at ~50 messages) |
+
+The `transcript` array contains objects with `role` (`"user"` or `"assistant"`) and `content` (an array of typed blocks). Tool calls appear as `type: "tool_use"` blocks in the assistant turn, and tool results appear as `type: "tool_result"` blocks in the following user turn. This means a hook can inspect what Claude said before deciding to call the tool — useful for understanding intent.
+
+**Why the `transcript` field is more powerful than it looks:**
+
+Most hooks only check the immediate `tool_input` — e.g., "does this bash command contain `rm -rf`?" But the `transcript` lets you answer *why* Claude wants to run the command. A `PreToolUse:Bash` hook can look back at the previous assistant message's text blocks to see what Claude said it was doing. For example:
+
+```python
+# Check Claude's stated intent before deciding whether to allow a command
+transcript = payload.get("transcript", [])
+last_assistant_text = ""
+for msg in reversed(transcript):
+    if msg.get("role") == "assistant":
+        for block in msg.get("content", []):
+            if isinstance(block, dict) and block.get("type") == "text":
+                last_assistant_text = block["text"]
+                break
+        break
+
+# Context-aware decision: allow 'rm -rf dist/' if Claude is doing a clean build
+command = payload["tool_input"]["command"]
+if "rm -rf" in command and "clean build" in last_assistant_text.lower():
+    sys.exit(0)   # Intent is clear and benign — allow
+elif "rm -rf" in command:
+    print("BLOCKED: rm -rf requires explicit clean-build context.")
+    sys.exit(2)
+```
+
+This technique — reading intent from the transcript before acting on the tool call — is what separates context-aware security gates from naive pattern matchers. It dramatically reduces false positives.
+
+**`transcript` truncation behavior:** The transcript is truncated at approximately 50 messages (25 user/assistant pairs). For long sessions, only the most recent 50 messages are included. If you need to reference earlier context, consider injecting summaries via `SessionStart` or `UserPromptSubmit` hooks.
+
 ---
 
 ## 2. Hook Events — Full Reference
@@ -251,6 +317,13 @@ Output from `SessionStart` hooks is injected into the conversation as system con
 
 #### PreToolUse — gate dangerous commands
 
+`PreToolUse` fires after Claude has formed its intention to call a tool but **before** the tool actually executes. This is the only point where your hook can prevent an effect entirely. Once a tool completes, `PostToolUse` can reject the result, but the tool has already run — a deleted file is already deleted.
+
+This is why `PreToolUse` is the right hook for:
+- **Security gates** — block dangerous commands, prevent writes to protected files
+- **Policy enforcement** — prevent actions on protected branches, in production environments
+- **Approval workflows** — require human confirmation before high-risk actions
+
 ```json
 {
   "PreToolUse": [
@@ -278,9 +351,17 @@ The hook receives a JSON payload on stdin:
 }
 ```
 
-Exit 2 + print an error message to **block** the tool. The message is shown to Claude as a refusal reason.
+Exit 2 + print an error message to **block** the tool. The message is shown to Claude as a refusal reason. Claude will then decide what to do — it may rephrase the command, try an alternative approach, ask the user, or give up on that line of reasoning. The quality of your error message directly influences which path Claude takes: a specific, actionable message ("Blocked: `rm -rf` is not allowed; use `rm -rf dist/` only within the project directory") helps Claude self-correct better than a generic "Blocked."
 
 #### PostToolUse — auto-format after edits
+
+`PostToolUse` fires after a tool has successfully completed but before Claude incorporates the result. This window is ideal for:
+- **Formatters and linters** — run after every file write; Claude incorporates the formatted state
+- **Compile checks** — verify generated code compiles before Claude declares success
+- **Result validation** — reject tool output that indicates a problem Claude might overlook
+- **Observability** — record the full before/after picture of each tool call
+
+The key insight about `PostToolUse` is that Claude does not yet know about the result when your hook fires. If your hook exits 2, the tool result is **rejected** — Claude must retry (potentially with different arguments) or abandon the approach. This means a `PostToolUse` hook that rejects a failed compile attempt causes Claude to try a different fix, which is the desired behavior. However, it also means an always-failing hook causes Claude to retry indefinitely (see Section 6 for retry storm mitigations).
 
 ```json
 {
@@ -494,6 +575,12 @@ There are five handler types. All are configured under the `hooks` key inside ea
 
 ### 3.5 `mcp_tool` — MCP Tool Invocation (v2.1.118+)
 
+The `mcp_tool` handler was introduced in v2.1.118 as a purpose-built integration point for MCP-connected audit and observability systems. Instead of requiring you to run a separate HTTP server (as with the `http` handler), it lets hooks call tools on any MCP server that is already connected to the session.
+
+**Why `mcp_tool` exists:** Before v2.1.118, teams that wanted to send hook events to an internal audit system had to either (a) write an HTTP server and use the `http` handler, or (b) write a `command` hook that made HTTP calls. Both approaches require maintaining an out-of-band server. `mcp_tool` hooks use the already-established MCP connection, eliminating that infrastructure overhead.
+
+More importantly, `mcp_tool` hooks close the gap between tool usage and observability: if your team already uses an MCP server for code search, GitHub operations, or internal tooling, you get audit logging of all Claude activity for free — no new infrastructure required.
+
 ```json
 {
   "type": "mcp_tool",
@@ -501,14 +588,133 @@ There are five handler types. All are configured under the `hooks` key inside ea
   "tool": "log_event",
   "arguments": {
     "event": "${event_name}",
-    "tool": "${tool_name}"
+    "tool": "${tool_name}",
+    "session": "${session_id}",
+    "project": "${project_dir}",
+    "timestamp": "${timestamp}"
   }
 }
 ```
 
-- Calls a specific tool on a connected MCP server
-- `${event_name}`, `${tool_name}`, `${session_id}` are available as template variables
-- Useful for sending events to external audit/observability systems without a separate HTTP server
+**Available template variables** (expanded at runtime in `arguments` values):
+
+| Variable | Expands to |
+|----------|-----------|
+| `${event_name}` | Hook event name, e.g. `"PreToolUse"` |
+| `${tool_name}` | Tool being called, e.g. `"Bash"` |
+| `${session_id}` | Current session identifier |
+| `${project_dir}` | Absolute path to project root |
+| `${timestamp}` | ISO 8601 UTC timestamp at hook fire time |
+| `${model}` | Active model name |
+
+**Async dispatch and transport semantics:**
+
+`mcp_tool` hooks are dispatched asynchronously where the MCP server's transport supports it. The behavior differs by transport type:
+
+| Transport | Dispatch behavior | Latency impact |
+|-----------|------------------|----------------|
+| `stdio` | Sent over the existing stdin/stdout pipe; buffered; does not block | Near-zero (< 5ms) |
+| `sse` (HTTP Server-Sent Events) | Posted to the server's event stream; non-blocking | Near-zero |
+| `http` (direct HTTP MCP) | HTTP POST to the MCP endpoint; may block slightly | 10–100ms |
+
+For `stdio` and `sse` transports, the tool call is sent without blocking the main tool execution loop. This makes `mcp_tool` hooks the lowest-latency option for high-frequency audit logging. However, because they are async, `mcp_tool` hooks **cannot block** — exit codes from the MCP tool response are ignored, and the hooked operation always proceeds.
+
+This is a deliberate tradeoff: `mcp_tool` hooks are for *observability*, not *gating*. If you need to block an operation, use a `command` hook. If you need to audit without adding latency, use `mcp_tool`.
+
+**Failure behavior:** The hook fires even if the MCP server is temporarily unavailable — it fails silently with a warning to stderr rather than blocking the session. This is important: your audit logging failing should never prevent Claude from working.
+
+**Complete setup walkthrough:**
+
+Step 1 — Define the MCP server in your project settings:
+
+```json
+// .claude/settings.json
+{
+  "mcpServers": {
+    "audit-mcp": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["/opt/internal/audit-mcp-server.py"]
+    }
+  }
+}
+```
+
+Step 2 — The MCP server must expose a callable tool (minimal Python example):
+
+```python
+#!/usr/bin/env python3
+"""
+/opt/internal/audit-mcp-server.py
+Minimal MCP server that accepts audit log events via the record_action tool.
+"""
+import json
+import sys
+import datetime
+
+def handle_call(tool_name, arguments):
+    if tool_name == "record_action":
+        entry = {
+            "ts": datetime.datetime.utcnow().isoformat(),
+            **arguments
+        }
+        with open("/var/log/claude-audit.jsonl", "a") as f:
+            f.write(json.dumps(entry) + "\n")
+        return {"success": True}
+    return {"error": f"Unknown tool: {tool_name}"}
+
+# MCP stdio protocol: read JSON-RPC requests, write responses
+for line in sys.stdin:
+    try:
+        req = json.loads(line)
+        if req.get("method") == "tools/call":
+            result = handle_call(
+                req["params"]["name"],
+                req["params"].get("arguments", {})
+            )
+            resp = {"jsonrpc": "2.0", "id": req["id"], "result": {"content": [{"type": "text", "text": json.dumps(result)}]}}
+        elif req.get("method") == "tools/list":
+            resp = {"jsonrpc": "2.0", "id": req["id"], "result": {"tools": [
+                {"name": "record_action", "description": "Log a Claude Code hook event", "inputSchema": {"type": "object", "properties": {"event": {"type": "string"}, "tool": {"type": "string"}, "session": {"type": "string"}, "project": {"type": "string"}, "timestamp": {"type": "string"}}}}
+            ]}}
+        else:
+            resp = {"jsonrpc": "2.0", "id": req.get("id"), "result": {}}
+        sys.stdout.write(json.dumps(resp) + "\n")
+        sys.stdout.flush()
+    except Exception as e:
+        sys.stderr.write(f"MCP server error: {e}\n")
+```
+
+Step 3 — Configure the `mcp_tool` hook:
+
+```json
+{
+  "PostToolUse": [
+    {
+      "matcher": "Bash|Edit|Write|MultiEdit",
+      "hooks": [{
+        "type": "mcp_tool",
+        "server": "audit-mcp",
+        "tool": "record_action",
+        "arguments": {
+          "event": "${event_name}",
+          "tool": "${tool_name}",
+          "session": "${session_id}",
+          "project": "${project_dir}",
+          "timestamp": "${timestamp}"
+        }
+      }]
+    }
+  ]
+}
+```
+
+**When to use `mcp_tool` vs `http` vs `command`:**
+- Use `mcp_tool` when you already have an MCP server connected for other purposes and want zero-infrastructure audit logging. The MCP connection is already open — the hook rides it for free.
+- Use `http` when your audit system speaks HTTP natively, you don't want to run a local MCP server process, or you need the audit server to be shared across many developers (centralized endpoint).
+- Use `command` when you need to run local scripts, access the full JSON payload from stdin, or conditionally block operations — `command` is the only handler that can exit 2 to block.
+
+**A common misconception:** Because `mcp_tool` hooks call tools on an *already-connected* MCP server, they do not add a new MCP connection or incur handshake overhead. The MCP protocol session is reused. This is fundamentally different from making an HTTP request to a new endpoint — the connection is already warm.
 
 ---
 
@@ -633,21 +839,122 @@ All hooks receive these environment variables:
 
 ## 6. Exit Codes
 
+Exit codes are the primary signaling mechanism between your hook script and Claude Code's execution engine. Understanding the exact semantics of each code — and the subtle differences in how they behave across events — is critical to writing correct hooks.
+
 | Exit Code | Meaning |
 |-----------|---------|
-| `0` | Success — continue normally |
+| `0` | Success — continue normally; stdout (if any) injected as context |
 | `2` | **Blocking error** — halt the operation; stdout message shown to Claude as refusal reason |
-| Any other | Non-blocking warning — stdout injected as context; execution continues |
+| Any other (1, 3, 127, etc.) | Non-blocking warning — stdout injected as context; execution continues |
 
-**Exit code 2 behaviour by event:**
+**The critical distinction between exit 1 and exit 2:**
 
-| Event | Exit 2 effect |
-|-------|---------------|
-| `PreToolUse` | Tool does **not** execute; Claude sees your error message and can retry or apologise |
-| `PostToolUse` | Tool result is **rejected**; Claude must retry or stop |
-| `UserPromptSubmit` | Prompt is **blocked**; user sees your error message |
-| `Stop` | Claude is **forced to continue** (like the user typed "continue") |
-| `SubagentStop` | Subagent result is **rejected** |
+Exit code `1` is what most scripts emit on error by default. In the hooks system, exit `1` means "I noticed something, inject my message as context, but let the operation proceed." Exit `2` means "block this operation entirely." This is a deliberate design choice: the hooks system assumes that most hook failures should degrade gracefully rather than halting Claude's work. Only when you explicitly signal exit `2` does the blocking occur.
+
+This means a Python script that crashes with an unhandled exception exits with code `1` — which is a *non-blocking warning*, not a block. If your security gate script has a bug and raises an exception, the dangerous command will still run. Always wrap hook logic in try/except and explicitly choose your exit code.
+
+**Exit code 2 behaviour by event — with detailed implications:**
+
+| Event | Exit 2 effect | What Claude does next | User experience |
+|-------|---------------|----------------------|-----------------|
+| `PreToolUse` | Tool does **not** execute | Claude sees your stdout as the refusal reason; it may rephrase the command, try an alternative, or ask the user | User sees Claude explaining it was blocked and proposing an alternative |
+| `PostToolUse` | Tool result is **rejected** | Claude must retry the exact same tool call (with the same or modified args) or abandon the approach | Adds an extra tool loop turn; can cause retry storms if the hook always blocks |
+| `PreBash` | Bash command does **not** run | Same as PreToolUse for Bash | Bash-specific: command string is available in the refusal message to Claude |
+| `PreFileWrite` | File is **not** written | Claude sees your reason; may try different content or give up | File on disk is unchanged |
+| `UserPromptSubmit` | Prompt is **not** sent to Claude | User sees your stdout message as an error; must rephrase or take different action | The user's input is silently dropped; make your error message actionable |
+| `Stop` | Claude is **forced to continue** | Claude receives a synthetic "continue" message; this costs additional tokens | Session continues; Claude will attempt to address whatever your hook flagged |
+| `SubagentStop` | Subagent result **rejected** | Orchestrator is notified of rejection; may spawn a new subagent or fail the task | Subagent's entire work is discarded |
+| `PreTask` | Subagent is **not** spawned | Orchestrator receives a failure result instead | Task is never delegated; orchestrator handles inline |
+
+**A note on `PostToolUse` exit 2 — the retry storm risk:**
+
+If a `PostToolUse` hook always exits 2 (e.g., due to a bug in your hook script), Claude will retry the same tool call repeatedly until it hits the max turns limit. This can be expensive and confusing. There are two categories of problem to understand:
+
+*Category 1 — Bug in the hook:* Your script crashes (Python exception → exit 1 unintentionally, or if it explicitly exits 2 in an error handler) on every invocation. Claude retries, the hook crashes again, and the cycle repeats until `max_turns` is hit. Prevention: wrap all hook logic in try/except and exit 0 on unexpected exceptions (never block on hook failures).
+
+*Category 2 — Intentional but unresolvable block:* Your compile-check hook exits 2 because compilation fails, but the compilation failure is caused by something Claude cannot fix (e.g., a missing environment dependency). Claude retries the file write with the same content, the hook blocks again, and Claude is stuck.
+
+To handle both cases, implement a circuit breaker using a file-based counter:
+
+```python
+#!/usr/bin/env python3
+# ~/.claude/hooks/compile-check-with-circuit-breaker.py
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+CIRCUIT_BREAKER_FILE = Path.home() / ".claude" / ".hook-retries" / "compile-check"
+MAX_RETRIES = 3  # Allow up to 3 consecutive blocks before giving up
+
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+
+file_path = payload.get("tool_input", {}).get("path", "")
+project_dir = payload.get("project_dir", ".")
+
+if not file_path or not file_path.endswith((".ts", ".tsx")):
+    # Reset counter for non-matching files
+    CIRCUIT_BREAKER_FILE.unlink(missing_ok=True)
+    sys.exit(0)
+
+# Read current retry count
+CIRCUIT_BREAKER_FILE.parent.mkdir(parents=True, exist_ok=True)
+retry_count = 0
+try:
+    retry_count = int(CIRCUIT_BREAKER_FILE.read_text().strip())
+except Exception:
+    pass
+
+# Circuit breaker open: too many consecutive failures
+if retry_count >= MAX_RETRIES:
+    print(
+        f"[circuit-breaker] Compile check blocked {retry_count} times in a row. "
+        "Allowing this attempt to proceed — please check your build environment.",
+        file=sys.stderr,
+    )
+    CIRCUIT_BREAKER_FILE.unlink(missing_ok=True)  # Reset
+    sys.exit(0)
+
+# Run compile check
+result = subprocess.run(
+    ["npx", "tsc", "--noEmit", "--skipLibCheck"],
+    cwd=project_dir, capture_output=True, text=True, timeout=30
+)
+
+if result.returncode != 0:
+    CIRCUIT_BREAKER_FILE.write_text(str(retry_count + 1))
+    print(
+        f"TypeScript compilation failed after editing {file_path}. "
+        f"(Attempt {retry_count + 1}/{MAX_RETRIES} before circuit breaker opens)\n\n"
+        + (result.stdout + result.stderr)[:1000]
+    )
+    sys.exit(2)
+
+# Success — reset counter
+CIRCUIT_BREAKER_FILE.unlink(missing_ok=True)
+sys.exit(0)
+```
+
+The circuit breaker pattern allows Claude to self-correct up to N times, then gracefully degrades by allowing the operation so the session can continue. This prevents runaway retry storms on unresolvable failures while still catching genuine compile errors that Claude can fix.
+
+**Exit code behaviour for non-blocking events:**
+
+Some events ignore the exit code entirely — their hooks are purely informational:
+
+| Event | Exit code handling |
+|-------|-------------------|
+| `SessionStart` | Exit code ignored; stdout always injected as context |
+| `PostSessionEnd` | Exit code and stdout ignored; session is already ending |
+| `Notification` | Exit code ignored |
+| `PostCompact` | Exit code ignored |
+| `MCPServerConnected` | Exit code ignored |
+| `PostAgentTeamMessage` | Exit code ignored |
+
+For these events, any blocking logic in your hook script will have no effect — the operation proceeds regardless of what you exit with. Use these events only for logging, context injection, or side effects.
 
 ---
 

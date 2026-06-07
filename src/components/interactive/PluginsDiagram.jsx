@@ -182,7 +182,7 @@ export default function PluginsDiagram() {
           Claude Code Plugin Architecture
         </h2>
         <p style={{ margin: "6px 0 0", color: DARK.muted, fontSize: "0.875rem" }}>
-          All 10 plugin component types, environment variables, installation scopes · v2.1.126 (May 2026)
+          All 10 plugin component types, environment variables, installation scopes · v2.1.126 (June 2026)
         </p>
       </div>
 
@@ -406,7 +406,7 @@ claude plugin install my-plugin@2.1.0`}
       )}
 
       <div style={{ marginTop: "20px", fontSize: "0.75rem", color: DARK.muted, textAlign: "center" }}>
-        Claude Code v2.1.126 · May 2026 · code.claude.com/docs/en/plugins
+        Claude Code v2.1.126 · June 2026 · code.claude.com/docs/en/plugins
       </div>
     </div>
   );

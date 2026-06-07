@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 10
   label: Agent SDK
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Claude Code Agent SDK — Complete Guide
@@ -238,6 +238,123 @@ async for event in session:
             print(f"Error code: {event.code}")
 ```
 
+### 3.3a Streaming Event Sequence — What Happens Between tool_use and tool_result
+
+One of the most important things to understand about the SDK stream is the causal sequence of events within a single agent turn. This is not just academic — knowing the sequence determines how you track progress, display intermediate state, and implement per-tool hooks.
+
+**Within a single agent turn, events arrive in this exact order:**
+
+```
+turn N
+  │
+  ▼
+assistant event
+  ├─ content[0]: text block  (Claude's reasoning text, if any)
+  └─ content[1]: tool_use block
+       ├─ id:    "toolu_01abc..."   ← this ID pairs with the tool_result
+       ├─ name:  "Bash"
+       └─ input: { "command": "npm test" }
+
+  [EXECUTION GAP]
+  The SDK subprocess executes the tool here.
+  During this gap, no events arrive on the stream.
+  This can last from milliseconds (Read) to minutes (Bash with long tests).
+  
+  ▼
+tool_result event
+  ├─ tool_use_id: "toolu_01abc..."  ← matches the tool_use id above
+  ├─ content: [{ "type": "text", "text": "...stdout/stderr..." }]
+  └─ is_error: false | true
+
+  [If Claude needs another tool, it emits another assistant event]
+  ▼
+assistant event (next tool call OR final response)
+  ...
+```
+
+**Key facts about the execution gap:**
+
+1. **No heartbeat events**: The stream is silent during tool execution. If you are implementing a timeout, you must measure wall-clock time from the last event, not the number of events received.
+
+2. **The `tool_use_id` is your correlation key**: Every `tool_result` event contains the `tool_use_id` that matches its corresponding `tool_use` block in the preceding `assistant` event. Use this to pair tool calls with their results when building audit logs or UI progress indicators.
+
+3. **Multi-tool turns**: Claude can emit multiple `tool_use` blocks in a single `assistant` event when it wants to run tools in parallel (e.g., reading several files simultaneously). In this case, you will see a single `assistant` event with multiple tool_use blocks, followed by multiple `tool_result` events (one per tool), then another `assistant` event.
+
+4. **Error tool results are normal flow**: When a tool fails (e.g., `Bash` returns exit code 1), the SDK emits a `tool_result` with `is_error: true`. Claude sees this error output in its context and decides how to respond — it may retry, try a different approach, or give up. The stream does NOT terminate on a tool error; that is Claude's decision.
+
+5. **Hooks fire during the gap**: If you have `PreToolUse` or `PostToolUse` hooks configured, they execute during the execution gap. From the SDK consumer's perspective, the gap is simply longer.
+
+**Practical example — tracking tool execution in real time:**
+
+```python
+import asyncio
+import time
+
+async def stream_with_tool_tracking(prompt: str):
+    tool_calls = {}   # tool_use_id → {name, input, start_time}
+    
+    async with StatefulClient() as client:
+        async for event in client.stream(prompt):
+            
+            if event.type == "assistant":
+                for block in event.message.content:
+                    if block.type == "text":
+                        print(block.text, end="", flush=True)
+                    elif block.type == "tool_use":
+                        tool_calls[block.id] = {
+                            "name": block.name,
+                            "input": block.input,
+                            "start_time": time.monotonic(),
+                        }
+                        print(f"\n[CALLING] {block.name}({_summarise(block.input)})")
+            
+            elif event.type == "tool_result":
+                call = tool_calls.pop(event.tool_use_id, None)
+                if call:
+                    elapsed = time.monotonic() - call["start_time"]
+                    status = "ERROR" if event.is_error else "OK"
+                    print(f"[{status}] {call['name']} completed in {elapsed:.2f}s")
+                    if event.is_error:
+                        # Show first 200 chars of error
+                        err_text = event.content[0].text if event.content else "(no output)"
+                        print(f"  Error: {err_text[:200]}")
+            
+            elif event.type == "result":
+                print(f"\n\nSession complete: {event.num_turns} turns, ${event.cost_usd:.4f}")
+
+def _summarise(input_dict: dict, max_len: int = 80) -> str:
+    s = str(input_dict)
+    return s if len(s) <= max_len else s[:max_len] + "..."
+```
+
+**Multi-tool parallel execution pattern:**
+
+```python
+async def stream_with_parallel_tool_tracking(prompt: str):
+    """
+    Claude sometimes issues multiple tool_use blocks in one assistant event.
+    Track them with a dict so you handle parallel tool calls correctly.
+    """
+    pending_tools: dict[str, str] = {}  # tool_use_id → tool_name
+    
+    async with StatefulClient() as client:
+        async for event in client.stream(prompt):
+            if event.type == "assistant":
+                tool_uses_in_this_turn = []
+                for block in event.message.content:
+                    if block.type == "tool_use":
+                        pending_tools[block.id] = block.name
+                        tool_uses_in_this_turn.append(block.name)
+                
+                if tool_uses_in_this_turn:
+                    print(f"\n[Parallel tools] {', '.join(tool_uses_in_this_turn)}")
+            
+            elif event.type == "tool_result":
+                tool_name = pending_tools.pop(event.tool_use_id, "unknown")
+                still_pending = list(pending_tools.values())
+                print(f"[Done] {tool_name}. Still waiting: {still_pending or 'none'}")
+```
+
 ### 3.4 Stateful Client — Multi-Turn Sessions
 
 The stateful client maintains conversation context across multiple calls:
@@ -284,6 +401,157 @@ async def interactive_pipeline():
 - `client.usage` — cumulative token usage across all turns
 - `client.total_cost_usd` — total spend for the session
 - `client.reset()` — clear conversation history while keeping config
+
+### 3.4a Session Management Across Multiple SDK Invocations
+
+A critical design question when building SDK-based applications is: **when does a "session" end, and how do you continue work across process boundaries?**
+
+The SDK distinguishes two concepts that are easy to conflate:
+
+```
+SUBPROCESS LIFETIME vs CONVERSATION LIFETIME
+─────────────────────────────────────────────────────────────────────────────
+Subprocess lifetime:   One OS process. Starts when StatefulClient.__aenter__
+                       is called. Ends when __aexit__ is called. Maximum
+                       duration is bounded by timeout= parameter.
+
+Conversation lifetime: The chain of messages (turns) Claude can "see" as
+                       prior context. Can span multiple subprocesses if you
+                       use session resumption. Bounded by the model's context
+                       window (200K tokens) after which auto-compaction kicks in.
+─────────────────────────────────────────────────────────────────────────────
+```
+
+**Pattern 1 — Single long-running subprocess (simplest)**
+
+```python
+async with StatefulClient(timeout=3600) as client:   # 1-hour limit
+    r1 = await client.query("Analyse the API module")
+    r2 = await client.query("Now refactor it")
+    r3 = await client.query("Run tests")
+    # All three queries share one subprocess and one conversation context.
+    # r2 sees r1's output. r3 sees r1 and r2's outputs.
+```
+
+Best for: multi-step pipelines that complete within the timeout. The subprocess stays alive between calls; no startup overhead per query.
+
+**Pattern 2 — Multiple subprocesses with session resumption**
+
+Use this when: you need to span multiple program invocations (e.g., a pipeline that continues tomorrow), or when your total work exceeds the timeout.
+
+```python
+import asyncio
+import json
+import pathlib
+from anthropic.claude_code import StatefulClient
+
+SESSION_FILE = pathlib.Path(".claude_session_id")
+
+async def run_phase(prompt: str, phase_name: str) -> str:
+    """Run one phase, resume from prior session if available."""
+    
+    prior_session_id = None
+    if SESSION_FILE.exists():
+        prior_session_id = SESSION_FILE.read_text().strip() or None
+    
+    kwargs = dict(
+        cwd=".",
+        permission_mode="autoAccept",
+        model="claude-sonnet-4-6",
+        timeout=600,
+    )
+    if prior_session_id:
+        kwargs["resume"] = prior_session_id
+        print(f"[{phase_name}] Resuming session {prior_session_id}")
+    else:
+        print(f"[{phase_name}] Starting new session")
+    
+    async with StatefulClient(**kwargs) as client:
+        result = await client.query(prompt)
+        # Persist the session ID for the next invocation
+        SESSION_FILE.write_text(client.session_id)
+        print(f"[{phase_name}] Done. Cost: ${result.cost_usd:.4f}. Session: {client.session_id}")
+        return result.output_text
+
+
+# Day 1 — analysis phase
+# asyncio.run(run_phase("Analyse all files in src/ and list quality issues", "analysis"))
+
+# Day 2 — refactoring phase (same session, sees Day 1 analysis in context)
+# asyncio.run(run_phase("Based on your analysis, implement the top 3 fixes", "refactoring"))
+```
+
+**What is preserved across session resumptions:**
+
+| What is preserved | What is NOT preserved |
+|---|---|
+| Full conversation history (all turns Claude saw) | Open file handles |
+| Compaction summary (if auto-compacted) | Active subprocess state |
+| Tool call/result pairs | In-memory variables from prior run |
+| CLAUDE.md contents (as seen by Claude in context) | OS process, PID, env |
+
+**Important: CLAUDE.md is reloaded fresh on resume.** If your CLAUDE.md changed between sessions, Claude will see the updated version. This is generally desirable (latest instructions) but can cause subtle behavioural changes in long-running pipelines.
+
+**Pattern 3 — Parallel independent subprocesses (no shared context)**
+
+When tasks are independent, run them in parallel. Each subprocess has its own conversation — they do NOT share context.
+
+```python
+import asyncio
+from anthropic.claude_code import StatefulClient
+
+async def review_module(path: str, semaphore: asyncio.Semaphore) -> dict:
+    async with semaphore:
+        async with StatefulClient(cwd=".", permission_mode="acceptEdits") as client:
+            result = await client.query(f"Review {path} for issues and suggest improvements")
+        return {"path": path, "review": result.output_text, "cost": result.cost_usd}
+
+async def run_parallel(modules: list[str], max_concurrent: int = 4):
+    sem = asyncio.Semaphore(max_concurrent)
+    return await asyncio.gather(*[review_module(m, sem) for m in modules])
+```
+
+**Pattern 4 — StatefulClient reset() for multi-tenant applications**
+
+When one long-lived process serves multiple users or tasks, use `reset()` to clear conversation history without restarting the subprocess:
+
+```python
+async with StatefulClient(cwd=".", timeout=86400) as shared_client:
+    # User A's task
+    await shared_client.query("Task for user A...")
+    user_a_session_id = shared_client.session_id
+    
+    # Reset before user B — clears ALL prior context
+    await shared_client.reset()
+    
+    # User B's task — starts fresh, no knowledge of user A's task
+    await shared_client.query("Task for user B...")
+    
+    # Caution: after reset(), resuming user_a_session_id requires a NEW
+    # StatefulClient with resume=user_a_session_id. The current client
+    # is now on a different conversation branch.
+```
+
+**Context window management**: The context window fills up over many turns. The `StatefulClient` triggers automatic compaction when the window reaches ~90% capacity. During compaction:
+- Claude summarises the conversation so far into a compact snapshot
+- The compact summary replaces the full history in context
+- You will see a `system` event with `type: "context_compacted"` (or similar) in the stream
+- Cost typically drops significantly on the next turn (far fewer input tokens)
+- The compact snapshot is stored server-side and is accessible via the session ID
+
+**Monitoring cumulative cost across turns:**
+
+```python
+async with StatefulClient(max_budget_usd=10.00) as client:
+    for i, prompt in enumerate(prompts):
+        result = await client.query(prompt)
+        print(f"Turn {i+1}: ${result.cost_usd:.4f} | Cumulative: ${client.total_cost_usd:.4f}")
+        
+        # Early exit if approaching budget
+        if client.total_cost_usd > 8.00:
+            print("Approaching budget limit — stopping early")
+            break
+```
 
 ### 3.5 Python SDK — Full Example with Error Handling and Retry Logic
 
@@ -1448,138 +1716,544 @@ type SDKEvent =
 
 There is no official C# SDK for the Claude Code Agent SDK. However, .NET and C# applications can integrate Claude Code through subprocess management. The pattern uses `System.Diagnostics.Process` to launch the Claude Code binary with `--output-format stream-json`, then parses the streaming JSON events.
 
-### Basic C# Subprocess Wrapper
+### Complete Production-Grade C# Subprocess Wrapper
+
+The following is a fully working .NET 8 implementation. It uses `System.Text.Json` source generation for AOT-compatible deserialization, `IAsyncEnumerable` for streaming, and `CancellationToken` throughout for clean shutdown.
+
+**Step 1 — Define the event model (ClaudeEvents.cs):**
 
 ```csharp
-using System;
-using System.Diagnostics;
-using System.Text.Json;
-using System.Threading.Tasks;
-using System.Collections.Generic;
+// ClaudeEvents.cs
+using System.Text.Json.Serialization;
 
-public class ClaudeCodeClient : IDisposable
+namespace ClaudeCode;
+
+// ── Discriminated union for all SDK event types ────────────────────────────
+
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
+[JsonDerivedType(typeof(SystemEvent),     "system")]
+[JsonDerivedType(typeof(AssistantEvent),  "assistant")]
+[JsonDerivedType(typeof(ToolResultEvent), "tool_result")]
+[JsonDerivedType(typeof(ResultEvent),     "result")]
+[JsonDerivedType(typeof(ErrorEvent),      "error")]
+public abstract class ClaudeEvent
 {
-    private readonly string _binaryPath;
-    private readonly string _apiKey;
+    [JsonPropertyName("type")]
+    public abstract string Type { get; }
+}
 
-    public ClaudeCodeClient(string apiKey, string binaryPath = "claude")
+// ── system event ──────────────────────────────────────────────────────────
+public sealed class SystemEvent : ClaudeEvent
+{
+    public override string Type => "system";
+
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; init; } = "";
+
+    [JsonPropertyName("model")]
+    public string Model { get; init; } = "";
+
+    [JsonPropertyName("cwd")]
+    public string Cwd { get; init; } = "";
+
+    [JsonPropertyName("tools")]
+    public IReadOnlyList<string> Tools { get; init; } = [];
+}
+
+// ── assistant event ────────────────────────────────────────────────────────
+public sealed class AssistantEvent : ClaudeEvent
+{
+    public override string Type => "assistant";
+
+    [JsonPropertyName("message")]
+    public AssistantMessage Message { get; init; } = new();
+}
+
+public sealed class AssistantMessage
+{
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = "";
+
+    [JsonPropertyName("role")]
+    public string Role { get; init; } = "assistant";
+
+    [JsonPropertyName("content")]
+    public IReadOnlyList<ContentBlock> Content { get; init; } = [];
+}
+
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
+[JsonDerivedType(typeof(TextBlock),    "text")]
+[JsonDerivedType(typeof(ToolUseBlock), "tool_use")]
+public abstract class ContentBlock
+{
+    [JsonPropertyName("type")]
+    public abstract string BlockType { get; }
+}
+
+public sealed class TextBlock : ContentBlock
+{
+    public override string BlockType => "text";
+
+    [JsonPropertyName("text")]
+    public string Text { get; init; } = "";
+}
+
+public sealed class ToolUseBlock : ContentBlock
+{
+    public override string BlockType => "tool_use";
+
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = "";
+
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = "";
+
+    [JsonPropertyName("input")]
+    public System.Text.Json.JsonElement Input { get; init; }
+}
+
+// ── tool_result event ──────────────────────────────────────────────────────
+public sealed class ToolResultEvent : ClaudeEvent
+{
+    public override string Type => "tool_result";
+
+    [JsonPropertyName("tool_use_id")]
+    public string ToolUseId { get; init; } = "";
+
+    [JsonPropertyName("content")]
+    public IReadOnlyList<TextBlock> Content { get; init; } = [];
+
+    [JsonPropertyName("is_error")]
+    public bool IsError { get; init; }
+}
+
+// ── result event ───────────────────────────────────────────────────────────
+public sealed class ResultEvent : ClaudeEvent
+{
+    public override string Type => "result";
+
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; init; } = "";
+
+    [JsonPropertyName("num_turns")]
+    public int NumTurns { get; init; }
+
+    [JsonPropertyName("stop_reason")]
+    public string StopReason { get; init; } = "";
+
+    [JsonPropertyName("cost_usd")]
+    public decimal CostUsd { get; init; }
+
+    [JsonPropertyName("usage")]
+    public TokenUsage Usage { get; init; } = new();
+}
+
+public sealed class TokenUsage
+{
+    [JsonPropertyName("input_tokens")]
+    public long InputTokens { get; init; }
+
+    [JsonPropertyName("output_tokens")]
+    public long OutputTokens { get; init; }
+
+    [JsonPropertyName("cache_read_tokens")]
+    public long CacheReadTokens { get; init; }
+
+    [JsonPropertyName("cache_write_tokens")]
+    public long CacheWriteTokens { get; init; }
+}
+
+// ── error event ────────────────────────────────────────────────────────────
+public sealed class ErrorEvent : ClaudeEvent
+{
+    public override string Type => "error";
+
+    [JsonPropertyName("error")]
+    public string Error { get; init; } = "";
+
+    [JsonPropertyName("code")]
+    public string Code { get; init; } = "";
+}
+
+// ── Session result (returned when stream completes) ────────────────────────
+public sealed class ClaudeSessionResult
+{
+    public string SessionId { get; init; } = "";
+    public string OutputText { get; init; } = "";
+    public int NumTurns { get; init; }
+    public decimal CostUsd { get; init; }
+    public TokenUsage Usage { get; init; } = new();
+    public string StopReason { get; init; } = "";
+    public IReadOnlyList<ToolCallRecord> ToolCalls { get; init; } = [];
+}
+
+public sealed record ToolCallRecord(
+    string ToolUseId,
+    string ToolName,
+    string InputJson,
+    string ResultText,
+    bool IsError
+);
+```
+
+**Step 2 — The subprocess client (ClaudeCodeClient.cs):**
+
+```csharp
+// ClaudeCodeClient.cs
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json;
+
+namespace ClaudeCode;
+
+public sealed class ClaudeCodeOptions
+{
+    public string BinaryPath       { get; init; } = "claude";
+    public string ApiKey           { get; init; } = "";
+    public string WorkingDirectory { get; init; } = "";
+    public string Model            { get; init; } = "claude-sonnet-4-6";
+    public decimal MaxBudgetUsd    { get; init; } = 2.0m;
+    public int MaxTurns            { get; init; } = 30;
+    public string PermissionMode   { get; init; } = "bypassPermissions";
+    public TimeSpan Timeout        { get; init; } = TimeSpan.FromMinutes(10);
+}
+
+public sealed class ClaudeCodeClient
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        _apiKey = apiKey;
-        _binaryPath = binaryPath;
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private readonly ClaudeCodeOptions _options;
+
+    public ClaudeCodeClient(ClaudeCodeOptions options)
+    {
+        _options = options;
     }
 
-    public async IAsyncEnumerable<ClaudeEvent> RunAsync(
+    /// <summary>
+    /// Stream all SDK events for a single prompt. Events arrive in causal order.
+    /// The stream ends when the "result" event is received or the process exits.
+    /// </summary>
+    public async IAsyncEnumerable<ClaudeEvent> StreamAsync(
         string prompt,
-        string? workingDirectory = null,
-        string model = "claude-sonnet-4-6",
-        decimal maxBudgetUsd = 1.0m,
-        int maxTurns = 30)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var args = BuildArguments();
+        var psi  = BuildProcessStartInfo(args);
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start claude process.");
+
+        // Write prompt to stdin and close it so claude knows input is done
+        await process.StandardInput.WriteLineAsync(
+            prompt.AsMemory(), cancellationToken);
+        await process.StandardInput.FlushAsync(cancellationToken);
+        process.StandardInput.Close();
+
+        // Begin reading stderr in background (for diagnostics)
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+        // Stream stdout line-by-line
+        string? line;
+        while ((line = await process.StandardOutput
+                    .ReadLineAsync(cancellationToken)
+                    .ConfigureAwait(false)) != null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            ClaudeEvent? evt = ParseEvent(line);
+            if (evt is not null)
+                yield return evt;
+
+            // Stop iterating after the result event — no more events follow
+            if (evt is ResultEvent)
+                break;
+        }
+
+        await process.WaitForExitAsync(cancellationToken);
+
+        if (process.ExitCode != 0)
+        {
+            var stderr = await stderrTask;
+            throw new ClaudeCodeSubprocessException(process.ExitCode, stderr);
+        }
+    }
+
+    /// <summary>
+    /// Run a prompt to completion and return a structured result.
+    /// Collects all events internally.
+    /// </summary>
+    public async Task<ClaudeSessionResult> RunAsync(
+        string prompt,
+        IProgress<ClaudeEvent>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var textBuilder  = new StringBuilder();
+        var toolCalls    = new Dictionary<string, ToolCallRecord>();
+        var pendingTools = new Dictionary<string, (string Name, string InputJson)>();
+        ResultEvent? resultEvent = null;
+        SystemEvent? systemEvent = null;
+
+        await foreach (var evt in StreamAsync(prompt, cancellationToken))
+        {
+            progress?.Report(evt);
+
+            switch (evt)
+            {
+                case SystemEvent sys:
+                    systemEvent = sys;
+                    break;
+
+                case AssistantEvent asst:
+                    foreach (var block in asst.Message.Content)
+                    {
+                        switch (block)
+                        {
+                            case TextBlock tb:
+                                textBuilder.Append(tb.Text);
+                                break;
+
+                            case ToolUseBlock tu:
+                                pendingTools[tu.Id] = (tu.Name, tu.Input.ToString());
+                                break;
+                        }
+                    }
+                    break;
+
+                case ToolResultEvent tr:
+                    if (pendingTools.TryGetValue(tr.ToolUseId, out var pending))
+                    {
+                        pendingTools.Remove(tr.ToolUseId);
+                        var resultText = tr.Content.Count > 0 ? tr.Content[0].Text : "";
+                        toolCalls[tr.ToolUseId] = new ToolCallRecord(
+                            tr.ToolUseId, pending.Name, pending.InputJson,
+                            resultText, tr.IsError);
+                    }
+                    break;
+
+                case ResultEvent res:
+                    resultEvent = res;
+                    break;
+
+                case ErrorEvent err:
+                    throw new ClaudeCodeException(err.Code, err.Error);
+            }
+        }
+
+        if (resultEvent is null)
+            throw new InvalidOperationException("Stream ended without a result event.");
+
+        return new ClaudeSessionResult
+        {
+            SessionId  = resultEvent.SessionId,
+            OutputText = textBuilder.ToString(),
+            NumTurns   = resultEvent.NumTurns,
+            CostUsd    = resultEvent.CostUsd,
+            Usage      = resultEvent.Usage,
+            StopReason = resultEvent.StopReason,
+            ToolCalls  = toolCalls.Values.ToList(),
+        };
+    }
+
+    // ── Internals ──────────────────────────────────────────────────────────
+
+    private string BuildArguments()
+    {
+        var sb = new StringBuilder();
+        sb.Append("--print");
+        sb.Append(" --output-format stream-json");
+        sb.Append($" --model {_options.Model}");
+        sb.Append($" --max-turns {_options.MaxTurns}");
+        sb.Append($" --max-budget-usd {_options.MaxBudgetUsd:F2}");
+        sb.Append($" --permission-mode {_options.PermissionMode}");
+        sb.Append(" --bare");
+        return sb.ToString();
+    }
+
+    private ProcessStartInfo BuildProcessStartInfo(string args)
     {
         var psi = new ProcessStartInfo
         {
-            FileName = _binaryPath,
-            Arguments = $"--print --output-format stream-json --model {model} --max-turns {maxTurns}",
-            RedirectStandardInput = true,
+            FileName               = _options.BinaryPath,
+            Arguments              = args,
+            RedirectStandardInput  = true,
             RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory
+            RedirectStandardError  = true,
+            UseShellExecute        = false,
+            CreateNoWindow         = true,
+            StandardInputEncoding  = Encoding.UTF8,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding  = Encoding.UTF8,
+            WorkingDirectory       = string.IsNullOrEmpty(_options.WorkingDirectory)
+                                       ? Environment.CurrentDirectory
+                                       : _options.WorkingDirectory,
         };
 
-        psi.Environment["ANTHROPIC_API_KEY"] = _apiKey;
+        if (!string.IsNullOrEmpty(_options.ApiKey))
+            psi.Environment["ANTHROPIC_API_KEY"] = _options.ApiKey;
+
         psi.Environment["DISABLE_UPDATES"] = "1";
-        psi.Environment["CLAUDE_CODE_MAX_BUDGET_USD"] = maxBudgetUsd.ToString("F2");
 
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start claude process");
-
-        // Write prompt and close stdin
-        await process.StandardInput.WriteLineAsync(prompt);
-        process.StandardInput.Close();
-
-        // Stream JSON events from stdout
-        string? line;
-        while ((line = await process.StandardOutput.ReadLineAsync()) != null)
-        {
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
-            ClaudeEvent? evt = null;
-            try
-            {
-                evt = ParseEvent(line);
-            }
-            catch (JsonException)
-            {
-                // Skip malformed lines
-                continue;
-            }
-
-            if (evt != null)
-                yield return evt;
-        }
-
-        await process.WaitForExitAsync();
+        return psi;
     }
 
     private static ClaudeEvent? ParseEvent(string json)
     {
-        using var doc = JsonDocument.Parse(json);
-        var type = doc.RootElement.GetProperty("type").GetString();
-        return type switch
+        try
         {
-            "system"     => new SystemEvent    { Raw = json },
-            "assistant"  => new AssistantEvent { Raw = json },
-            "tool_result"=> new ToolResultEvent{ Raw = json },
-            "result"     => new ResultEvent    { Raw = json },
-            "error"      => new ErrorEvent     { Raw = json },
-            _            => null
-        };
-    }
+            // First, peek at the "type" field to decide which class to deserialise into.
+            // System.Text.Json polymorphic deserialization handles the rest.
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("type", out var typeProp))
+                return null;
 
-    public void Dispose() { }
-}
-
-// Event types
-public abstract class ClaudeEvent { public required string Raw { get; init; } }
-public class SystemEvent     : ClaudeEvent { }
-public class AssistantEvent  : ClaudeEvent { }
-public class ToolResultEvent : ClaudeEvent { }
-public class ResultEvent     : ClaudeEvent { }
-public class ErrorEvent      : ClaudeEvent { }
-```
-
-### Usage Example
-
-```csharp
-var client = new ClaudeCodeClient(
-    apiKey: Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!,
-    binaryPath: "claude"
-);
-
-await foreach (var evt in client.RunAsync(
-    prompt: "Review the authentication module in src/auth/ and report any security issues",
-    workingDirectory: "/path/to/repo",
-    model: "claude-opus-4-8",
-    maxBudgetUsd: 2.0m))
-{
-    if (evt is AssistantEvent asst)
-    {
-        using var doc = JsonDocument.Parse(asst.Raw);
-        var message = doc.RootElement.GetProperty("message");
-        foreach (var content in message.GetProperty("content").EnumerateArray())
+            return typeProp.GetString() switch
+            {
+                "system"      => JsonSerializer.Deserialize<SystemEvent>(json,     JsonOptions),
+                "assistant"   => JsonSerializer.Deserialize<AssistantEvent>(json,  JsonOptions),
+                "tool_result" => JsonSerializer.Deserialize<ToolResultEvent>(json, JsonOptions),
+                "result"      => JsonSerializer.Deserialize<ResultEvent>(json,     JsonOptions),
+                "error"       => JsonSerializer.Deserialize<ErrorEvent>(json,      JsonOptions),
+                _             => null,
+            };
+        }
+        catch (JsonException)
         {
-            if (content.GetProperty("type").GetString() == "text")
-                Console.Write(content.GetProperty("text").GetString());
+            return null;  // Skip malformed lines gracefully
         }
     }
-    else if (evt is ResultEvent result)
+}
+
+// ── Exceptions ─────────────────────────────────────────────────────────────
+
+public sealed class ClaudeCodeException(string code, string message)
+    : Exception($"[{code}] {message}")
+{
+    public string Code    { get; } = code;
+    public string Details { get; } = message;
+}
+
+public sealed class ClaudeCodeSubprocessException(int exitCode, string stderr)
+    : Exception($"Claude process exited with code {exitCode}. stderr: {stderr}")
+{
+    public int    ExitCode { get; } = exitCode;
+    public string Stderr   { get; } = stderr;
+}
+```
+
+**Step 3 — Usage in a console application (Program.cs):**
+
+```csharp
+// Program.cs — .NET 8 top-level program
+using ClaudeCode;
+
+var client = new ClaudeCodeClient(new ClaudeCodeOptions
+{
+    ApiKey           = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+                         ?? throw new InvalidOperationException("ANTHROPIC_API_KEY not set"),
+    WorkingDirectory = args.Length > 0 ? args[0] : Environment.CurrentDirectory,
+    Model            = "claude-sonnet-4-6",
+    MaxBudgetUsd     = 2.0m,
+    MaxTurns         = 30,
+    PermissionMode   = "bypassPermissions",
+    Timeout          = TimeSpan.FromMinutes(10),
+});
+
+const string Prompt = """
+    Review the authentication module in src/auth/ for security issues.
+    For each issue, report: severity (critical/high/medium/low), file path, 
+    line range, description, and recommended fix.
+    Format output as a numbered list.
+    """;
+
+using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+
+Console.WriteLine("Starting Claude Code session...\n");
+
+// Option A: Stream events for real-time output
+await foreach (var evt in client.StreamAsync(Prompt, cts.Token))
+{
+    switch (evt)
     {
-        using var doc = JsonDocument.Parse(result.Raw);
-        var cost = doc.RootElement.GetProperty("costUsd").GetDecimal();
-        Console.WriteLine($"\n[Session cost: ${cost:F4}]");
+        case SystemEvent sys:
+            Console.WriteLine($"[Session] {sys.SessionId} | Model: {sys.Model}");
+            Console.WriteLine($"[Session] Tools: {string.Join(", ", sys.Tools)}\n");
+            break;
+
+        case AssistantEvent asst:
+            foreach (var block in asst.Message.Content)
+            {
+                if (block is TextBlock tb)
+                    Console.Write(tb.Text);
+                else if (block is ToolUseBlock tu)
+                    Console.WriteLine($"\n[Calling] {tu.Name}({tu.Input})");
+            }
+            break;
+
+        case ToolResultEvent tr:
+            var status = tr.IsError ? "ERROR" : "OK";
+            var snippet = tr.Content.Count > 0 ? tr.Content[0].Text[..Math.Min(100, tr.Content[0].Text.Length)] : "";
+            Console.WriteLine($"\n[{status}] Tool result ({tr.ToolUseId[^8..]}): {snippet}");
+            break;
+
+        case ResultEvent res:
+            Console.WriteLine($"\n\n[Complete]");
+            Console.WriteLine($"  Turns:        {res.NumTurns}");
+            Console.WriteLine($"  Stop reason:  {res.StopReason}");
+            Console.WriteLine($"  Cost:         ${res.CostUsd:F4}");
+            Console.WriteLine($"  Input tokens: {res.Usage.InputTokens:N0}");
+            Console.WriteLine($"  Output tokens:{res.Usage.OutputTokens:N0}");
+            Console.WriteLine($"  Cache read:   {res.Usage.CacheReadTokens:N0} (saved)");
+            break;
+
+        case ErrorEvent err:
+            Console.Error.WriteLine($"\n[Error] {err.Code}: {err.Error}");
+            break;
     }
 }
+
+// Option B: Collect everything and get a structured result
+// ClaudeSessionResult result = await client.RunAsync(Prompt, cancellationToken: cts.Token);
+// Console.WriteLine(result.OutputText);
+// Console.WriteLine($"\nCost: ${result.CostUsd:F4} | Tools used: {result.ToolCalls.Count}");
+```
+
+**Step 4 — Retry with Polly (production pattern):**
+
+```csharp
+// Requires: dotnet add package Polly.Extensions
+using Polly;
+using Polly.Retry;
+
+var retryPipeline = new ResiliencePipelineBuilder()
+    .AddRetry(new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 4,
+        BackoffType      = DelayBackoffType.Exponential,
+        Delay            = TimeSpan.FromSeconds(5),
+        ShouldHandle     = new PredicateBuilder()
+            // Retry on subprocess crashes and rate limits
+            .Handle<ClaudeCodeSubprocessException>(e => e.ExitCode > 2)
+            .Handle<ClaudeCodeException>(e => e.Code is "rate_limited" or "overloaded"),
+        OnRetry = args =>
+        {
+            Console.WriteLine($"[Retry {args.AttemptNumber}] {args.Outcome.Exception?.Message}");
+            return ValueTask.CompletedTask;
+        },
+    })
+    .Build();
+
+ClaudeSessionResult result = await retryPipeline.ExecuteAsync(
+    async ct => await client.RunAsync(Prompt, cancellationToken: ct),
+    cts.Token
+);
+
+Console.WriteLine($"Final cost: ${result.CostUsd:F4}");
 ```
 
 ### NuGet Package Considerations
@@ -1589,6 +2263,8 @@ For production use, consider wrapping this pattern in a reusable NuGet package. 
 - **Cancellation**: Pass `CancellationToken` through `ReadLineAsync` for graceful shutdown
 - **Retry logic**: Wrap the outer `RunAsync` in a Polly retry policy for transient failures
 - **Session persistence**: Parse the `sessionId` from the `system` event; store it for `/resume` support
+- **AOT compatibility**: If publishing with `PublishAot=true`, ensure `JsonSerializerContext` source generation is used instead of reflection-based serialization
+- **Logging**: Inject `ILogger<ClaudeCodeClient>` and log at `Debug` for each event type; log at `Warning` for `is_error: true` tool results
 
 ---
 
@@ -1699,6 +2375,154 @@ anthropic.ClaudeCodeError (base)
     └── Includes binary stderr in error.stderr attribute
     └── Fix: check stderr; verify binary health with `claude --version`
 ```
+
+### Complete ClaudeCodeError Taxonomy — Detailed Reference
+
+Understanding exactly when each error fires, what attributes it carries, and whether it is retryable is essential for production-grade SDK usage.
+
+| Exception Class | `e.code` value | When it fires | Retryable? | Key attributes |
+|---|---|---|---|---|
+| `ClaudeCodeNotFoundError` | `not_found` | `claude` binary absent from PATH at subprocess spawn time | No — fix environment | `e.searched_paths: list[str]` |
+| `ClaudeCodeAuthenticationError` | `authentication_error` | API key rejected by Anthropic; OAuth token expired or revoked | No — fix credential | `e.status_code: int` (401/403) |
+| `SessionTimeoutError` | `timeout` | Wall-clock time since session start exceeded `timeout=` parameter | Yes — restart session | `e.elapsed_seconds: float` |
+| `MaxTurnsExceededError` | `max_turns_exceeded` | `num_turns` hit the `max_turns=` hard limit | Partially — increase turns and re-run | `e.num_turns: int`, `e.max_turns: int` |
+| `SessionInterruptedError` | `interrupted` | Subprocess terminated by signal (SIGKILL, OOM, etc.) | Yes — transient | `e.exit_code: int`, `e.stderr: str` |
+| `ClaudeCodeBudgetError` | `budget_exceeded` | `cost_usd` exceeded `max_budget_usd=` hard limit | No — re-architect task | `e.spent_usd: float`, `e.limit_usd: float` |
+| `ClaudeCodeRateLimitError` | `rate_limited` | Anthropic API returned 429 after the binary's internal retries | Yes — backoff required | `e.retry_after: int` (seconds) |
+| `ClaudeCodeOverloadedError` | `overloaded` | Anthropic API returned 529 (capacity overload) | Yes — brief backoff | `e.retry_after: int` |
+| `ClaudeCodeSubprocessError` | `subprocess_error` | Binary exited with non-zero code for unknown reason | Depends on `e.exit_code` | `e.exit_code: int`, `e.stderr: str` |
+| `ClaudeCodeError` (base) | `unknown` | Catch-all for any unclassified error | Unknown | `e.message: str` |
+
+**Retryability decision tree:**
+
+```python
+from anthropic.claude_code import (
+    ClaudeCodeError,
+    ClaudeCodeNotFoundError,
+    ClaudeCodeAuthenticationError,
+    ClaudeCodeBudgetError,
+    ClaudeCodeRateLimitError,
+    ClaudeCodeOverloadedError,
+    SessionTimeoutError,
+    MaxTurnsExceededError,
+    SessionInterruptedError,
+    ClaudeCodeSubprocessError,
+)
+import asyncio
+
+async def run_with_full_error_handling(prompt: str, cwd: str) -> str | None:
+    """
+    Demonstrates the full error handling decision tree.
+    Returns output text on success, None on unrecoverable error.
+    """
+    max_retries = 4
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with StatefulClient(
+                cwd=cwd,
+                timeout=300,
+                max_turns=30,
+                max_budget_usd=2.00,
+            ) as client:
+                result = await client.query(prompt)
+                return result.output_text
+
+        except ClaudeCodeNotFoundError as e:
+            # Binary not installed — NOT retryable. Fix the environment.
+            print(f"[FATAL] Claude binary not found. Searched: {e.searched_paths}")
+            print("Install: curl -fsSL https://claude.ai/install.sh | bash")
+            return None
+
+        except ClaudeCodeAuthenticationError as e:
+            # Credential rejected — NOT retryable. Fix the credential.
+            print(f"[FATAL] Authentication failed (HTTP {e.status_code}).")
+            print("Check ANTHROPIC_API_KEY or OAuth token validity.")
+            return None
+
+        except ClaudeCodeBudgetError as e:
+            # Budget consumed — NOT retryable without changing budget.
+            print(f"[FATAL] Budget exceeded: ${e.spent_usd:.4f} of ${e.limit_usd:.4f}")
+            return None
+
+        except MaxTurnsExceededError as e:
+            # Task too complex for the configured turn limit.
+            # Partial work may have been done — check the filesystem before retrying.
+            print(f"[WARN] Max turns ({e.max_turns}) reached. {e.num_turns} turns used.")
+            print("Consider: increase max_turns, or break the task into smaller prompts.")
+            return None  # Partial work was done; don't blindly re-run
+
+        except ClaudeCodeRateLimitError as e:
+            # API rate limit — retryable with backoff.
+            wait = e.retry_after or (30 * attempt)
+            print(f"[RETRY {attempt}/{max_retries}] Rate limited. Waiting {wait}s...")
+            await asyncio.sleep(wait)
+
+        except ClaudeCodeOverloadedError as e:
+            # API overloaded — retryable with shorter backoff.
+            wait = e.retry_after or 10
+            print(f"[RETRY {attempt}/{max_retries}] API overloaded. Waiting {wait}s...")
+            await asyncio.sleep(wait)
+
+        except SessionTimeoutError as e:
+            # Session wall-clock timeout — retryable.
+            print(f"[RETRY {attempt}/{max_retries}] Session timed out after {e.elapsed_seconds:.0f}s.")
+            await asyncio.sleep(5 * attempt)
+
+        except SessionInterruptedError as e:
+            # Subprocess killed unexpectedly — usually retryable.
+            print(f"[RETRY {attempt}/{max_retries}] Session interrupted (exit {e.exit_code}).")
+            if e.stderr:
+                print(f"  stderr: {e.stderr[:300]}")
+            await asyncio.sleep(5)
+
+        except ClaudeCodeSubprocessError as e:
+            # Binary exited with non-zero code — check exit code.
+            if e.exit_code in (1, 2):
+                # Exit 1/2 often means Claude gave up gracefully
+                print(f"[WARN] Subprocess exited {e.exit_code}. stderr: {e.stderr[:300]}")
+                return None  # Non-retryable — the error is in the task
+            else:
+                # Higher exit codes suggest environment issues
+                print(f"[RETRY {attempt}/{max_retries}] Subprocess error (exit {e.exit_code}).")
+                await asyncio.sleep(5)
+
+        except ClaudeCodeError as e:
+            # Catch-all for any unclassified ClaudeCodeError
+            print(f"[ERROR] Unclassified SDK error: {e.code} — {e.message}")
+            return None
+
+    print(f"[FATAL] All {max_retries} retries exhausted.")
+    return None
+```
+
+**Distinguishing `result.subtype` soft limits from raised exceptions:**
+
+Some limit conditions do NOT raise Python exceptions — they instead surface as `result` events with a specific `subtype`. These indicate Claude reached a limit gracefully (it finished its turn before hitting the limit) rather than the subprocess being killed:
+
+```python
+async for event in session.stream(prompt):
+    if event.type == "result":
+        match event.stop_reason:
+            case "end_turn":
+                # Normal completion — Claude finished on its own
+                pass
+            case "max_turns":
+                # Claude exhausted max_turns but finished cleanly
+                # event.output_text contains whatever was produced
+                print(f"Hit turn limit after {event.num_turns} turns")
+            case "budget_exceeded":
+                # Cost limit hit mid-session but result was flushed
+                print(f"Budget hit: ${event.cost_usd:.4f}")
+            case "timeout":
+                # Timeout hit but result event was still emitted
+                print("Timed out — partial result available")
+            case "error":
+                # Fatal error — result may be empty
+                print(f"Session error: {event.error_message}")
+```
+
+The distinction matters for recovery logic: a `result` event with `stop_reason="max_turns"` means you have partial output you can inspect; a raised `MaxTurnsExceededError` means the subprocess was killed before producing any result event.
 
 ### TypeScript Error Types
 

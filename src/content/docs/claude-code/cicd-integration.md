@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 8
   label: CI/CD Integration
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # CI/CD Integration — GitHub Actions & Automation
@@ -114,6 +114,92 @@ Returns:
   "turns": 7
 }
 ```
+
+### Why `--output-format stream-json` matters in CI
+
+When Claude Code processes a complex task, it runs an agentic loop — multiple turns, multiple tool calls, potentially many minutes of work. The three output formats behave very differently in this context:
+
+```
+--output-format text        (default)
+  Streams Claude's final response text to stdout.
+  Tool call results are NOT emitted on stdout.
+  You see the final answer, but nothing in between.
+  Suitable for: human-readable one-shot queries.
+  Problem in CI: you can't distinguish Claude's reasoning from errors;
+  you can't track cost or token usage; you can't detect tool failures.
+
+--output-format json
+  Waits until the ENTIRE session completes, then emits one JSON blob.
+  The blob contains the final response text and usage stats.
+  Suitable for: simple CI tasks where you only care about the final answer.
+  Problem in CI: the runner appears hung with no output during long tasks.
+  Many CI systems have "no output" timeouts (e.g., GitHub Actions kills
+  jobs with no stdout for 10 minutes). Also blocks on OOM if output is large.
+
+--output-format stream-json
+  Emits one JSON object per line on stdout as each event occurs.
+  Events: system, assistant (per turn), tool_result (per tool call), result.
+  The stream is live — you see events within milliseconds of them happening.
+  Suitable for: all CI/CD use cases, SDK usage, progress tracking, cost attribution.
+  This is the format the SDK uses internally.
+```
+
+**Key advantages of `stream-json` in CI:**
+
+1. **Prevents "silent timeout" kills**: Since events stream continuously during tool execution, the runner always has recent output. CI systems that kill jobs for inactivity (no stdout for N minutes) will not kill an active Claude Code job using `stream-json`.
+
+2. **Per-turn cost visibility**: Each `result` event (end of a turn) contains `cost_usd`, `input_tokens`, and `output_tokens`. You can track spend in real time and kill the job early if cost is anomalous.
+
+3. **Tool-level audit logging**: Every `tool_result` event includes the tool name, its inputs, and its output. This lets you build complete audit trails of what Claude read, wrote, or executed — critical for compliance in regulated environments.
+
+4. **Structured error detection**: An `error` event with `is_error: true` is machine-readable. With `text` output, you have to parse Claude's natural language explanation of an error, which is fragile.
+
+5. **Progress indicators**: CI dashboards can show "Turn 7/30 | Tool: Bash | Cost so far: $0.12" by parsing the stream, rather than showing a blank progress bar.
+
+**Using `stream-json` in shell scripts:**
+
+```bash
+# Parse stream-json output in bash using jq
+claude --print "Review src/api/ for security issues" \
+       --output-format stream-json \
+       --permission-mode bypassPermissions \
+       --max-budget-usd 2.00 \
+       --bare | while IFS= read -r line; do
+    
+    TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
+    
+    case "$TYPE" in
+        system)
+            SESSION_ID=$(echo "$line" | jq -r '.session_id')
+            echo "[CI] Session: $SESSION_ID"
+            ;;
+        assistant)
+            # Print text blocks in real time
+            echo "$line" | jq -r '.message.content[] | select(.type=="text") | .text' 2>/dev/null
+            ;;
+        tool_result)
+            IS_ERROR=$(echo "$line" | jq -r '.is_error')
+            if [ "$IS_ERROR" = "true" ]; then
+                echo "[WARN] Tool error detected"
+            fi
+            ;;
+        result)
+            COST=$(echo "$line" | jq -r '.cost_usd')
+            TURNS=$(echo "$line" | jq -r '.num_turns')
+            STOP=$(echo "$line" | jq -r '.stop_reason')
+            echo "[CI] Done: $TURNS turns, \$$COST, stop=$STOP"
+            ;;
+        error)
+            CODE=$(echo "$line" | jq -r '.code')
+            ERR=$(echo "$line" | jq -r '.error')
+            echo "[ERROR] $CODE: $ERR" >&2
+            exit 1
+            ;;
+    esac
+done
+```
+
+**Recommendation**: Always use `--output-format stream-json` in CI/CD, especially for tasks that take more than 30 seconds. Use `--output-format json` only for fast, simple queries where you just need the final answer and silence during execution is acceptable.
 
 ---
 
@@ -936,7 +1022,7 @@ env:
   DATABASE_URL: ${{ secrets.DATABASE_URL }}  # Available to hooks/scripts but NOT in prompts
 ```
 
-### 6.3 Budget limits
+### 6.3 Budget limits — `--max-budget-usd` in depth
 
 Always set `--max-budget-usd` in CI:
 
@@ -947,6 +1033,89 @@ claude --print "..." \
 ```
 
 The session terminates if either limit is hit. This prevents runaway costs from infinite loops.
+
+**How `--max-budget-usd` works internally:**
+
+The budget is checked at the end of each agent turn (after each Claude API response completes). If the cumulative `cost_usd` for the session exceeds the limit, Claude Code:
+
+1. Stops calling tools immediately (no partial tool execution)
+2. Emits a `result` event with `stop_reason: "budget_exceeded"` and the accumulated output so far
+3. Exits with code 0 (not a crash — it is a clean stop)
+
+This means: any work Claude completed before the limit was hit is preserved. If Claude edited 5 files before the budget ran out, those 5 edits exist on disk. You get partial output, not nothing.
+
+**What cost does the budget count?**
+
+The `cost_usd` counter includes:
+- All input tokens (including the CLAUDE.md loaded into context)
+- All output tokens (Claude's reasoning and responses)
+- Cache write tokens (one-time cost for populating the prompt cache)
+- Cache read tokens (discounted, but still counted)
+
+It does NOT include: your tool execution cost (running `npm test` costs nothing in the budget counter), MCP server calls, or external API calls your code makes.
+
+**Recommended budget limits by task type:**
+
+| Task | Recommended budget | Notes |
+|---|---|---|
+| PR diff security scan (Haiku) | `$0.10–0.25` | Simple pattern matching |
+| PR code review (Sonnet) | `$0.50–1.00` | Full diff analysis |
+| Automated test fix (Sonnet) | `$1.00–3.00` | May need multiple fix-test cycles |
+| Codebase refactoring (Opus) | `$5.00–15.00` | Complex, multi-file changes |
+| Full security audit (Opus) | `$5.00–20.00` | Whole codebase scan |
+| One-off CI syntax check (Haiku) | `$0.05` | Trivial tasks |
+
+**Budget vs turns — which limit fires first?**
+
+Use both limits together. They guard against different failure modes:
+
+```
+--max-turns guards against:  Infinite reasoning loops where Claude repeatedly
+                              calls tools but makes no progress. Cost per turn
+                              may be low, but turns accumulate.
+
+--max-budget-usd guards against: A single expensive turn (e.g., Claude reads
+                              a massive codebase in one tool call, generating
+                              100K input tokens). One turn can exhaust the
+                              budget even with max-turns=50.
+
+Best practice: Set both. Use max-turns ~3× higher than you expect the task
+to take, and max-budget-usd at your actual spend ceiling.
+```
+
+**Detecting a budget stop in shell scripts:**
+
+```bash
+OUTPUT=$(claude --print "..." \
+    --output-format stream-json \
+    --max-budget-usd 1.00 \
+    --max-turns 20 \
+    --bare)
+
+STOP_REASON=$(echo "$OUTPUT" | jq -r 'select(.type=="result") | .stop_reason')
+
+if [ "$STOP_REASON" = "budget_exceeded" ]; then
+    echo "[WARNING] Budget limit reached. Partial output may be available."
+    # Inspect what was completed before the limit
+    echo "$OUTPUT" | jq -r 'select(.type=="assistant") | .message.content[].text // empty'
+    exit 2   # Distinct exit code for budget stops
+fi
+```
+
+**Setting organisation-wide budget defaults:**
+
+For teams with many pipelines, set a default budget in `managed-settings.json` so individual pipelines that forget `--max-budget-usd` still have a fallback:
+
+```json
+{
+  "env": {
+    "CLAUDE_BUDGET_USD": "5.00",
+    "CLAUDE_MAX_TURNS": "30"
+  }
+}
+```
+
+Individual `--max-budget-usd` flags override these defaults.
 
 ### 6.4 Network isolation
 
@@ -1681,7 +1850,26 @@ pipelines:
 
 ## Cost Attribution Per PR
 
-Track and report Claude Code costs per PR for budget management.
+Track and report Claude Code costs per PR for budget management. Without cost attribution, it is impossible to know which PRs, repositories, teams, or pipeline stages are driving Claude Code spend.
+
+### Why Cost Attribution Matters in CI
+
+In a typical team using Claude Code for PR reviews:
+- Each PR may trigger 2–5 Claude Code jobs (security scan, code review, test analysis, etc.)
+- Costs vary widely by PR size: a 5-file PR costs ~$0.10; a 500-file PR costs ~$3–10
+- Without attribution, the billing page shows a lump sum — no way to identify outliers or optimize
+
+**What to capture per CI run:**
+
+| Field | Source in stream-json | Use |
+|---|---|---|
+| `cost_usd` | `result` event | Primary cost metric |
+| `input_tokens` | `result.usage.input_tokens` | Diagnose expensive prompts |
+| `output_tokens` | `result.usage.output_tokens` | Measure response verbosity |
+| `cache_read_tokens` | `result.usage.cache_read_tokens` | Measure cache effectiveness |
+| `num_turns` | `result.num_turns` | Detect runaway sessions |
+| `stop_reason` | `result.stop_reason` | Detect budget/turn limit hits |
+| `session_id` | `system` or `result` event | Correlate with Anthropic console logs |
 
 ### GitHub Actions: Post Cost as PR Comment
 
@@ -1692,18 +1880,37 @@ Track and report Claude Code costs per PR for budget management.
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     DISABLE_UPDATES: "1"
   run: |
-    # Run with JSON output to capture cost
-    RESULT=$(claude --print --output-format json \
+    # Run with stream-json to capture all events including cost
+    STREAM=$(claude --print --output-format stream-json \
+      --max-budget-usd 2.00 \
+      --max-turns 25 \
+      --bare \
       "Review the PR changes for issues" \
       < diff.txt)
     
-    # Extract cost from result event
-    COST=$(echo "$RESULT" | jq -r 'select(.type=="result") | .costUsd // 0')
-    echo "cost=$COST" >> $GITHUB_OUTPUT
+    # Extract cost, turns, stop reason from result event
+    COST=$(echo "$STREAM"    | jq -r 'select(.type=="result") | .cost_usd // 0')
+    TURNS=$(echo "$STREAM"   | jq -r 'select(.type=="result") | .num_turns // 0')
+    STOP=$(echo "$STREAM"    | jq -r 'select(.type=="result") | .stop_reason // "unknown"')
+    IN_TOK=$(echo "$STREAM"  | jq -r 'select(.type=="result") | .usage.input_tokens // 0')
+    OUT_TOK=$(echo "$STREAM" | jq -r 'select(.type=="result") | .usage.output_tokens // 0')
+    CACHE=$(echo "$STREAM"   | jq -r 'select(.type=="result") | .usage.cache_read_tokens // 0')
+    SESSION=$(echo "$STREAM" | jq -r 'select(.type=="system") | .session_id // "n/a"')
     
-    # Extract the review text
-    echo "$RESULT" | jq -r 'select(.type=="assistant") | .message.content[] | select(.type=="text") | .text' \
+    # Set outputs for downstream steps
+    echo "cost=$COST"        >> $GITHUB_OUTPUT
+    echo "turns=$TURNS"      >> $GITHUB_OUTPUT
+    echo "stop=$STOP"        >> $GITHUB_OUTPUT
+    echo "session=$SESSION"  >> $GITHUB_OUTPUT
+    
+    # Extract the review text from assistant events
+    echo "$STREAM" | jq -r 'select(.type=="assistant") | .message.content[] | select(.type=="text") | .text' \
       > review.md
+    
+    # Warn if budget was hit
+    if [ "$STOP" = "budget_exceeded" ]; then
+      echo "::warning::Claude Code budget limit reached on this PR review"
+    fi
 
 - name: Post review comment with cost
   uses: marocchino/sticky-pull-request-comment@v2
@@ -1714,7 +1921,61 @@ Track and report Claude Code costs per PR for budget management.
       $(cat review.md)
       
       ---
-      *Cost: ${{ steps.claude-review.outputs.cost }}*
+      <details><summary>Cost details</summary>
+      
+      | Metric | Value |
+      |--------|-------|
+      | Cost | ${{ steps.claude-review.outputs.cost }} |
+      | Turns | ${{ steps.claude-review.outputs.turns }} |
+      | Stop reason | ${{ steps.claude-review.outputs.stop }} |
+      | Session ID | ${{ steps.claude-review.outputs.session }} |
+      
+      </details>
+```
+
+### Centralised Cost Logging — Send to a Database
+
+For teams that want full cost history across all PRs and repositories:
+
+```bash
+#!/bin/bash
+# log-claude-cost.sh — parse stream-json output and log cost to a central store
+
+STREAM_FILE="$1"   # path to captured stream-json output file
+REPO="$2"          # e.g. "my-org/my-repo"
+PR_NUMBER="$3"     # e.g. "142"
+JOB_NAME="$4"      # e.g. "code-review"
+
+# Parse the result event
+COST=$(jq -r    'select(.type=="result") | .cost_usd // 0'                STREAM_FILE)
+TURNS=$(jq -r   'select(.type=="result") | .num_turns // 0'               "$STREAM_FILE")
+STOP=$(jq -r    'select(.type=="result") | .stop_reason // "unknown"'      "$STREAM_FILE")
+SESSION=$(jq -r 'select(.type=="system") | .session_id // ""'              "$STREAM_FILE")
+IN_TOK=$(jq -r  'select(.type=="result") | .usage.input_tokens // 0'      "$STREAM_FILE")
+OUT_TOK=$(jq -r 'select(.type=="result") | .usage.output_tokens // 0'     "$STREAM_FILE")
+CACHE=$(jq -r   'select(.type=="result") | .usage.cache_read_tokens // 0' "$STREAM_FILE")
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Log to a cost tracking endpoint (replace with your actual backend)
+curl -s -X POST "$COST_TRACKING_ENDPOINT/events" \
+  -H "Authorization: Bearer $COST_TRACKING_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"timestamp\":      \"$TIMESTAMP\",
+    \"repository\":     \"$REPO\",
+    \"pr_number\":      $PR_NUMBER,
+    \"job\":            \"$JOB_NAME\",
+    \"session_id\":     \"$SESSION\",
+    \"cost_usd\":       $COST,
+    \"num_turns\":      $TURNS,
+    \"stop_reason\":    \"$STOP\",
+    \"input_tokens\":   $IN_TOK,
+    \"output_tokens\":  $OUT_TOK,
+    \"cache_tokens\":   $CACHE
+  }"
+
+echo "[cost-log] $REPO PR#$PR_NUMBER $JOB_NAME: \$$COST ($TURNS turns, session $SESSION)"
 ```
 
 ### Budget Alert Hook
@@ -1733,10 +1994,39 @@ if (( $(echo "$COST > $THRESHOLD" | bc -l) )); then
   curl -s -X POST "$SLACK_WEBHOOK_URL" \
     -H "Content-Type: application/json" \
     -d "{
-      \"text\": \"⚠️ Claude Code CI cost alert: \$${COST} (threshold: \$${THRESHOLD})\n${PR_URL}\"
+      \"text\": \"Claude Code CI cost alert: \$${COST} (threshold: \$${THRESHOLD})\n${PR_URL}\"
     }"
 fi
 ```
+
+### Cost Attribution by Team Using Labels
+
+If multiple teams share one GitHub organisation, use PR labels or repository prefixes to attribute costs:
+
+```yaml
+# In your GitHub Actions workflow:
+- name: Run Claude with team attribution
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    # Pass team context as env var for hook-based logging
+    CLAUDE_TEAM_LABEL: ${{ github.event.pull_request.labels[0].name || 'unlabelled' }}
+    CLAUDE_REPO: ${{ github.repository }}
+  run: |
+    STREAM=$(claude --print --output-format stream-json \
+      --max-budget-usd 2.00 --bare \
+      "Review this PR" < diff.txt)
+    
+    COST=$(echo "$STREAM" | jq -r 'select(.type=="result") | .cost_usd')
+    
+    # Tag cost by team label for reporting
+    echo "Team: $CLAUDE_TEAM_LABEL | Repo: $CLAUDE_REPO | Cost: $COST"
+    
+    # Append to a cost ledger artifact
+    echo "$CLAUDE_TEAM_LABEL,$CLAUDE_REPO,${{ github.event.number }},$COST,$(date -u +%Y-%m-%d)" \
+      >> /tmp/cost-ledger.csv
+```
+
+Then aggregate `cost-ledger.csv` artifacts across workflow runs for team-level reporting.
 
 ---
 

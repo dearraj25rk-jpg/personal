@@ -7,6 +7,26 @@
 
 ---
 
+## [2026-06-07] — Claude Code Documentation June 7 Update Pass (feature/rag-hub branch)
+
+### Overview
+
+Comprehensive update pass across all 57 Claude Code documentation files on the `feature/rag-hub` branch. This pass focused on depth, accuracy, and version correctness. For detailed changes, see `changelogs/claude-code-changelog.md` and `changelogs/CHANGELOG.md`.
+
+### Summary of Changes
+
+- All 57 Claude Code `src/content/docs/claude-code/` files: `lastUpdated` updated to `2026-06-07`
+- 11 key reference guides significantly enhanced with new depth sections (+6,000 lines total across all files)
+- All `src/components/interactive/` jsx components: pricing data corrected, dates updated to June 2026
+- `public/claude-code/` HTML files: model lineup updated to include claude-opus-4-8 (newest)
+- `changelogs/` folder: June 7 entries added to all three changelog files
+
+### RAG Section Impact
+
+No changes to the RAG section in this update. All RAG files remain at their previous state.
+
+---
+
 ## [2026-06-03] — Claude Code Section June 2026 Refresh (feature/rag-hub branch)
 
 ### Overview

@@ -659,7 +659,7 @@ export default function HooksDiagram() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <Tag color={C.green}>v2.1.126</Tag>
-          <Tag color={C.textDim}>May 2026</Tag>
+          <Tag color={C.textDim}>June 2026</Tag>
         </div>
       </div>
 

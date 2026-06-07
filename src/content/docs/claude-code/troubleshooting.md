@@ -7,7 +7,7 @@ description: >
   sandbox permission errors, and health-check commands. Claude Code v2.1.126 (May 2026).
 sidebar:
   order: 25
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Troubleshooting Guide
@@ -329,6 +329,15 @@ Context: 142,847 / 200,000 tokens (71%)
 
 When history + tools approaches ~190,000 tokens, the circuit breaker fires automatically.
 
+**Step-by-step diagnosis for context overflows:**
+
+1. Run `/context` to see a breakdown of where tokens are being consumed.
+2. Check the `System` row — if this is unusually high (>15,000 tokens), your CLAUDE.md files are the primary cause. Run `wc -w CLAUDE.md ~/.claude/CLAUDE.md` to find the largest file.
+3. Check the `History` row — if this grows rapidly per turn, your tool calls are returning very verbose output. Pipe bash commands through `| tail -50` or `| grep -E 'error|warning'`.
+4. Check the `Tools` row — large file reads or tool results that returned megabytes of data. Consider chunking large reads or filtering output before it enters context.
+5. If above 70%, run `/compact` proactively with a focused instruction before you hit the 85% auto-compact threshold.
+6. If you hit `context_length_exceeded` without warning, check whether auto-compaction was disabled via an enterprise policy setting (`/debug` → `Enterprise managed settings`).
+
 **Manual compaction (best practice):**
 
 Run `/compact` before hitting the ceiling — at roughly 60-70% context usage for long sessions:
@@ -337,7 +346,7 @@ Run `/compact` before hitting the ceiling — at roughly 60-70% context usage fo
 /compact focus on the database migration task
 ```
 
-The compaction prompt you provide guides what Claude retains in the summary. Be specific.
+The compaction prompt you provide guides what Claude retains in the summary. Be specific. A vague instruction like `/compact` with no argument causes Claude to summarise everything equally, losing important task-specific details. A good compact instruction names the active file, the current state of incomplete work, and any constraints Claude must not forget.
 
 **Auto-compaction:**
 
@@ -1604,6 +1613,302 @@ If no reply to PING, assume agent failed and reassign task.
 
 ---
 
+### 8.4 Subagent Context Isolation Problems
+
+**Symptom:** A subagent behaves as if it has no knowledge of the parent session's decisions or project context.
+
+**Root cause:** Each subagent runs in its own isolated session with its own context window. It does not automatically inherit the parent's conversation history, CLAUDE.md modifications, or MEMORY.md updates that occurred mid-session.
+
+**What subagents DO inherit:**
+- CLAUDE.md files on disk at the time the subagent starts (project, user, enterprise)
+- MEMORY.md as it exists on disk at subagent start time
+- Environment variables from the parent process
+- MCP server configurations in `.claude/settings.json`
+
+**What subagents do NOT inherit:**
+- The parent's conversation history
+- In-session decisions not yet persisted to MEMORY.md
+- Dynamic context injected via `/context add` in the parent session
+- Tool call results from the parent session
+
+**Fix — persist state before spawning subagents:**
+
+```
+> Update MEMORY.md with all current decisions before spawning the worker agent:
+  - Database schema decisions
+  - Which files to NOT modify
+  - Current task phase
+```
+
+Then spawn the subagent. The subagent's CLAUDE.md load will pick up the updated MEMORY.md.
+
+**Explicit context passing via message payload:**
+
+For decisions too ephemeral for MEMORY.md, pass them directly in the `SendMessage` body:
+
+```
+SendMessage(
+  recipient: "refactor-agent",
+  subject: "task-assignment",
+  body: """
+    Context:
+    - We are using PostgreSQL 16, NOT SQLite
+    - Auth uses JWT with RS256 keys in /etc/app/keys/
+    - Do NOT modify src/legacy/ — it is frozen
+    
+    Task: Refactor src/auth/validator.ts to use the new token store interface.
+  """
+)
+```
+
+---
+
+### 8.5 Subagent Tool Permission Errors
+
+**Symptom:** A subagent reports `Tool blocked` for tools that work fine in the parent session.
+
+**Root cause:** Subagents run in their own permission context. The parent's runtime permission grants (granted via the interactive prompt during a session) are not propagated to subagents.
+
+**Diagnosis steps:**
+
+1. Run `/debug` in the subagent session (if accessible) to check `Permission mode`.
+2. Check `.claude/settings.json` — the `allow` list must explicitly include the tool the subagent needs.
+3. Check whether the subagent is launched with `--permission-mode bypassPermissions` in CI contexts.
+
+**Fix — explicit allowlist for subagent tools:**
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(npm run *)",
+      "Read",
+      "Edit",
+      "Write",
+      "mcp__my-db__query_database"
+    ]
+  }
+}
+```
+
+This project-level allowlist applies to all sessions (parent and subagents) launched from the project root.
+
+**For CI subagents — use `bypassPermissions`:**
+
+```bash
+claude --print "..." --permission-mode bypassPermissions
+```
+
+Only use in isolated CI environments. Never on developer workstations.
+
+---
+
+### 8.6 Subagent Output Not Returning to Orchestrator
+
+**Symptom:** The orchestrator sent a task to a subagent, but the subagent's result never arrives in the orchestrator's inbox. The orchestrator appears to hang waiting.
+
+**Diagnostic steps:**
+
+1. Check whether the subagent actually started:
+
+   ```bash
+   ls -lt ~/.claude/sessions/ | head -5
+   ```
+
+   If no new session file was created after the orchestrator spawned the subagent, the spawn failed silently.
+
+2. Check the subagent's outbox:
+
+   ```bash
+   ls -la .claude/teams/<orchestrator-name>/inbox/
+   ```
+
+   If the message file exists but has zero bytes, the subagent wrote an empty response (possible crash at serialization).
+
+3. Check the subagent's session log:
+
+   ```bash
+   tail -50 ~/.claude/logs/session-<subagent-session-id>.log
+   ```
+
+**Common causes:**
+
+| Cause | Symptom | Fix |
+|-------|---------|-----|
+| Subagent hit context limit before finishing | Log shows `context_length_exceeded` | Reduce task scope; subagent should send partial results and request continuation |
+| Subagent tool was blocked | Log shows `Tool blocked` | Fix allowlist as in Section 8.5 |
+| Message serialization error | Zero-byte inbox file | Verify the subagent's result fits within the `SendMessage` body size limit (default: 100 KB) |
+| Orchestrator inbox path mismatch | Message in wrong inbox directory | Verify agent `name:` frontmatter matches the `recipient:` field exactly, including hyphens vs underscores |
+| Subagent `--max-turns` exhausted | Session ended without sending result | Increase `--max-turns` or restructure task to fit within the limit |
+
+**Structured subagent response protocol:**
+
+Design subagents to always respond, even on failure:
+
+```
+Regardless of whether you complete the task, end by sending a message to the orchestrator with:
+- status: "complete" | "partial" | "failed"
+- result: summary of what was accomplished
+- errors: any errors encountered
+- next_steps: what the orchestrator should do next
+```
+
+---
+
+### 8.7 Agent Teams Experimental Flag Behavior
+
+**The `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` flag** controls availability of the entire multi-agent toolset. Understanding its scope prevents confusion:
+
+**Tools gated behind the flag:**
+
+```
+SendMessage        — write to another agent's inbox
+ReadInbox          — read messages from your own inbox
+ListAgents         — discover running agent sessions
+AgentSpawn         — programmatically spawn a subagent
+AgentTerminate     — terminate a named agent
+WaitForMessage     — block until a message arrives (with timeout)
+```
+
+**Tools available WITHOUT the flag (single-agent use):**
+
+```
+Task               — spawn an isolated subagent (returns when complete)
+Bash               — still runs subprocesses, just not coordinated agents
+```
+
+**Note on `Task` vs `AgentSpawn`:** The `Task` tool (available without the experimental flag) is a simpler subagent — it runs to completion and returns a result synchronously in the parent context. `AgentSpawn` (requires the flag) creates a persistent coordinated agent with its own inbox. Use `Task` for one-shot work; use `AgentSpawn` for ongoing collaborative agents.
+
+**Flag persistence:** Set it in `.claude/settings.json` to avoid exporting per-session:
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
+```
+
+---
+
+### 8.8 Subagent Lifecycle Debugging
+
+Understanding the full lifecycle of a subagent is essential for diagnosing failures that don't produce obvious error messages.
+
+**Subagent lifecycle stages:**
+
+```
+1. SPAWN        — orchestrator calls Task or AgentSpawn tool
+2. INIT         — subagent process starts, loads CLAUDE.md / MEMORY.md
+3. CONTEXT LOAD — MCP servers connect, hooks register
+4. EXECUTION    — subagent runs its prompt, calls tools
+5. COMPLETE     — subagent sends result back (via SendMessage or Task return value)
+6. TEARDOWN     — session ends, logs flushed, process exits
+```
+
+Failures can occur at any stage. The stage determines which log to consult:
+
+| Stage | Log location | What to look for |
+|-------|-------------|------------------|
+| SPAWN | Parent session log | "spawning subagent" line; errors if spawn failed |
+| INIT | `~/.claude/logs/session-<subagent-id>.log` | "Loading CLAUDE.md" entries; any file-not-found errors |
+| CONTEXT LOAD | `~/.claude/logs/mcp-<server-name>.log` | MCP server startup errors; hook registration failures |
+| EXECUTION | `~/.claude/logs/session-<subagent-id>.log` | Tool call results; permission denials; context usage |
+| COMPLETE | `.claude/teams/<orchestrator>/inbox/` | JSON file with subagent result; check for empty/malformed files |
+| TEARDOWN | `~/.claude/logs/session-<subagent-id>.log` | Final exit code; any cleanup errors |
+
+**Step-by-step subagent failure diagnosis:**
+
+1. **Confirm the subagent started:** Check `ls -lt ~/.claude/sessions/ | head -5`. A new `.json` file should appear when the orchestrator spawns a subagent. If none appears, the spawn itself failed — check the orchestrator session log.
+
+2. **Find the subagent's session ID:** The orchestrator's log will contain a line like `spawned subagent session abc123...`. Use that ID to locate the subagent's log at `~/.claude/logs/session-abc123.log`.
+
+3. **Check for init failures:** Scan the subagent log for lines referencing CLAUDE.md loading. A `ENOENT` error here means the subagent was started from a different working directory than the orchestrator, causing CLAUDE.md resolution to fail.
+
+4. **Check for permission failures:** Grep the subagent log for `Permission denied` or `Tool blocked`. Subagents that lack the right allowlist entries will silently skip operations that require interactive approval — they will not prompt, they will simply refuse the tool call.
+
+5. **Check the inbox for the result:** Run `ls -la .claude/teams/<orchestrator-name>/inbox/`. If a JSON file is present but the orchestrator is not processing it, the orchestrator's `ReadInbox` loop may have missed the delivery window. Send a PING message to wake the orchestrator.
+
+6. **Confirm context limit was not hit:** Check the subagent log for `context_length_exceeded`. If the subagent's task is too large for a single context window, restructure it into smaller subtasks.
+
+**Subagent CLAUDE.md isolation pattern:**
+
+For tasks that need different instructions than the main project CLAUDE.md, pass explicit context in the spawning message rather than modifying the shared CLAUDE.md:
+
+```
+Task: "
+IMPORTANT: For this task only, ignore the global coding style rules.
+This is a legacy migration — use the old naming convention (camelCase) to match existing code.
+
+Task: Refactor src/legacy/user-service.js to move all DB calls to src/db/user-repository.js.
+"
+```
+
+Instructions in the Task prompt override CLAUDE.md instructions for that subagent's session, allowing per-task customization without touching the shared file.
+
+**SubagentStop hook — detecting when a subagent finishes:**
+
+Register a `SubagentStop` hook in the orchestrator to be notified immediately when any subagent exits:
+
+```json
+{
+  "SubagentStop": [
+    {
+      "hooks": [{
+        "type": "command",
+        "command": "bash .claude/hooks/on-subagent-stop.sh"
+      }]
+    }
+  ]
+}
+```
+
+The hook receives a JSON payload on stdin:
+
+```json
+{
+  "agent_name": "worker-agent-1",
+  "session_id": "abc123def456",
+  "exit_reason": "task_complete",
+  "turn_count": 24
+}
+```
+
+Use `exit_reason` to distinguish clean completions (`"task_complete"`) from failures (`"context_exceeded"`, `"max_turns_reached"`, `"permission_error"`). This lets the orchestrator react immediately to subagent failures rather than waiting for a timeout.
+
+---
+
+### 8.9 AgentMessageReceived Hook Not Firing
+
+**Symptom:** The `AgentMessageReceived` hook is registered but does not fire when messages arrive in the inbox.
+
+**Root cause:** `AgentMessageReceived` fires only when a message is delivered to the currently-running agent's own inbox via the `SendMessage` protocol. It does **not** fire for messages the agent itself sends, and it does not fire if the agent is not running when the message arrives (messages are queued in the filesystem inbox for the next `ReadInbox` call).
+
+**Common configuration mistake:**
+
+```json
+// WRONG — AgentMessageReceived is on the wrong agent
+// Orchestrator registers this hook expecting to hear from workers.
+// But the hook fires when the ORCHESTRATOR receives messages, not workers.
+{
+  "AgentMessageReceived": [{
+    "hooks": [{ "type": "command", "command": "bash on-worker-complete.sh" }]
+  }]
+}
+```
+
+This configuration is correct — the hook fires on the orchestrator when a worker sends it a message. The common mistake is registering the hook on the worker agent expecting it to fire on the orchestrator.
+
+**Diagnosis steps:**
+
+1. Verify the hook is on the correct agent's settings (the agent that RECEIVES the messages, not the sender).
+2. Confirm `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set for the agent running the hook.
+3. Run `/hooks` in the agent session and confirm `AgentMessageReceived` is listed.
+4. Send a test message to the agent and check whether the hook fires: `SendMessage(recipient: "<agent-name>", subject: "test", body: "ping")`.
+
+---
+
 ## 9. CI/CD Pipeline Issues
 
 ### 9.1 GitHub Actions: Action Not Found
@@ -1999,20 +2304,95 @@ The `/doctor` command runs a comprehensive health check on your Claude Code inst
 > /doctor
 ```
 
-Output shows:
-- Claude Code version and whether an update is available
-- Authentication status (API key, OAuth, Bedrock, Vertex)
-- MCP server connection status (connected/error per server)
-- Hook configurations (syntax check, script permissions)
-- CLAUDE.md validity (size, encoding, @import chains)
-- MEMORY.md status (size, last write)
-- Permissions configuration (allow/deny list check)
+**What each check validates in detail:**
+
+| Check | What it validates | Pass condition | Fail action |
+|-------|------------------|----------------|-------------|
+| **Binary** | `claude` executable on `$PATH` and readable | `which claude` succeeds | Prints install instructions |
+| **Version** | Installed version vs latest published release | Within one minor version | Warns; offers `npm install -g` or installer re-run |
+| **API key format** | `ANTHROPIC_API_KEY` matches `sk-ant-api03-[A-Za-z0-9_-]{90,}` | Regex match passes | Prints key-setup instructions; does NOT validate against API |
+| **API key live check** | Sends a minimal test request (`models/list`) to verify key works | HTTP 200 returned | Reports `401` or `403` with link to console |
+| **Config directory** | `~/.claude/` directory exists and is writable | `stat ~/.claude` succeeds; `touch ~/.claude/.write-test` passes | Offers to `mkdir -p ~/.claude` |
+| **Project config** | `.claude/settings.json` is valid JSON (if present) | `jq . .claude/settings.json` exits 0 | Reports line/column of JSON syntax error |
+| **User config** | `~/.claude/settings.json` is valid JSON (if present) | `jq . ~/.claude/settings.json` exits 0 | Reports line/column of JSON syntax error |
+| **MCP config syntax** | Each MCP server entry has required fields: `type`, `command`/`url` | All entries parse without missing required keys | Lists which server entry is malformed |
+| **MCP connectivity** | Attempts to start each configured stdio MCP server and receive `initialize` response | Server responds within 5 seconds | Shows the startup error from the server process |
+| **Hook scripts** | Each `command`-type hook: script exists, is executable (`chmod +x`) | `[ -x <path> ]` passes | Offers to run `chmod +x` automatically |
+| **Hook JSON** | `hooks` array in settings is structurally valid (required fields present) | All hooks have `type` and `command`/`url` | Reports which hook entry is invalid |
+| **F-key bindings** | Terminal escape sequences for F1–F12 match expected values for the current `$TERM` | Escape codes match reference table | Offers to reset terminal bindings |
+| **Git config** | `git` is on PATH and `user.name`/`user.email` are set | `git config user.name` non-empty | Warns — worktree features may fail |
+| **Node.js** | Node ≥18 available (for MCP servers in JavaScript) | `node --version` parses to ≥18.0.0 | Warns; MCP JS servers will not start |
+| **Disk space** | `~/.claude/` filesystem has at least 500 MB free | `df` shows ≥500 MB available | Warns — session logs and compaction files may fail |
+
+**Reading `/doctor` output:**
+
+```
+[✓] Binary found: /home/user/.claude/bin/claude (v2.1.126)
+[✓] API key: syntactically valid
+[✓] API key: live check passed (200 OK)
+[✓] Config dir: ~/.claude/ writable
+[✓] Project settings: valid JSON
+[✗] MCP server 'my-api-server': connection refused — see ~/.claude/logs/mcp-my-api-server.log
+[!] Hook script '.claude/hooks/audit.sh': not executable — run chmod +x to fix
+[✓] F-key bindings: OK
+[✓] Git: configured (user.name and user.email set)
+[✓] Node.js: v20.15.0 (≥18 required)
+
+1 error, 1 warning found.
+Press [f] to auto-fix warnings (chmod +x) or [Enter] to skip.
+```
+
+- `[✓]` — check passed, no action needed
+- `[✗]` — check failed; the session or feature will not work until fixed
+- `[!]` — warning; not immediately breaking but may cause issues
 
 **Auto-repair:** Press `f` when prompted to auto-fix common issues:
-- Missing CLAUDE.md created with template
+- Missing `~/.claude/` directory created
 - Broken MCP connections restarted
-- Hook script permissions fixed (chmod +x)
-- Corrupt MEMORY.md moved to MEMORY.md.bak and reset
+- Hook script permissions fixed (`chmod +x`)
+- Corrupt MEMORY.md moved to `MEMORY.md.bak` and reset
+- F-key terminal bindings repaired for current `$TERM`
+
+**What `/doctor` does NOT check** (common misconceptions):
+- It does not validate the content of your CLAUDE.md or rules files (only their size)
+- It does not check whether your API key has budget remaining (use console.anthropic.com for that)
+- It does not validate OAuth or Bedrock token expiry — these are checked lazily on first use
+- It does not test network connectivity to non-Anthropic endpoints (your MCP server URLs)
+- It does not scan for secrets accidentally committed to CLAUDE.md or settings files
+
+**Step-by-step: using `/doctor` to diagnose a broken installation:**
+
+1. Run `/doctor` and let it complete all checks without pressing `f` yet.
+2. Note every `[✗]` error line — these are blocking failures. Note every `[!]` warning line — these may be non-critical but investigate them.
+3. For `[✗] MCP server '<name>': connection refused`: open `~/.claude/logs/mcp-<name>.log` in a separate terminal and run `/doctor` again while watching the log. The log shows the exact error the server emits on startup.
+4. For `[✗] API key: live check failed (401)`: the key is syntactically valid but rejected by the API. This usually means the key was revoked. Do NOT try to debug further in `/doctor` — go to console.anthropic.com → API Keys and check the key status directly.
+5. For `[✗] Project settings: JSON parse error at line N, column M`: open `.claude/settings.json` and navigate to that line. Common causes: trailing comma after the last object property, single quotes instead of double quotes, or a missing closing brace from a copy-paste error.
+6. For `[!] Hook script '...': not executable`: press `f` to auto-fix. If auto-fix fails (e.g., because the file is on a NTFS-mounted filesystem in WSL2), manually fix with `chmod +x` from within the Linux filesystem.
+7. After fixing all `[✗]` errors, run `/doctor` again to confirm all checks pass before proceeding.
+
+**Run `/doctor` headlessly (for CI pre-flight):**
+
+```bash
+# Exit code 0 = all checks pass; non-zero = at least one failure
+claude --print "/doctor" --output-format text; echo "Exit: $?"
+```
+
+**Interpreting `/doctor` exit codes in CI:**
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | All checks passed |
+| `1` | One or more `[✗]` errors detected |
+| `2` | `/doctor` itself failed to run (binary issue or config parse error so severe it prevents the check from completing) |
+
+Use exit code 1 in a CI pre-flight step to gate downstream Claude Code runs:
+
+```bash
+# In a GitHub Actions step:
+- name: Pre-flight check
+  run: claude --print "/doctor" --output-format text
+  # Fails the step (and thus the job) if any health check fails
+```
 
 ### /debug — Session Diagnostic Dump
 
@@ -2027,6 +2407,30 @@ Shows live session state:
 - Permission mode and active allow/deny rules
 - Context window usage by category
 
+**Key fields to check when diagnosing problems:**
+
+| Field | Why it matters |
+|-------|---------------|
+| `Model` | Confirms which model is active — wrong model after `/model` change means the change failed |
+| `Permission mode` | Should be `default` in dev, `bypassPermissions` only in sandboxed CI |
+| `Session ID` | Use this with `claude --resume <id>` to return to the session |
+| `Project hash` | If this doesn't match across sessions, session history won't be shared (path changed) |
+| `Loaded memory files` | Lists every CLAUDE.md loaded and its token count; missing files = loading failure |
+| `MCP servers [error]` | Any server with `[error]` status means its tools are unavailable this session |
+| `Active hooks` | Count of registered hooks per event; if 0 where you expect hooks, reload with `/hooks reload` |
+| `Enterprise managed settings` | `[LOCKED]` next to a setting means your org policy controls it — no override possible |
+| `Context usage` | High `History` number means you should `/compact` soon |
+
+**Step-by-step: using `/debug` output to diagnose a misbehaving session:**
+
+1. Run `/debug` and capture the full output (copy it to a text file for comparison if needed).
+2. Check `Loaded memory files` — every CLAUDE.md you expect to be active should appear here with a non-zero token count. A file listed with `(0 tokens)` or not listed at all means it did not load. Check the file path and `claudeMdExcludes` in settings.
+3. Check `Active hooks` — if a hook you registered is missing from the count, run `/hooks` to see the detail. A count mismatch between what you configured and what's active means the hook failed to register, usually due to a JSON syntax error in settings.
+4. Check `MCP servers` — any `[error]` server means all tools from that server are unavailable. Note the server name and check its log (`/mcp logs <name>`).
+5. Check `Permission mode` — if it reads `bypassPermissions` and you are NOT in a CI environment, something is wrong. Investigate whether `--dangerously-skip-permissions` was passed inadvertently.
+6. Check `Context usage` — if `History` is above 100,000 tokens and you are early in a task, you may have a CLAUDE.md that is unexpectedly large (injected every turn), or a previous tool call returned an enormous result. Run `/context` for a more detailed breakdown.
+7. Save the `Session ID` — you will need it if you want to resume the session after restarting (`claude --resume <session-id>`).
+
 ## 11. Error Message Dictionary (Extended)
 
 ### Claude Code binary errors
@@ -2037,6 +2441,9 @@ Shows live session state:
 | `EACCES: permission denied` | Binary not executable | `chmod +x $(which claude)` |
 | `Error: Node.js is required` | Using old Node.js-based binary on v2.1.113+ | Upgrade: `curl -fsSL https://claude.ai/install.sh | bash` |
 | `Update failed: disk full` | No space on device | Free disk space; `DISABLE_UPDATES=1` to skip auto-update |
+| `Error: unsupported platform 'linux/arm32'` | 32-bit ARM is not a supported target | Claude Code native binary requires 64-bit ARM (`linux/arm64`) or x86-64; use Node.js-based package on 32-bit systems |
+| `auto-update failed: checksum mismatch` | Downloaded update binary is corrupt | Delete `~/.claude/bin/claude` and re-run the install script to download a fresh copy |
+| `claude: illegal instruction (core dumped)` | Binary was compiled for a newer CPU feature set than your CPU supports | Download the correct platform binary from the release page; or use the Node.js-based package which does not have this issue |
 
 ### Authentication errors
 
@@ -2048,6 +2455,20 @@ Shows live session state:
 | `Bedrock: AccessDeniedException` | IAM role missing `bedrock:InvokeModel` permission | Add `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` to IAM role |
 | `Vertex AI: 403 Forbidden` | Service account lacks `roles/aiplatform.user` | Grant `roles/aiplatform.user` in GCP IAM |
 | `Vertex AI: Workload Identity Federation failed` | WIF pool/provider misconfigured | Verify `workload_identity_provider` ARN and service account email in GitHub Actions step |
+| `Error: ANTHROPIC_BASE_URL must begin with https://` | Custom base URL uses HTTP instead of HTTPS | Claude Code enforces HTTPS for all API endpoints; update the URL to use `https://` |
+| `AuthenticationError: API key org mismatch` | The key belongs to a different Anthropic organisation than the one configured | Check your org settings at console.anthropic.com; ensure the key was created in the correct org |
+| `RateLimitError: token-per-minute limit exceeded` | Large prompt or tool results exhausted TPM quota | Reduce CLAUDE.md size, limit tool output verbosity, or request a TPM quota increase |
+
+### Agent Teams errors
+
+| Error message | Cause | Fix |
+|--------------|-------|-----|
+| `SendMessage: recipient '<name>' not found` | Agent name does not match any known agent in the teams directory | Verify the agent's `name:` frontmatter exactly; check for hyphen vs underscore mismatches |
+| `ReadInbox: no messages available` | The agent's inbox is empty at the time of the call | This is normal — implement a polling loop or use `WaitForMessage` with a timeout |
+| `WaitForMessage: invalid timeout (must be 1–3600 seconds)` | Timeout value out of range | Use a value between 1 and 3600 seconds |
+| `ListAgents: directory '.claude/teams' not found` | Agent Teams directory not initialised | Create it: `mkdir -p .claude/teams`; or let the first `SendMessage` call create it automatically |
+| `AgentTerminate: agent '<name>' is not running` | Trying to terminate an agent that already exited | Check agent status with `ListAgents`; this is a no-op error and can be safely ignored if the agent finished normally |
+| `Task: subagent returned empty result` | Subagent's Task call completed but produced no output | Check the subagent log; the subagent may have hit a permission block on all its tool calls |
 
 ### MCP server errors
 
@@ -2058,6 +2479,11 @@ Shows live session state:
 | `MCP: Unknown transport type` | Typo in transport field | Must be `"stdio"` or `"http"` (lowercase) |
 | `MCP: Tool not found: <name>` | Tool removed from server | Restart server with `/mcp disconnect` then `/mcp connect`; check server version |
 | `MCP: schema validation failed` | Tool input doesn't match server schema | Check Claude's tool call against the schema shown in `/mcp` |
+| `MCP: max retries (3) exceeded — server permanently failed` | Server crashed 3 times in the same session | Fix the underlying crash (check logs); then restart the session to reset the retry counter |
+| `MCP: SSE stream interrupted` | HTTP transport lost its Server-Sent Events connection mid-stream | Network interruption or proxy timeout; check proxy `proxy_read_timeout`; reconnect with `/mcp reconnect <name>` |
+| `MCP: tool call rejected — permission denied by server` | The MCP server itself refused the tool call (server-side authorisation) | Check the MCP server's authentication config; verify the token/credential passed via `env` in the server config |
+| `MCP: duplicate tool name '<name>'` | Two different MCP servers advertise a tool with the same name | Rename one tool in the server implementation, or disambiguate using the `mcp__<server>__<tool>` full name in allowlists |
+| `MCP: stdio server wrote to stdout before initialize` | Server printed debug output or a startup banner to stdout before the JSON-RPC handshake | Configure the server to write startup messages to stderr, not stdout; stdout is reserved for the MCP protocol |
 
 ### Hook errors
 
@@ -2067,6 +2493,10 @@ Shows live session state:
 | `Hook: JSON parse error in stdout` | Script printed non-JSON when JSON expected | For `command` handlers, return valid JSON or nothing |
 | `Hook blocked: exit 2` | Intentional block by hook | Expected behaviour — check what the hook is blocking and why |
 | `http hook: connection refused` | Webhook URL not reachable | Verify URL; check network; set `timeout_ms` to avoid blocking |
+| `Hook: event 'SubagentStop' not firing` | Subagent ended but hook did not trigger | Confirm `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set; `SubagentStop` is gated behind the Agent Teams flag |
+| `Hook: exit code 3 — message not injected` | Hook returned exit 3 (soft block with message) but `output` field was empty | The hook script must print to stdout before exiting 3; the stdout content becomes Claude's injected message |
+| `PreCompact hook timed out — proceeding with compaction` | The `PreCompact` hook ran longer than 30 seconds | `PreCompact` has a hard 30-second timeout to prevent blocking compaction indefinitely; optimize or remove the hook |
+| `Hook: command is not absolute path — may fail in restricted environments` | Hook `command` field uses a relative path | Always use absolute paths in hook `command` fields; relative paths are resolved from `$HOME` which may not be what you expect |
 
 ### Context and compaction errors
 
@@ -2117,3 +2547,22 @@ claude --version
 | `skills: description exceeds 1536 char limit` | Skill `description` field in SKILL.md frontmatter is too long | Trim to 1,536 characters (raised from 250 in v2.1.120 update) |
 | `@import: max depth (5) exceeded` | @import chain deeper than 5 hops | Flatten the import chain; maximum is 5 hops from root CLAUDE.md |
 | `mcp_tool matcher requires server/tool format` | `mcp_tool` hook matcher missing the server name prefix | Use format: `"matcher": "server-name/tool-name"` — both the server name and tool name are required |
+| `SubagentStop hook: unknown exit_reason` | Subagent terminated abnormally without a recognized exit reason | Check the subagent session log for the actual termination cause; treat as `"failed"` in your orchestrator logic |
+| `Task tool: result exceeds 100KB — truncated` | Subagent returned more than 100 KB of data to the parent Task call | Have the subagent write results to a file and return only the file path; parent reads the file |
+| `Session ID collision: another session is already running at this path` | Two Claude Code processes started from the same directory simultaneously | Each project directory should have at most one active session; use worktrees for parallel work |
+| `Model 'claude-opus-4-20260901' is not allowed by enterprise policy` | Enterprise `allowedModels` list does not include the requested model | Contact your org admin; or use `/model` to switch to an allowed model |
+| `Error: settings.json exceeds maximum size (512 KB)` | settings.json has grown very large, often from many auto-added permissions | Audit and prune the `permissions.allow` list; consolidate wildcard rules |
+| `Bash: command timed out after <N>s` | A Bash tool call ran longer than Claude Code's command timeout | Add `timeout <seconds>` prefix to the command; or restructure to run asynchronously |
+| `Write: file size exceeds limit (10 MB)` | Attempted to write a file larger than 10 MB via the Write tool | Break the content into multiple files; or use streaming writes via Bash with append redirection |
+| `Read: binary file detected — use Bash to inspect` | Read tool encountered a non-text file (compiled binary, image, PDF) | Use `Bash("xxd <file> | head")` for hex dump; or `Bash("file <file>")` for type detection |
+| `glob: pattern too broad — result capped at 10,000 files` | A Glob pattern matched more than 10,000 paths | Narrow the glob pattern with a more specific prefix or file extension |
+| `TodoWrite: maximum 50 items exceeded` | Attempted to add more than 50 items to the todo list in one call | Split long task lists across multiple calls; or consolidate related sub-tasks |
+| `Error: EMFILE: too many open files` | Claude Code or an MCP server hit the OS file descriptor limit | Increase `ulimit -n` (e.g., `ulimit -n 65535`); or reduce number of simultaneously open MCP connections |
+| `WSL2: /mnt/c path detected — file operations may fail` | Working on a Windows filesystem mount from WSL2 | Move the project to the Linux filesystem (`~/projects/...`) for reliable file permissions |
+| `WaitForMessage: timeout after <N>s — no message received` | An Agent Teams `WaitForMessage` call expired without the expected message arriving | Increase the timeout; check that the sender is actually running; verify inbox path naming |
+| `AgentSpawn: max concurrent agents (10) reached` | Trying to spawn more than 10 simultaneous subagents | Implement a work queue pattern; recycle completed agents instead of spawning new ones |
+| `Error: CLAUDE.md token count (52,341) exceeds recommended limit (50,000)` | CLAUDE.md is too large and will be truncated or degrade performance | Audit with `/context`; move project-specific detail to `.claude/rules/` files that load only when relevant files are in scope |
+| `hook: stdin closed before hook finished reading` | The hook command tried to read more input than the tool call payload provides | Hooks receive exactly one JSON payload on stdin; read it in one operation with `TOOL_INPUT=$(cat)` |
+| `Error: Missing required field 'description' in tool schema` | An MCP tool definition is missing its `description` field | Add a meaningful `description` to every tool in the MCP server's `ListTools` response |
+| `bedrock:InvokeModelWithResponseStream: throttled` | Bedrock provisioned throughput is saturated | Scale up provisioned throughput units; or switch to on-demand mode temporarily |
+| `Error: /compact requires at least 1,000 tokens in history to compact` | Attempting to compact a very new session with minimal history | Continue the session normally; compact is only useful once you have substantial history |

@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 25
   label: Context Window Guide
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Context Window Architecture — Complete Reference

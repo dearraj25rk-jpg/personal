@@ -186,7 +186,7 @@ export default function MemoryDiagram() {
           Claude Code Memory System
         </h2>
         <p style={{ margin: "6px 0 0", color: DARK.muted, fontSize: "0.875rem" }}>
-          All 7 memory types — scope, load timing, limits, and survival rules · v2.1.126 (May 2026)
+          All 7 memory types — scope, load timing, limits, and survival rules · v2.1.126 (June 2026)
         </p>
       </div>
 
@@ -388,7 +388,7 @@ export default function MemoryDiagram() {
       )}
 
       <div style={{ marginTop: "20px", fontSize: "0.75rem", color: DARK.muted, textAlign: "center" }}>
-        Claude Code v2.1.126 · May 2026 · code.claude.com/docs/en/memory
+        Claude Code v2.1.126 · June 2026 · Updated 2026-06-07
       </div>
     </div>
   );

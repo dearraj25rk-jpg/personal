@@ -2,7 +2,7 @@
 title: CLAUDE.md vs Skills vs Rules — Architecture Guide
 sidebar:
   order: 3
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # CLAUDE.md vs Skills vs Rules — Complete Architecture & Best Practices Guide

@@ -10,7 +10,7 @@ description: >
 sidebar:
   order: 29
   label: Session Management
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Session Management & Resumability — Complete Reference

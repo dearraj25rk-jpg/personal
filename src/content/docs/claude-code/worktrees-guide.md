@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 11
   label: Worktrees & Parallel Dev
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Git Worktrees — Parallel Development with Claude Code
@@ -100,6 +100,83 @@ This:
 3. Opens a new terminal window (or tab) with a Claude Code session rooted at the worktree
 4. Both the original session and the new session run independently
 
+### Exact Git Commands Executed by `/branch`
+
+When you run `/branch feature/new-auth-system`, Claude Code executes the following git commands internally (equivalent shell representation):
+
+```bash
+# Step 1 — Determine the worktree root path
+#   Default: <repo-parent>/<repo-name>-worktrees/  OR
+#            <repo-root>/.worktrees/  (if worktreeRootPath not set)
+#   Controlled by: settings.json "worktreeRootPath" key
+WORKTREE_ROOT=".worktrees"
+
+# Step 2 — Sanitise branch name to a valid directory name
+#   Replaces "/" with "-" and strips special characters
+WORKTREE_DIR="${WORKTREE_ROOT}/feature-new-auth-system"
+
+# Step 3 — Check if the branch already exists
+git rev-parse --verify feature/new-auth-system 2>/dev/null
+# If exists: skip branch creation (go to step 5)
+# If not exists: continue to step 4
+
+# Step 4 — Create the branch (only if it does not already exist)
+git checkout -b feature/new-auth-system
+# Equivalent: git branch feature/new-auth-system HEAD
+
+# Step 5 — Add the worktree
+git worktree add "${WORKTREE_DIR}" feature/new-auth-system
+# This:
+#   a) Creates .worktrees/feature-new-auth-system/ directory
+#   b) Creates .worktrees/feature-new-auth-system/.git (a file, not a dir)
+#      Contents: "gitdir: /abs/path/to/.git/worktrees/feature-new-auth-system"
+#   c) Creates .git/worktrees/feature-new-auth-system/ with:
+#        gitdir   ← absolute path to the .git file in the worktree
+#        HEAD     ← refs/heads/feature/new-auth-system
+#        commondir← points to main .git/ (shares objects + refs)
+#   d) Checks out the branch into the worktree directory
+
+# Step 6 — Launch a new terminal session
+#   On macOS: open -n -a Terminal (or iTerm2 if detected)
+#   On Linux: xterm / gnome-terminal / wezterm (detected from $TERM_PROGRAM)
+#   In the new terminal: claude -C "${WORKTREE_DIR}"
+```
+
+**For `/branch --from main`:**
+
+```bash
+# Same as above, but step 3-4 use the specified base:
+git checkout -b feature/new-auth-system main
+# or if the base is a remote ref:
+git checkout -b feature/new-auth-system origin/main
+```
+
+**For `/branch fix/existing-bug --from origin/fix/existing-bug` (tracking an existing remote branch):**
+
+```bash
+# Claude Code detects that the branch already exists on the remote
+git worktree add "${WORKTREE_DIR}" --track -b fix/existing-bug origin/fix/existing-bug
+# Sets up tracking so "git pull" in the worktree pulls from origin/fix/existing-bug
+```
+
+**For `/branch --list`:**
+
+```bash
+git worktree list --porcelain
+# Claude Code parses this output and displays it with session status annotations
+```
+
+**For `/branch --clean`:**
+
+```bash
+# Identifies merged branches
+git branch --merged main | grep -v "^\* "
+# For each merged branch that has a worktree:
+git worktree remove "${WORKTREE_DIR}"
+# Final prune
+git worktree prune
+```
+
 ### Flags and options
 
 ```
@@ -147,6 +224,105 @@ When you use `/branch`, each worktree gets its own Claude Code session. Here's w
 | Git objects / refs | — | ✓ (single `.git/` database) |
 
 **Practical implication:** Both sessions can read and write different files, run tests, and make commits without interfering — because they're on different branches with different file states.
+
+### State Sharing Constraints — Critical Details
+
+Several constraints arise from the shared/isolated boundary that cause real problems if misunderstood.
+
+#### Constraint 1: `.claude/settings.json` is shared — writes in one worktree affect all
+
+Because `.claude/settings.json` is a single committed file shared via git, any Claude Code session that writes to it (e.g., when you add a permission or hook via Claude Code UI) modifies it for all worktree sessions simultaneously.
+
+```
+Session A (main)             Session B (feature/auth)
+     │                             │
+     │  adds hook to               │
+     │  .claude/settings.json      │
+     │  (writes to same file)      │
+     │                             │  Next time Session B reads settings
+     │                             │  → sees Session A's new hook
+     │                             │  (may trigger unexpectedly)
+```
+
+**Rule:** Use `.claude/settings.local.json` (gitignored) for per-worktree settings changes. Never modify `.claude/settings.json` from inside a worktree session unless you intend the change to apply globally.
+
+#### Constraint 2: The git index (staging area) is isolated — git add in one worktree does not bleed to another
+
+Each worktree has its own `.git/worktrees/<name>/index` file. This means:
+
+```bash
+# In main worktree
+git add src/api.py         # staged here only
+
+# In .worktrees/feature-auth
+git status                  # does NOT show src/api.py as staged
+git add src/models.py      # staged only in feature-auth worktree
+```
+
+This is safe and expected, but it means git operations in one session are fully isolated at the staging level — Claude Code sessions cannot see each other's staged-but-uncommitted changes.
+
+#### Constraint 3: `MEMORY.md` path is keyed to the worktree directory, not the repository
+
+Auto-Memory MEMORY.md is stored at:
+```
+~/.claude/projects/<SHA256-of-cwd>/memory/MEMORY.md
+```
+
+The SHA256 is computed from the absolute path of the Claude Code session's working directory (`cwd`). Since each worktree has a different `cwd`, each worktree accumulates separate memory:
+
+```
+Main repo session cwd:    /projects/myapp/
+→ MEMORY.md at: ~/.claude/projects/sha256(projects/myapp)/memory/MEMORY.md
+
+Worktree session cwd:     /projects/myapp/.worktrees/feature-auth/
+→ MEMORY.md at: ~/.claude/projects/sha256(projects/myapp/.worktrees/feature-auth)/memory/MEMORY.md
+```
+
+These are different files. Memory written in the worktree session is NOT visible in the main session, and vice versa.
+
+**Implication:** If Claude Code writes important project facts to memory in the main session, a worktree session starts with an empty memory for that project. You must either:
+- Accept that each worktree starts fresh (usually fine — project facts are in CLAUDE.md)
+- Manually copy relevant MEMORY.md sections across worktree paths
+- Use a shared `CLAUDE.local.md` file to provide stable context in each worktree
+
+#### Constraint 4: Hooks fire in each session independently — no cross-session coordination
+
+Hooks defined in `.claude/settings.json` are snapshotted at session start and run in the process context of that session. Two sessions running simultaneously with a PostToolUse hook on `Edit` will both fire their own instances of the hook — there is no shared hook state.
+
+**Risk scenario:**
+
+```
+Session A: edits src/auth.py → PostToolUse hook runs "make test"
+Session B: edits src/auth.py → PostToolUse hook runs "make test" simultaneously
+Result: Two parallel "make test" processes write to the same test output files
+        → test results may be corrupted
+```
+
+**Fix:** Ensure hook commands write to worktree-local output files, not a shared path:
+
+```json
+// .claude/settings.local.json (per worktree)
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Edit|Write",
+      "hooks": [{"type": "command",
+                 "command": "make test > /tmp/test-$(basename $PWD).log 2>&1"}]
+    }]
+  }
+}
+```
+
+#### Constraint 5: Git object database is shared — concurrent git gc can cause conflicts
+
+All worktrees share the `.git/objects/` database. Running `git gc`, `git repack`, or `git prune` in one worktree while another is performing a large commit operation can cause:
+
+```
+error: object file .git/objects/xx/yyyy is empty
+fatal: loose object xxxx (stored in .git/objects/xx/yyyy) is corrupt
+```
+
+**Rule:** Never run `git gc` while other worktrees have active Claude Code sessions performing git operations. Coordinate GC to run only when all sessions are idle.
 
 ---
 
@@ -200,6 +376,123 @@ claude /branch pr-review-123 --from origin/pull/123/head
 
 # In a second terminal
 claude /branch pr-review-124 --from origin/pull/124/head
+```
+
+### Concrete PR Review Walkthrough — Step by Step
+
+This is a fully worked example reviewing three PRs simultaneously using worktrees, from initial setup to posting GitHub comments.
+
+**Prerequisites:** `gh` CLI installed and authenticated, `claude` CLI installed with API key set.
+
+**Step 1: Fetch the PR branches from GitHub**
+
+```bash
+cd /projects/myapp
+
+# Fetch all three PR branches as local tracking refs
+git fetch origin pull/123/head:pr-123
+git fetch origin pull/124/head:pr-124
+git fetch origin pull/125/head:pr-125
+
+# Verify they were fetched
+git branch -a | grep pr-
+# Should show: pr-123, pr-124, pr-125
+```
+
+**Step 2: Create a worktree for each PR branch**
+
+```bash
+# Use the .worktrees/ subdirectory (gitignored by convention)
+mkdir -p .worktrees
+
+git worktree add .worktrees/pr-123 pr-123
+git worktree add .worktrees/pr-124 pr-124
+git worktree add .worktrees/pr-125 pr-125
+
+# Verify all three worktrees exist
+git worktree list
+# Output:
+# /projects/myapp                    abc1234 [main]
+# /projects/myapp/.worktrees/pr-123  def5678 [pr-123]
+# /projects/myapp/.worktrees/pr-124  ghi9012 [pr-124]
+# /projects/myapp/.worktrees/pr-125  jkl3456 [pr-125]
+```
+
+**Step 3: Run Claude Code reviews in parallel (background processes)**
+
+```bash
+# Run all three reviews simultaneously — each writes to a result file
+claude -C .worktrees/pr-123 \
+  --print "Review this PR. Run: git diff main --name-only to see changed files. Read each changed file. Check for: (1) SQL injection, (2) missing auth, (3) hardcoded secrets, (4) missing tests. Output a structured review with APPROVE or REQUEST_CHANGES verdict." \
+  --permission-mode plan \
+  --max-turns 10 \
+  --output-format json \
+  > /tmp/review-pr-123.json &
+
+claude -C .worktrees/pr-124 \
+  --print "Review this PR. Run: git diff main --name-only to see changed files. Read each changed file. Check for: (1) SQL injection, (2) missing auth, (3) hardcoded secrets, (4) missing tests. Output a structured review with APPROVE or REQUEST_CHANGES verdict." \
+  --permission-mode plan \
+  --max-turns 10 \
+  --output-format json \
+  > /tmp/review-pr-124.json &
+
+claude -C .worktrees/pr-125 \
+  --print "Review this PR. Run: git diff main --name-only to see changed files. Read each changed file. Check for: (1) SQL injection, (2) missing auth, (3) hardcoded secrets, (4) missing tests. Output a structured review with APPROVE or REQUEST_CHANGES verdict." \
+  --permission-mode plan \
+  --max-turns 10 \
+  --output-format json \
+  > /tmp/review-pr-125.json &
+
+# Wait for all three background jobs to complete
+wait
+echo "All reviews complete."
+```
+
+**Step 4: Parse results and post GitHub comments**
+
+```bash
+# Post review comments to GitHub for each PR
+for pr_num in 123 124 125; do
+  # Extract the text result from the JSON output
+  REVIEW_TEXT=$(jq -r '.result' /tmp/review-pr-${pr_num}.json 2>/dev/null || echo "Review failed — see logs")
+
+  # Post as a PR comment
+  gh pr comment ${pr_num} \
+    --body "## Claude Code Automated Review
+
+${REVIEW_TEXT}
+
+---
+*Reviewed by Claude Code v2.1.126 using worktree isolation*"
+
+  echo "Posted review to PR #${pr_num}"
+done
+```
+
+**Step 5: Cleanup worktrees**
+
+```bash
+git worktree remove .worktrees/pr-123
+git worktree remove .worktrees/pr-124
+git worktree remove .worktrees/pr-125
+git worktree prune
+
+# Delete the local tracking branches (optional)
+git branch -d pr-123 pr-124 pr-125
+```
+
+**Total elapsed time:** For 3 PRs, all three reviews run in parallel. If each review takes ~90 seconds, total wall-clock time is ~90 seconds (vs ~4.5 minutes if sequential). The `wait` command blocks until the slowest review finishes.
+
+**Expected output files** (`/tmp/review-pr-123.json`):
+
+```json
+{
+  "type": "result",
+  "subtype": "success",
+  "result": "## PR #123 Review\n\n**Verdict: REQUEST_CHANGES**\n\n### Issues Found\n\n1. **SQL Injection (Critical)** — `src/api/users.go:47`\n   Query uses string concatenation instead of parameterized query...\n\n2. **Missing Auth (Major)** — `src/api/admin.go:23`\n   Endpoint `/admin/users` has no authentication middleware...",
+  "total_cost_usd": 0.0842,
+  "session_id": "sess_01XYZ..."
+}
 ```
 
 Or use the SDK to automate parallel reviews:
@@ -281,6 +574,42 @@ When multiple developers (or agents) work on different features simultaneously, 
 
 ### Pattern 4: SDK-Driven Automated Worktree Management
 
+#### How `asyncio.gather` Achieves True Parallelism with Worktrees
+
+The SDK's `StatefulClient` makes one or more HTTP requests to the Claude API per `query()` call. These HTTP calls are I/O-bound (not CPU-bound), which means Python's `asyncio` event loop can interleave them efficiently without threads.
+
+`asyncio.gather(*coroutines)` schedules all coroutines concurrently in the same event loop. While one `StatefulClient.query()` is waiting for the Claude API to respond, the event loop runs another `StatefulClient.query()` from a different worktree session. The result is genuine parallel API calls with a single Python process:
+
+```
+Event loop timeline (simplified):
+
+t=0ms   gather() starts all 3 coroutines
+t=1ms   review_branch("feature/auth") → git worktree add → await client.query()
+        [HTTP request to Claude API — PENDING]
+t=2ms   review_branch("fix/billing")  → git worktree add → await client.query()
+        [HTTP request to Claude API — PENDING]
+t=3ms   review_branch("refactor/db")  → git worktree add → await client.query()
+        [HTTP request to Claude API — PENDING]
+
+        ... all three HTTP requests are in-flight simultaneously ...
+
+t=8000ms  Claude API responds to "fix/billing" first
+          review_branch("fix/billing") resumes → processes response
+t=9200ms  Claude API responds to "feature/auth"
+          review_branch("feature/auth") resumes → processes response
+t=11000ms Claude API responds to "refactor/db"
+          review_branch("refactor/db") resumes → processes response
+t=11001ms gather() returns all 3 results
+```
+
+Compare to sequential execution:
+```
+Sequential: 8000ms + 9200ms + 11000ms = 28200ms total
+Parallel:                              ~11000ms total  (2.5× faster)
+```
+
+**Important:** Each `StatefulClient` has its own `cwd`, which determines which worktree it operates in. File reads, writes, and git operations are isolated to that directory. Multiple `StatefulClient` instances pointing to different worktrees cannot conflict on file operations because they touch different directory trees.
+
 ```python
 import asyncio
 import subprocess
@@ -291,20 +620,28 @@ async def review_branch(branch: str, repo_path: str) -> dict:
     """Check out a branch in a worktree and review it."""
     worktree_path = Path(repo_path) / ".worktrees" / branch.replace("/", "-")
     
-    # Create the worktree
+    # Create the worktree (synchronous — runs before the async session starts)
     subprocess.run(
         ["git", "worktree", "add", str(worktree_path), f"origin/{branch}"],
         cwd=repo_path, check=True, capture_output=True
     )
     
     try:
+        # StatefulClient(cwd=...) pins this session to the worktree directory.
+        # All file operations, Bash commands, and git operations from Claude
+        # will run relative to this path — completely isolated from other sessions.
         async with StatefulClient(
             cwd=str(worktree_path),
             permission_mode="acceptEdits",
             model="claude-sonnet-4-6",
             max_budget_usd=0.50,
         ) as client:
+            # First query: understand what changed
+            # Claude runs "git diff main --stat" inside the worktree
             summary = await client.query("Summarise the changes in this branch vs main.")
+            
+            # Second query: reuses the same session context (conversation continues)
+            # Claude already knows what files changed from the previous turn
             review = await client.query(
                 "Review for: (1) security issues, (2) breaking changes, "
                 "(3) missing tests. Rate: APPROVE / REQUEST_CHANGES / COMMENT."
@@ -317,15 +654,25 @@ async def review_branch(branch: str, repo_path: str) -> dict:
         }
     
     finally:
-        # Clean up the worktree
-        subprocess.run(["git", "worktree", "remove", str(worktree_path)], cwd=repo_path)
+        # Always clean up — even if client.query() raises an exception
+        subprocess.run(["git", "worktree", "remove", str(worktree_path)],
+                       cwd=repo_path, capture_output=True)
 
 async def review_all_prs(branches: list[str], repo_path: str):
-    """Review all open PRs in parallel."""
-    results = await asyncio.gather(*[review_branch(b, repo_path) for b in branches])
-    for r in results:
-        print(f"\n=== {r['branch']} ===")
-        print(r['review'])
+    """Review all open PRs in parallel using asyncio.gather."""
+    # asyncio.gather() starts all coroutines concurrently.
+    # It returns when ALL coroutines complete (or raises on first exception).
+    # Use return_exceptions=True to get results even if some branches fail.
+    results = await asyncio.gather(
+        *[review_branch(b, repo_path) for b in branches],
+        return_exceptions=True  # don't abort all if one fails
+    )
+    for branch, result in zip(branches, results):
+        if isinstance(result, Exception):
+            print(f"\n=== {branch} — FAILED: {result} ===")
+        else:
+            print(f"\n=== {result['branch']} ===")
+            print(result['review'])
 
 # Usage
 asyncio.run(review_all_prs(
@@ -761,6 +1108,181 @@ Each job runs on its own checkout (analogous to a worktree) in parallel.
 
 ## 10. Troubleshooting
 
+### When Worktrees Fail — Root Causes and Recovery
+
+Worktree failures fall into four main categories: locked objects, detached HEAD states, stale metadata, and concurrent operation conflicts. Understanding each failure type prevents data loss and speeds up recovery.
+
+#### Failure Category 1: Locked Object Files
+
+Git objects are occasionally locked during write operations. When a Claude Code session makes a large commit (many files) while another session runs `git fetch` or `git gc`, the object database can encounter lock conflicts:
+
+```
+error: object file .git/objects/ab/cd1234... is empty
+fatal: loose object abcd1234 (stored in .git/objects/ab/cd1234...) is corrupt
+
+# Or during a write:
+error: unable to create '.git/objects/xx/yyyy': File exists
+error: insufficient permission for adding an object to repository database .git/objects
+```
+
+**Root cause:** Two processes tried to write or modify the same object file simultaneously. Git is mostly safe across processes, but `git gc --aggressive` and `git repack` are not safe to run while other worktrees have active sessions.
+
+**Recovery:**
+
+```bash
+# Step 1: Check which objects are affected
+git fsck --full 2>&1 | head -20
+
+# Step 2: If an object is empty (zero bytes), delete it
+find .git/objects -size 0 -delete
+
+# Step 3: Re-fetch the missing objects from the remote
+git fetch --all
+
+# Step 4: Re-run fsck to confirm the database is clean
+git fsck --full
+# Expected: "Checking connectivity: done."
+
+# Step 5: If fsck still shows errors, run:
+git gc --prune=now
+# This rebuilds the pack files from the remaining valid objects
+
+# Prevention: never run git gc while worktree sessions are active
+# In CI, add a pre-gc check:
+if git worktree list | grep -v "^$(git rev-parse --show-toplevel)" | grep -q .; then
+  echo "ERROR: Active worktrees found. Refusing to run git gc."
+  exit 1
+fi
+git gc
+```
+
+#### Failure Category 2: Detached HEAD States
+
+A worktree can end up in a detached HEAD state when:
+- Claude Code checks out a specific commit (not a branch ref) during an experiment
+- A `git bisect` or `git rebase` was interrupted mid-operation
+- The `/branch --from v2.1.0` command checks out a tag (tags create detached HEAD)
+
+**Symptoms:**
+
+```bash
+git -C .worktrees/experiment status
+# On output: HEAD detached at a3f7b29
+
+git -C .worktrees/experiment branch
+# * (HEAD detached at a3f7b29)
+```
+
+**What breaks in detached HEAD:**
+- `git commit` works but the commit is orphaned — not reachable from any branch ref
+- `/branch --clean` will NOT remove the worktree (it only removes merged branches)
+- `git push` will fail: `fatal: You are not currently on a branch`
+- Claude Code `/branch` cannot create a sub-branch from a detached HEAD
+
+**Recovery:**
+
+```bash
+# Option A: Create a branch at the current detached HEAD (saves your work)
+git -C .worktrees/experiment checkout -b experiment/saved-$(date +%Y%m%d)
+# Now the worktree is on a named branch; you can push and merge normally
+
+# Option B: Abandon the detached HEAD and reset to a known branch
+git -C .worktrees/experiment checkout main
+# This re-attaches to the main branch (no orphaned commits to worry about)
+
+# Option C: Force-remove the worktree (loses any uncommitted changes)
+git worktree remove --force .worktrees/experiment
+git worktree prune
+
+# Preventing detached HEAD in /branch:
+# Always use branch names, not commit hashes or tags:
+/branch experiment/test  --from main       ✓ (creates branch from main)
+/branch experiment/test  --from v2.1.0     ⚠ (tag → detached HEAD)
+# If you must start from a tag, create a branch first:
+git checkout -b experiment/from-v2.1.0 v2.1.0
+/branch --from experiment/from-v2.1.0
+```
+
+#### Failure Category 3: Stale Worktree Metadata
+
+If a worktree directory is deleted manually (not via `git worktree remove`), git's internal metadata becomes stale. Subsequent `git worktree` commands may error or show phantom entries:
+
+```bash
+git worktree list
+# Output includes a path that no longer exists:
+# /projects/myapp/.worktrees/feature-auth   def5678 [feature/auth]  (locked: deleted manually)
+
+git worktree add .worktrees/feature-auth feature/auth
+# Error: fatal: '.worktrees/feature-auth' is a registered but missing path for worktree 'feature-auth'
+```
+
+**Recovery:**
+
+```bash
+# Prune stale metadata — safe, only removes entries with missing paths
+git worktree prune --verbose
+# Output: Removing worktrees/feature-auth: gitdir file points to non-existent location
+
+# After pruning, verify the stale entry is gone
+git worktree list
+
+# Now you can re-add the worktree normally
+git worktree add .worktrees/feature-auth feature/auth
+```
+
+#### Failure Category 4: Concurrent Operation Conflicts
+
+When two Claude Code sessions (or a session + a shell script) perform git operations simultaneously on the same repository, ref-locking conflicts occur:
+
+```
+error: cannot lock ref 'refs/heads/feature/auth': unable to resolve reference 'refs/heads/feature/auth'
+error: cannot lock ref 'refs/heads/feature/auth': is at abc123 but expected def456
+
+# During git fetch in one session while another commits:
+error: cannot lock ref 'refs/remotes/origin/feature/auth': reference already exists
+
+# During git commit in two sessions simultaneously (race condition):
+error: Unable to create '.git/index.lock': File exists.
+```
+
+**Root cause:** Git uses lock files (`.git/index.lock`, `.git/refs/heads/.lock`) to serialise writes. If two operations race, one gets the lock and the other fails.
+
+**Recovery:**
+
+```bash
+# For stale .lock files (only delete if you're sure no git operation is running):
+rm -f .git/index.lock
+rm -f .git/refs/heads/feature-auth.lock
+rm -f .git/HEAD.lock
+
+# Check for active git processes before removing locks:
+lsof .git/index.lock  # if no output, safe to remove
+lsof .git/refs/heads/feature-auth.lock
+
+# For ref conflicts:
+git fetch --all  # re-sync remote refs
+git remote prune origin  # remove stale remote-tracking refs
+```
+
+**Prevention for multi-session setups:**
+
+```bash
+# If running multiple Claude Code sessions on the same repo simultaneously,
+# stagger git fetch calls to avoid conflicts:
+# In .claude/settings.json hooks:
+{
+  "hooks": {
+    "SessionStart": [{
+      "handler": {
+        "type": "command",
+        "command": "sleep $((RANDOM % 10)) && git fetch origin"
+      }
+    }]
+  }
+}
+# The random sleep distributes the fetch timing across sessions
+```
+
 ### Expanded Troubleshooting Guide
 
 | Problem | Cause | Solution |
@@ -776,6 +1298,10 @@ Each job runs on its own checkout (analogous to a worktree) in parallel.
 | SDK session sees old file state | Subprocess cached state | Restart StatefulClient; each client session starts fresh |
 | High disk usage from worktrees | Many worktrees with build artifacts | Add build dirs to `.gitignore`; run `make clean` before adding worktree |
 | Agent Teams mailbox not visible in worktree | Different HOME paths | Verify `~/.claude/teams/` is accessible from all worktrees |
+| Detached HEAD in worktree | Checked out a tag or commit | `git -C <worktree> checkout -b new-branch` to re-attach |
+| Empty object file error | Concurrent gc + write | `git fsck --full`; delete empty objects; `git fetch --all` |
+| `index.lock` file exists | Previous git operation crashed | Verify no git processes running; `rm .git/index.lock` |
+| Worktree shows old branch files | Branch diverged from remote | `git -C <worktree> pull --rebase` or recreate the worktree |
 
 ### Diagnosing worktree issues step by step
 

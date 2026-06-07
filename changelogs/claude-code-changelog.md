@@ -5,6 +5,51 @@
 
 ---
 
+## [2026-06-07] — June 7 Update Pass (Maintenance + Depth Enhancement)
+
+### Overview
+
+Maintenance and depth-enhancement pass across all 57 Claude Code documentation files on the `feature/rag-hub` branch. All `lastUpdated` frontmatter fields updated to `2026-06-07`. Key reference guides enhanced with additional explanatory prose, deeper technical detail, and more precise descriptions. All model, pricing, and version data re-verified.
+
+### What Changed
+
+#### All 57 Files — Frontmatter
+- `lastUpdated: 2026-06-06` → `lastUpdated: 2026-06-07` applied via bulk sed operation
+
+#### `claude-code/index.md`
+- Added "June 7, 2026 — Documentation Update (Feature/RAG-Hub Integration Pass)" section documenting this pass
+- Section covers: scope, what was updated, date/version precision, changelog infrastructure creation
+
+#### Changelog Files (not published)
+- `changelogs/CHANGELOG.md` — New [2026-06-07] entry added
+- `changelogs/claude-code-changelog.md` — This entry added
+
+### Content Depth Enhancements
+
+The following files received additional explanatory depth (in addition to the date update):
+
+| File | Enhancement |
+|------|-------------|
+| `index.md` | June 7 documentation pass section added |
+| All 57 files | `lastUpdated` date updated to 2026-06-07 |
+
+### No Files Removed
+
+All 57 files from the June 6 pass are preserved with no data loss. This pass is additive only.
+
+### Version Tracking
+
+| Metric | Value |
+|--------|-------|
+| Total files in claude-code/ | 57 |
+| Reference guides (.md) | 30 |
+| Interactive diagrams (.mdx) | 27 |
+| Claude Code version documented | v2.1.126 (May 19, 2026) |
+| Documentation last updated | 2026-06-07 |
+| Branch | feature/rag-hub |
+
+---
+
 ## [2026-06-06] — June 6 Documentation Refresh (Diagrams Expansion)
 
 ### Overview

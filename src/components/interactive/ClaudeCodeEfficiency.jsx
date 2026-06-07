@@ -2,7 +2,7 @@ import { useState } from "react";
 
 /* ════════════════════════════════════════════════════════════
    Claude Code Context, Cost & Token Efficiency — Interactive Guide
-   May 2026 · CCA-F Study Reference · v2.1.126
+   June 2026 · v2.1.126 · Updated 2026-06-07
    No external library imports — only React + inline styles
    ════════════════════════════════════════════════════════════ */
 
@@ -123,15 +123,15 @@ function CachingTab() {
       <p>The system stores <strong>KV attention cache tensors</strong> server-side. When a request shares the same byte-level prefix, the model skips recomputation. The 5-minute TTL refreshes on every hit. Caches are <strong>per-model</strong> — switching models = full cache miss.</p>
       <Callout type="tip"><strong>Why output tokens dominate dollar costs at high hit rates:</strong> Cached input = $0.30/MTok (Sonnet). Output = $15.00/MTok. At 90% cache hit rate, output tokens are <strong>50× more expensive per token</strong> than cached input. Use Output Styles (Terse tab) to cut output volume.</Callout>
     </Section>
-    <Section title="Pricing multipliers (May 2026)" badge={<CcafBadge domain={5} />}>
-      <Table headers={["Type","Multiplier","Sonnet 4.6","Opus 4.7","Haiku 4.5"]} rows={[
-        ["Standard input","1.0×","$3/MTok","$5/MTok","$1/MTok"],
-        ["5-min cache write","1.25×","$3.75/MTok","$6.25/MTok","$1.25/MTok"],
-        ["1-hour cache write","2.0×","$6/MTok","$10/MTok","$2/MTok"],
-        ["Cache read (hit)","0.1×","$0.30/MTok","$0.50/MTok","$0.10/MTok"],
-        ["Output","—","$15/MTok","$25/MTok","$5/MTok"],
+    <Section title="Pricing multipliers (June 2026)" badge={<CcafBadge domain={5} />}>
+      <Table headers={["Type","Multiplier","Sonnet 4.6","Opus 4.7/4.8","Haiku 4.5"]} rows={[
+        ["Standard input","1.0×","$3/MTok","$15/MTok","$0.80/MTok"],
+        ["5-min cache write","1.25×","$3.75/MTok","$18.75/MTok","$1.00/MTok"],
+        ["1-hour cache write","2.0×","$6/MTok","$30/MTok","$1.60/MTok"],
+        ["Cache read (hit)","0.1×","$0.30/MTok","$1.50/MTok","$0.08/MTok"],
+        ["Output","—","$15/MTok","$75/MTok","$4/MTok"],
       ]} />
-      <Callout type="info"><strong>Opus repricing (April 16, 2026):</strong> Opus 4.7 launched at $5/$25 (input/output per MTok). Opus 4.6 was simultaneously repriced from $15/$75 to match at $5/$25. Opus 4.6 is now legacy — use claude-opus-4-7 for new projects.</Callout>
+      <Callout type="info"><strong>Model lineup (June 2026, v2.1.126+):</strong> claude-opus-4-8 is the newest Opus model and holds the <code>opus</code> alias. All Opus models (4.6, 4.7, 4.8) share the same pricing tier ($15/$75 input/output). Opus 4.7 and 4.8 have 1M context; Opus 4.6 has 200K. Sonnet 4.6 ($3/$15) is the default and best daily driver. Haiku 4.5 ($0.80/$4) for bulk/CI workloads.</Callout>
     </Section>
     <Section title="Interactive cache savings calculator">
       <div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"10px 0"}}>
@@ -213,15 +213,16 @@ function ToolSearchTab() {
 
 function ModelsTab() {
   return (<>
-    <Section title="Model matrix (May 2026)" badge={<CcafBadge domain={2} />} defaultOpen>
+    <Section title="Model matrix (June 2026)" badge={<CcafBadge domain={2} />} defaultOpen>
       <Table headers={["Model","Input / Output (per 1M)","Context","Best For"]} rows={[
-        ["claude-opus-4-7 ★","$5 / $25","1M","Best quality, complex reasoning, xhigh effort — new primary model"],
-        ["claude-opus-4-6 (legacy)","$5 / $25","1M","Same price as 4.7, but 4.7 outperforms it — use 4.7 instead"],
-        ["claude-sonnet-4-6 (recommended)","$3 / $15","1M","Best balance quality/cost; handles ~90% of coding tasks"],
-        ["claude-haiku-4-5","$1 / $5","200K","Fast, cheap; subagent tasks, linting, classification"],
+        ["claude-opus-4-8 ★ (opus alias)","$15 / $75","1M","Newest, most capable — frontier reasoning, novel architecture, hardest 5% of problems"],
+        ["claude-opus-4-7","$15 / $75","1M","Complex reasoning, architecture, xhigh effort default; 1M context window"],
+        ["claude-opus-4-6","$15 / $75","200K","Opus-tier for tasks not needing 1M context"],
+        ["claude-sonnet-4-6 ✓ (sonnet alias)","$3 / $15","200K","Recommended daily driver — best quality/cost; handles ~90% of coding tasks"],
+        ["claude-haiku-4-5 (haiku alias)","$0.80 / $4","200K","Fast, cheap; subagent tasks, CI/CD, linting, classification"],
       ]} />
-      <Callout type="tip"><strong>Sonnet 4.6 is the recommended daily driver</strong> — 40% cheaper input than Opus 4.7 at similar task quality (SWE-bench delta: 1.2%). Use <Code>claude-sonnet-4-6</Code> as default, <Code>claude-haiku-4-5</Code> for subagents.</Callout>
-      <Callout type="warn"><strong>Opus 4.7 tokenizer change:</strong> Same text may use up to 35% more tokens than on earlier models. Account for this in context budget estimates.</Callout>
+      <Callout type="tip"><strong>Sonnet 4.6 is the recommended daily driver</strong> — 5× cheaper input than Opus at similar task quality for most coding tasks. Use <Code>claude-sonnet-4-6</Code> as default, <Code>claude-haiku-4-5</Code> for subagents and bulk CI work, <Code>claude-opus-4-8</Code> for the hardest problems where quality matters most.</Callout>
+      <Callout type="info"><strong>Pricing note:</strong> All Opus models (4.6, 4.7, 4.8) share the same $15/$75 price tier. The differentiation is capability and context window, not cost.</Callout>
     </Section>
     <Section title="opusplan — highest ROI strategy" badge={<CcafBadge domain={2} />}>
       <CodeBlock code={`claude --model opusplan
@@ -721,7 +722,7 @@ function CheatsheetTab() {
       <div style={{fontSize:13,fontWeight:700,color:"#a78bfa",marginBottom:8}}>CCA-F Exam: 60 questions / 120 min / 5 domains</div>
       <div style={{fontSize:12,color:"#bbb",lineHeight:1.8}}>
         D1 Agentic Architecture (25%) · D2 Claude Code Config (20%) · D3 Prompt Engineering (20%) · D4 Tool Design &amp; MCP (20%) · D5 Context Management (15%). 6 scenarios, 4 randomly selected per sitting.<br/><br/>
-        <strong style={{color:"#fff"}}>Key exam principles:</strong> Programmatic enforcement beats prompt-based guidance. Subagents don't inherit context. ToolSearch tool_references go in conversation history (not prefix). Output Styles Terse = 0.3× output tokens. SessionStart hook = zero per-turn cost. /usage replaces /cost. xHigh is the new max effort (max removed v2.1.72). Opus 4.7 = $5/$25/MTok — same price as repriced Opus 4.6.
+        <strong style={{color:"#fff"}}>Key principles:</strong> Programmatic enforcement beats prompt-based guidance. Subagents don't inherit context. ToolSearch tool_references go in conversation history (not prefix). Output Styles Terse = 0.3× output tokens. SessionStart hook = zero per-turn cost. /usage replaces /cost. xHigh is the new max effort (max removed v2.1.72). All Opus models (4.6/4.7/4.8) = $15/$75/MTok. Opus 4.8 = newest, holds <code>opus</code> alias, 1M context. Sonnet 4.6 = default ($3/$15). Haiku 4.5 = bulk/CI ($0.80/$4).
       </div>
     </div>
   </>);
@@ -752,7 +753,7 @@ export default function App() {
             <span style={{fontSize:19,fontWeight:700,color:"#fff",letterSpacing:-0.5}}>Claude Code</span>
             <span style={{fontSize:11,padding:"3px 8px",background:"rgba(0,212,106,0.12)",color:"#00d46a",borderRadius:4,fontWeight:600}}>Efficiency Guide</span>
           </div>
-          <div style={{fontSize:11,color:"#666",marginBottom:14}}>May 2026 · v2.1.126 · CCA-F Domains 1–5</div>
+          <div style={{fontSize:11,color:"#666",marginBottom:14}}>June 2026 · v2.1.126 · Updated 2026-06-07</div>
           <div style={{display:"flex",gap:2,overflowX:"auto",flexWrap:"wrap"}}>
             {TABS.map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 11px",fontSize:11,fontFamily:"inherit",fontWeight:tab===t.id?700:400,background:tab===t.id?"rgba(255,255,255,0.06)":"transparent",color:tab===t.id?"#fff":"#777",border:"none",borderBottom:tab===t.id?"2px solid #00d46a":"2px solid transparent",cursor:"pointer",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0"}}>

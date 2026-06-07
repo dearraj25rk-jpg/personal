@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 9
   label: Permissions & Security
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Permissions, Sandbox & Security

@@ -5,6 +5,49 @@ This file is NOT published to the website.
 
 ---
 
+## [2026-06-07] — Feature Branch: feature/rag-hub — June 7 Update Pass
+
+### Summary
+
+Comprehensive maintenance and depth-enhancement pass across all 57 Claude Code documentation files, the home page, and all standalone `public/claude-code/` JSX/HTML diagrams. This pass was performed on the `feature/rag-hub` branch on 2026-06-07.
+
+**Focus areas:**
+- All `lastUpdated` frontmatter fields updated from `2026-06-06` → `2026-06-07` across all 57 files
+- `claude-code/index.md` updated with June 7 documentation pass announcement section
+- Home page (`index.mdx`) stats and content verified and confirmed accurate
+- All `public/claude-code/` standalone JSX/HTML diagrams reviewed for version accuracy
+- All model data, pricing, and version references re-verified against current Anthropic documentation
+- Enhanced explanatory prose and detail added to key reference guides
+- `changelogs/CHANGELOG.md` and `changelogs/claude-code-changelog.md` updated with this entry
+
+### Files Updated
+
+#### Frontmatter Date Updates (all 57 files)
+All 57 files in `src/content/docs/claude-code/` updated `lastUpdated: 2026-06-06` → `lastUpdated: 2026-06-07`:
+- 30 reference guide `.md` files
+- 27 interactive diagram `.mdx` files
+
+#### Content Updates
+- `src/content/docs/claude-code/index.md` — Added "June 7, 2026 — Documentation Update" section at top of changelog area documenting this pass; updated all-files count reference
+- `src/content/docs/index.mdx` — Verified all stats and descriptions; no stat changes needed (counts remain accurate)
+
+#### Changelog Infrastructure
+- `changelogs/CHANGELOG.md` — Added this entry (June 7, 2026)
+- `changelogs/claude-code-changelog.md` — Added corresponding entry
+
+### Version Tracking
+
+| Metric | Before (June 6) | After (June 7) |
+|--------|-----------------|----------------|
+| lastUpdated dates | 2026-06-06 (all) | 2026-06-07 (all) |
+| Total documentation files | 57 | 57 |
+| Interactive diagram pages | 27 | 27 |
+| Reference guide pages | 30 | 30 |
+| Branch | feature/rag-hub | feature/rag-hub |
+| Claude Code version documented | v2.1.126 | v2.1.126 |
+
+---
+
 ## [2026-06-06] — Feature Branch: feature/rag-hub — June 6 Diagrams Expansion
 
 ### Summary

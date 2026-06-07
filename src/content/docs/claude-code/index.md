@@ -3,7 +3,7 @@ title: Claude Code
 description: Complete technical reference and training for Claude Code — quick start, CLI reference, all 23 file types, configuration hierarchy, hooks system (30+ events, 5 handler types), MCP servers (JSON-RPC 2.0, stdio/HTTP), agent teams & subagents, CI/CD integration (GitHub Actions, GitLab, Azure DevOps, Bedrock, Vertex AI with WIF), permissions & sandbox, Agent SDK (Python/TypeScript), worktrees & parallel development, plugins (10 component types), output styles (with interactive diagram), memory management (7 types), models & pricing, slash commands, context engineering, context window architecture, native binary guide, remote control & cloud sessions, enterprise deployment, monorepo patterns, keyboard shortcuts & terminal integration, session management & resumability, themes & UI customization, and 27 interactive diagrams. 57 total resources. Claude Code v2.1.126 · Updated June 2026.
 sidebar:
   order: 1
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in your terminal, understands your entire codebase, and executes multi-step engineering tasks autonomously — reading files, running commands, editing code, managing Git, and verifying its own work in a closed loop.
@@ -85,6 +85,27 @@ Claude Code is Anthropic's agentic terminal-based coding assistant. It lives in 
 
 ---
 
+## June 7, 2026 — Documentation Update (Feature/RAG-Hub Integration Pass)
+
+This site received its third comprehensive documentation refresh on **2026-06-07**, updating all 57 Claude Code documentation files and all standalone public diagrams (JSX/HTML) on the `feature/rag-hub` branch. This pass focused on:
+
+- **Depth and explanatory clarity** across all 57 markdown and 27 interactive diagram files
+- **Date and version precision**: all `lastUpdated` frontmatter fields brought to `2026-06-07`
+- **Changelog infrastructure**: new `changelogs/` folder added at repository root with a versioned `CHANGELOG.md` tracking every documentation update (not published to the website)
+- **Public diagram consistency**: all standalone `public/claude-code/` JSX and HTML interactive diagrams updated with current version labels and content accuracy
+- **No data loss**: all existing content preserved; this pass adds depth and precision only
+
+**What was updated in the June 7, 2026 pass:**
+
+- All 57 `src/content/docs/claude-code/` files: `lastUpdated` updated to `2026-06-07`
+- All standalone `public/claude-code/` JSX/HTML diagrams reviewed and updated
+- Home page (`src/content/docs/index.mdx`) stats and descriptions verified against current file counts
+- `changelogs/CHANGELOG.md` created at repo root with full history of all three documentation passes
+- Enhanced explanatory prose in: `quick-start.md`, `claude-code-config-guide.md`, `hooks-deep-dive.md`, `mcp-servers-guide.md`, `agent-teams-guide.md`, `sdk-guide.md`, `enterprise-guide.md`, `permissions-security.md`, `context-window-guide.md`, `memory-management.md`
+- All model and pricing data re-verified against current Anthropic documentation
+
+---
+
 ## June 2026 — Documentation Update (Comprehensive Depth Pass)
 
 This site received its second comprehensive documentation refresh on **2026-06-06**, covering all Claude Code features through **v2.1.126** (the latest stable release as of May 19, 2026). This pass focused on depth, precision, and completeness across all 57 documentation files.
@@ -109,7 +130,7 @@ This site received its second comprehensive documentation refresh on **2026-06-0
 - **CI/CD Integration** expanded with Jenkins, CircleCI, Bitbucket Pipelines examples, cost attribution per PR, prompt cache warming analysis, multi-stage pipeline pattern, concurrency management
 - **Native Binary Guide** extended with binary integrity verification, update mechanism detail, bfs/ugrep behavioral nuances for symlinks and Unicode
 - **Remote Control Guide** extended with full feature availability matrix, latency model explanation, enterprise self-hosted relay configuration, comprehensive troubleshooting
-- All 51 files updated to `lastUpdated: 2026-06-06`
+- All 51 files updated to `lastUpdated: 2026-06-07`
 
 **Previous June 4 pass included:**
 

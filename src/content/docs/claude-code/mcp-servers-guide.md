@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 6
   label: MCP Servers
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # MCP Servers — Architecture, Configuration & Development
@@ -96,6 +96,153 @@ The **Model Context Protocol (MCP)** is an open standard that allows AI systems 
         │                                     │
         │── resources/read {uri} ────────────►│
         │◄── resources/read result ───────────│
+```
+
+### JSON-RPC 2.0 Message Types — Complete Reference
+
+MCP uses exactly three JSON-RPC 2.0 message shapes. Understanding them precisely helps when debugging raw protocol output and when implementing servers at the low level.
+
+**1. Request** — sent from client to server; expects a response
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "method": "tools/call",
+  "params": {
+    "name": "query_database",
+    "arguments": {
+      "sql": "SELECT count(*) FROM orders WHERE status = 'open'",
+      "limit": 100
+    }
+  }
+}
+```
+
+Key fields:
+- `jsonrpc` — always the string `"2.0"`
+- `id` — a client-chosen integer or string; the server echoes it back in the response so the client can match request to response. Must be unique per in-flight request.
+- `method` — the RPC method name (e.g. `tools/call`, `resources/read`, `initialize`)
+- `params` — a JSON object or array of parameters; content is method-specific
+
+**2. Response (success)** — sent from server back to client
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "[{\"status\":\"open\",\"count\":187}]"
+      }
+    ],
+    "isError": false
+  }
+}
+```
+
+Key fields:
+- `id` — same value as the matching request's `id`
+- `result` — the method's return value; for tool calls this is always `{ content: [...], isError?: boolean }`
+- A successful response never has an `error` field
+
+**3. Response (error)** — sent from server when the request itself fails (not a tool-level error)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "error": {
+    "code": -32602,
+    "message": "Invalid params",
+    "data": {
+      "details": "Parameter 'sql' is required but was not provided"
+    }
+  }
+}
+```
+
+Key fields:
+- `error.code` — standard JSON-RPC error codes:
+  - `-32700` Parse error (malformed JSON)
+  - `-32600` Invalid Request (wrong JSON-RPC shape)
+  - `-32601` Method not found
+  - `-32602` Invalid params
+  - `-32603` Internal error
+  - `-32000` to `-32099` — implementation-defined server errors
+- `error.message` — short human-readable description
+- `error.data` — optional additional diagnostic information
+- An error response never has a `result` field
+
+> **Tool-level errors vs protocol errors:** If a tool handler itself fails (e.g. query returns no results, validation fails), the server returns a *success* response with `isError: true` in the result. A JSON-RPC error response means the *protocol* failed, not the tool logic.
+
+**4. Notification** — a one-way message; no response is expected
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/tools/list_changed",
+  "params": {}
+}
+```
+
+Key fields:
+- **No `id` field** — this is the defining characteristic of a notification
+- The server can send notifications to alert the client to changes (e.g. tool list updated)
+- The client can send the `initialized` notification after the handshake completes
+- Common MCP notifications: `notifications/tools/list_changed`, `notifications/resources/list_changed`, `notifications/progress`
+
+> **Batching:** JSON-RPC 2.0 defines a batch request form (an array of requests). MCP explicitly **does not support batching** — every message must be a single JSON object, not an array. Sending a batch array to an MCP server will result in a parse error response.
+
+**Progress notifications** — long-running tools can emit progress updates:
+
+```json
+// Server sends (Notification) while a slow tool is running:
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/progress",
+  "params": {
+    "progressToken": "tool-call-42",
+    "progress": 65,
+    "total": 100,
+    "message": "Processing records 650/1000..."
+  }
+}
+```
+
+The client passes a `_meta.progressToken` in the tool call request; the server uses that token in the progress notification so the client can correlate progress updates to the in-flight call.
+
+**Complete initialization handshake — annotated**
+
+```
+Client sends (Request):
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+  "protocolVersion":"1.1",
+  "capabilities": {
+    "sampling": {},          ← client can accept sampling requests
+    "roots": {"listChanged": true}  ← client supports root change notifications
+  },
+  "clientInfo":{"name":"claude-code","version":"2.1.126"}
+}}
+
+Server responds (Response):
+{"jsonrpc":"2.0","id":1,"result":{
+  "protocolVersion":"1.1",   ← server confirms protocol version
+  "capabilities": {
+    "tools":     {"listChanged": true},   ← server can notify when tools change
+    "resources": {"subscribe": true, "listChanged": true},
+    "prompts":   {"listChanged": true},
+    "logging":   {}
+  },
+  "serverInfo":{"name":"my-server","version":"1.0.0"}
+}}
+
+Client sends (Notification — no id):
+{"jsonrpc":"2.0","method":"initialized","params":{}}
+
+← Connection is now live; client can call tools/list, resources/list, etc.
 ```
 
 ---
@@ -189,11 +336,24 @@ Legacy transport. Migrate to HTTP streaming. Still works in Claude Code for back
 
 ## 3. The Three MCP Primitives
 
-MCP servers expose three types of capabilities:
+MCP servers expose three types of capabilities. Understanding the semantic difference between them is critical for designing a good server — the wrong primitive choice leads to poor tool discoverability and confusing Claude behavior.
+
+### Choosing the right primitive
+
+| Primitive | What it is | Who initiates | Side effects? | When to use |
+|-----------|-----------|--------------|--------------|-------------|
+| **Tool** | A callable function | Claude (autonomously) | Yes — tools CAN have side effects | Actions: query, create, update, delete, call API, run command |
+| **Resource** | A readable data URI | Claude (on request) or user | No — read-only by convention | Static or dynamic data that Claude should be able to "look up": schemas, configs, docs, catalogs |
+| **Prompt** | A parameterized message template | User (via `/mcp`) | No — generates text only | Reusable workflows: "summarize this ticket", "generate a report for this date range" |
+
+**Decision rule:**
+- Does Claude need to *do something*? → **Tool**
+- Does Claude need to *read something* that already exists? → **Resource**
+- Does the user want to trigger a predefined multi-step conversation? → **Prompt**
 
 ### 3.1 Tools — Callable Functions
 
-Tools are the most important primitive. Claude can call a tool to perform an action.
+Tools are the most important primitive. Claude can call a tool autonomously during its reasoning process to perform an action or retrieve computed data.
 
 ```typescript
 // Tool definition example
@@ -218,33 +378,164 @@ Tools are the most important primitive. Claude can call a tool to perform an act
 }
 ```
 
-When Claude calls this tool:
-1. Claude generates a `tool_use` block with `name: "query_database"` and `input: {sql: "SELECT..."}`
-2. Claude Code sends it to the MCP server via JSON-RPC
-3. The server executes the query and returns results
-4. Claude Code feeds the result back to Claude
+When Claude calls this tool, the full protocol flow is:
+1. Claude generates a `tool_use` content block with `name: "query_database"` and `input: {sql: "SELECT..."}`
+2. Claude Code sends a `tools/call` JSON-RPC request to the MCP server
+3. The server executes the handler and returns a `tools/call` response with `{ content: [...], isError?: boolean }`
+4. Claude Code feeds the result back to Claude as a `tool_result` content block
+5. Claude continues reasoning with the result in context
+
+**Example tool call JSON-RPC exchange (annotated):**
+
+```json
+// Claude Code → MCP Server (Request)
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "tools/call",
+  "params": {
+    "name": "query_database",
+    "arguments": { "sql": "SELECT COUNT(*) as total FROM orders WHERE status = 'open'" },
+    "_meta": { "progressToken": "call-7" }
+  }
+}
+
+// MCP Server → Claude Code (Success Response)
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "result": {
+    "content": [
+      { "type": "text", "text": "[{\"total\": 187}]" }
+    ],
+    "isError": false
+  }
+}
+
+// MCP Server → Claude Code (Error Response — tool logic failed, NOT a protocol error)
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "result": {
+    "content": [
+      { "type": "text", "text": "Query failed: relation \"orders\" does not exist" }
+    ],
+    "isError": true
+  }
+}
+```
+
+**Tool content types** — a tool can return multiple content items of different types:
+
+```json
+{
+  "content": [
+    { "type": "text", "text": "Found 3 matching records:" },
+    { "type": "text", "text": "[{\"id\": 1, ...}, {\"id\": 2, ...}]" },
+    {
+      "type": "image",
+      "data": "<base64-encoded-png>",
+      "mimeType": "image/png"
+    }
+  ]
+}
+```
+
+Content types: `text` (most common), `image` (base64), `resource` (embedded resource reference).
 
 **Tool design principles:**
 - Write descriptions Claude can reason about — be specific about what the tool does and doesn't do
 - Use JSON Schema to constrain inputs — prevents Claude from passing wrong types
+- Use `enum` to constrain string options and `minimum`/`maximum` to bound numbers
 - Return structured data (JSON) Claude can reason over
 - Keep tools focused — one tool, one purpose
-- Indicate side effects explicitly in the description ("this modifies the database")
+- Indicate side effects explicitly in the description ("this modifies the database", "PERMANENTLY DELETES")
+- Use `isError: true` (not a thrown exception) for tool-level failures Claude should recover from gracefully
+
+**Good vs. bad tool descriptions:**
+
+```typescript
+// Bad: too vague, Claude doesn't know when to use it or what it does
+server.tool('db', 'Database tool', { q: z.string() }, handler);
+
+// Good: precise scope, explicit constraints, known return shape
+server.tool(
+  'query_orders',
+  'Run a read-only SQL SELECT against the orders database. Returns up to 1000 rows as a JSON array. ' +
+  'Does NOT support INSERT/UPDATE/DELETE. Use for reporting and investigation only.',
+  { sql: z.string().describe('Valid SQL SELECT statement') },
+  handler
+);
+```
 
 ### 3.2 Resources — Data Sources
 
-Resources are static or dynamic data that Claude can read.
+Resources are static or dynamic data that Claude can read. They are the MCP equivalent of "documents" or "files" — they have a URI, a name, an optional MIME type, and content that can be fetched on demand.
+
+**Key semantic distinction from Tools:** Resources are *read-only by convention* and do not perform actions. They model data that exists independently, not computations Claude triggers. Use resources for schemas, configurations, catalogs, and documentation — data Claude might want to "look up" rather than "compute".
 
 ```typescript
+// Resource definition
 {
   uri: "db://prod/users/schema",
   name: "Users Table Schema",
   mimeType: "application/json",
-  description: "Current schema of the users table"
+  description: "Current schema of the users table including column names, types, and indexes"
 }
 ```
 
-Resources are exposed via URI patterns. Claude can request them via `resources/read`. Unlike tools, resources don't perform actions — they provide data.
+**Resource lifecycle:** The server declares resources in `resources/list`. Claude Code fetches specific resources via `resources/read`. If the server declares `capabilities.resources.subscribe: true`, Claude Code can also subscribe to resource changes and receive `notifications/resources/updated` notifications when content changes.
+
+```json
+// Claude Code → MCP Server: fetch a resource
+{
+  "jsonrpc": "2.0",
+  "id": 9,
+  "method": "resources/read",
+  "params": { "uri": "db://prod/users/schema" }
+}
+
+// MCP Server → Claude Code: resource content
+{
+  "jsonrpc": "2.0",
+  "id": 9,
+  "result": {
+    "contents": [{
+      "uri": "db://prod/users/schema",
+      "mimeType": "application/json",
+      "text": "{\"table\": \"users\", \"columns\": [{\"name\": \"id\", \"type\": \"uuid\"}, ...]}"
+    }]
+  }
+}
+```
+
+**Resource URI scheme design:**
+
+Use consistent URI schemes that communicate the data hierarchy:
+
+| Scheme | Example URI | What it represents |
+|--------|-------------|-------------------|
+| `file://` | `file:///home/app/config.yaml` | Actual filesystem file |
+| `db://` | `db://prod/tables/orders/schema` | Database object |
+| `github://` | `github://org/repo/src/main.ts` | Repository file |
+| `api://` | `api://crm/contacts/catalog` | API endpoint documentation |
+| Custom | `analytics://dashboards/live` | Domain-specific data |
+
+**Resource vs. Tool for data retrieval — when to use which:**
+
+```
+Use a Resource when:
+  - The data has a stable URI/identity (can be referenced, bookmarked)
+  - The data is read-only and doesn't need computed parameters
+  - The data exists independently of Claude's current task
+  - Example: database schema, API documentation, config file
+
+Use a Tool when:
+  - The data requires parameters (date range, filters, user ID)
+  - The result is computed/transformed, not just fetched
+  - The operation might have side effects
+  - Example: "get orders for user 123 in the last 7 days" → Tool
+```
 
 **Resource URI examples:**
 - `file:///home/user/config.yaml`
@@ -254,9 +545,12 @@ Resources are exposed via URI patterns. Claude can request them via `resources/r
 
 ### 3.3 Prompts — Reusable Templates
 
-Prompts are pre-defined message templates with arguments.
+Prompts are pre-defined message templates with typed arguments. Unlike Tools (which Claude calls automatically) and Resources (which Claude reads on demand), Prompts are designed to be **invoked by the user** via `/mcp` commands. They represent reusable multi-step workflows or conversation starters.
+
+**Key semantic distinction:** A Prompt doesn't execute logic itself — it generates a message (or messages) that are injected into the conversation as if the user typed them. The actual work happens through subsequent Tool calls Claude makes in response to the injected message.
 
 ```typescript
+// Prompt definition
 {
   name: "code_review",
   description: "Standard code review checklist for PRs",
@@ -267,11 +561,123 @@ Prompts are pre-defined message templates with arguments.
 }
 ```
 
+**Prompt lifecycle:**
+
+```
+1. User types: /mcp code_review language=TypeScript focus=security
+2. Claude Code calls: prompts/get { name: "code_review", arguments: { language: "TypeScript", focus: "security" } }
+3. MCP server returns: { messages: [{ role: "user", content: { type: "text", text: "Please review this TypeScript code..." } }] }
+4. Claude Code injects those messages into the conversation
+5. Claude responds by executing the review workflow (using Tools, Resources, etc.)
+```
+
+**Prompt JSON-RPC exchange:**
+
+```json
+// Claude Code → MCP Server
+{
+  "jsonrpc": "2.0",
+  "id": 11,
+  "method": "prompts/get",
+  "params": {
+    "name": "code_review",
+    "arguments": { "language": "TypeScript", "focus": "security" }
+  }
+}
+
+// MCP Server → Claude Code
+{
+  "jsonrpc": "2.0",
+  "id": 11,
+  "result": {
+    "description": "TypeScript security code review",
+    "messages": [
+      {
+        "role": "user",
+        "content": {
+          "type": "text",
+          "text": "Please perform a security-focused code review of the TypeScript code I'll paste below. Check for: SQL injection, XSS, insecure deserialization, hardcoded secrets, and improper error handling that exposes internals. Format findings as: SEVERITY | LOCATION | ISSUE | RECOMMENDATION."
+        }
+      }
+    ]
+  }
+}
+```
+
+**When to use Prompts vs. CLAUDE.md instructions:**
+- **Prompts** are good for parameterized, on-demand workflows ("generate a report for THIS date range")
+- **CLAUDE.md** is better for standing instructions that apply to every session ("always add unit tests")
+
 Users can invoke prompts via `/mcp` or Claude can suggest them. Prompts reduce repetition for common workflows.
 
 ---
 
 ## 4. Configuration Scopes
+
+MCP servers can be configured at four scopes with a strict precedence order. Understanding how scope resolution works is essential for team setups and enterprise deployments.
+
+### Scope Precedence — Complete Resolution Order
+
+```
+  HIGHEST PRECEDENCE (wins all conflicts)
+  ─────────────────────────────────────────
+  1. Enterprise / managed scope
+     /etc/claude-code/managed-mcp.json (Linux)
+     /Library/Application Support/ClaudeCode/managed-mcp.json (macOS)
+     Always present, cannot be overridden by users or projects
+
+  2. Local scope (machine-specific, git-ignored)
+     .claude/mcp.local.json  (in project root)
+     Overrides project scope for current machine only
+
+  3. Project scope (team-shared, committed to git)
+     .mcp.json  (in project root)
+
+  4. User scope (personal, cross-project)
+     ~/.claude/.mcp.json  OR  ~/.claude/settings.json
+  ─────────────────────────────────────────
+  LOWEST PRECEDENCE (loses to all higher scopes)
+```
+
+**Conflict resolution rule:** If the same server name (the key in `mcpServers`) appears in multiple scopes, the **highest-precedence scope wins entirely** — the entire server definition is replaced, not merged field-by-field. There is no partial merge.
+
+**Example — same name in two scopes:**
+
+```json
+// ~/.claude/settings.json (User scope — lower precedence)
+{ "mcpServers": { "postgres": { "type": "stdio", "command": "npx", "args": ["server-postgres", "postgresql://localhost/devdb"] } } }
+
+// .mcp.json (Project scope — higher precedence)
+{ "mcpServers": { "postgres": { "type": "stdio", "command": "npx", "args": ["server-postgres", "${DATABASE_URL}"] } } }
+
+// Result: Project scope wins. The user's localhost postgres is NOT loaded.
+// Both args AND env from the project file are used; user file is ignored for this name.
+```
+
+### Environment Variable Expansion Rules
+
+All string values in MCP config files support two expansion forms:
+
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "command": "node",
+      "args": ["index.js"],
+      "env": {
+        "API_KEY":      "${MY_API_KEY}",           // Required — fails if unset
+        "LOG_LEVEL":    "${LOG_LEVEL:-info}",       // Default value if unset → "info"
+        "DATABASE_URL": "${DB_HOST:-localhost}:${DB_PORT:-5432}/${DB_NAME}"  // Composable
+      }
+    }
+  }
+}
+```
+
+- `${VAR}` — substitutes the value of `VAR`; if `VAR` is unset, Claude Code will emit a warning and the server will fail to start
+- `${VAR:-default}` — substitutes `VAR` if set, otherwise uses `default` literally
+- Expansion applies to `command`, `args` array elements, `env` values, `url`, and `headers` values
+- Expansion does NOT apply to JSON keys (server names, env var names) — only to values
 
 MCP servers can be configured at three scopes, applied in order (local overrides project overrides user):
 
@@ -380,12 +786,92 @@ Claude will respond with all tools from all connected MCP servers, grouped by se
 
 ### 6.1 TypeScript / Node.js — Complete Example with All Primitives
 
-This is a full-featured MCP server demonstrating Tools, Resources, and Prompts together:
+This is a full-featured MCP server demonstrating Tools, Resources, and Prompts together. Start from scratch with the files below — no scaffolding CLI required.
 
+**Project structure:**
+```
+my-mcp-server/
+├── package.json
+├── tsconfig.json
+└── src/
+    └── index.ts
+```
+
+**`package.json`:**
+```json
+{
+  "name": "my-mcp-server",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}
+```
+
+**`tsconfig.json`:**
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "lib": ["ES2022"],
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+```
+
+**Install and run:**
 ```bash
-npm create mcp-server@latest my-server
-cd my-server
 npm install
+npm run dev        # development: run directly with tsx (no compile step)
+npm run build      # production: compile to dist/
+npm start          # production: run compiled output
+```
+
+**Register in `.mcp.json` (development — no compile step):**
+```json
+{
+  "mcpServers": {
+    "analytics": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/my-mcp-server/src/index.ts"]
+    }
+  }
+}
+```
+
+**Register in `.mcp.json` (production — compiled):**
+```json
+{
+  "mcpServers": {
+    "analytics": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/absolute/path/to/my-mcp-server/dist/index.js"]
+    }
+  }
+}
 ```
 
 ```typescript
@@ -2123,6 +2609,243 @@ PERFORMANCE
 [ ] Resources are paginated for large datasets
 [ ] Database connections use connection pooling (not one connection per call)
 ```
+
+---
+
+## 16. `mcp_tool` Hook Matcher (v2.1.118+)
+
+Introduced in Claude Code **v2.1.118** (March 2026), the `mcp_tool` hook matcher lets you attach `PreToolUse` and `PostToolUse` hooks specifically to MCP tool calls — with fine-grained filtering by server name and/or tool name. This is the primary mechanism for auditing, blocking, or transforming MCP tool calls at the security boundary.
+
+### How MCP tool hooks differ from built-in tool hooks
+
+Claude Code has two categories of tools:
+- **Built-in tools** — `Bash`, `Read`, `Edit`, `Write`, `Glob`, etc. These are matched in hooks by tool name directly: `{ "type": "tool_use", "tool_names": ["Bash"] }`
+- **MCP tools** — tools exposed by MCP servers. These use the `mcp_tool` matcher type, which supports filtering by server name AND tool name
+
+Without the `mcp_tool` matcher, you'd have to match MCP tools by their namespaced names (e.g. `mcp__github__create_pull_request`) — brittle and hard to maintain across server updates. The `mcp_tool` matcher provides structured, semantic filtering.
+
+### Hook matcher schema
+
+```json
+// In .claude/settings.json or ~/.claude/settings.json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": {
+          "type": "mcp_tool",
+          "server": "github",          // optional: filter to a specific MCP server
+          "tool": "create_pull_request" // optional: filter to a specific tool
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/.claude/hooks/audit-mcp-tool.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": {
+          "type": "mcp_tool",
+          "server": "filesystem"
+          // no "tool" key → matches ALL tools on the filesystem server
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/.claude/hooks/log-fs-access.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Matcher field rules:**
+- `"type": "mcp_tool"` — required; identifies this as an MCP tool matcher
+- `"server"` — optional; if omitted, matches ALL MCP servers
+- `"tool"` — optional; if omitted, matches ALL tools on the matched server(s)
+- Both `server` and `tool` omitted → hook fires on every MCP tool call from any server
+- Both specified → hook fires only when that exact server+tool combination is called
+
+### Pre-defined matching patterns
+
+```json
+// Pattern 1: Block ALL tools on a specific server
+{
+  "matcher": { "type": "mcp_tool", "server": "production-db" },
+  "hooks": [{ "type": "command", "command": "~/.claude/hooks/block-prod-db.sh" }]
+}
+
+// Pattern 2: Audit a specific destructive tool on any server
+{
+  "matcher": { "type": "mcp_tool", "tool": "delete_record" },
+  "hooks": [{ "type": "command", "command": "~/.claude/hooks/require-confirmation.sh" }]
+}
+
+// Pattern 3: Log all MCP tool calls (server and tool unspecified → catch-all)
+{
+  "matcher": { "type": "mcp_tool" },
+  "hooks": [{ "type": "command", "command": "~/.claude/hooks/mcp-audit-log.sh" }]
+}
+```
+
+### Hook environment — what the hook script receives
+
+When an `mcp_tool` `PreToolUse` hook fires, Claude Code provides the tool call context via stdin as JSON and via environment variables:
+
+```bash
+# Environment variables available in the hook script:
+CLAUDE_TOOL_NAME       # e.g. "create_pull_request"
+CLAUDE_MCP_SERVER_NAME # e.g. "github"
+CLAUDE_SESSION_ID      # current session identifier
+CLAUDE_WORKING_DIR     # project root path
+
+# Stdin: full JSON-RPC tool call parameters
+# {
+#   "tool_name": "create_pull_request",
+#   "tool_input": {
+#     "title": "Fix authentication bug",
+#     "body": "...",
+#     "base": "main"
+#   },
+#   "mcp_server": "github"
+# }
+```
+
+### Security patterns using `mcp_tool` hooks
+
+**Pattern A: Block destructive MCP tools in production environment**
+
+```bash
+#!/bin/bash
+# ~/.claude/hooks/block-destructive-in-prod.sh
+# PreToolUse hook for mcp_tool matcher
+
+# Read the tool call from stdin
+INPUT=$(cat)
+TOOL=$(echo "$INPUT" | jq -r '.tool_name')
+SERVER=$(echo "$INPUT" | jq -r '.mcp_server')
+
+# In production environment, block any tool with "delete" or "drop" in the name
+if [ "${CLAUDE_ENV:-dev}" = "production" ]; then
+  if echo "$TOOL" | grep -qiE "delete|drop|truncate|destroy|remove"; then
+    # Exit code 2 blocks the tool call and shows this message to Claude
+    echo "BLOCKED: Tool '$TOOL' on server '$SERVER' is not allowed in production." >&2
+    exit 2
+  fi
+fi
+
+# Exit 0 allows the tool call to proceed
+exit 0
+```
+
+**Pattern B: Require human confirmation for write operations**
+
+```bash
+#!/bin/bash
+# ~/.claude/hooks/confirm-mcp-writes.sh
+# PreToolUse hook — prompts user before any MCP tool that writes
+
+INPUT=$(cat)
+TOOL=$(echo "$INPUT" | jq -r '.tool_name')
+SERVER=$(echo "$INPUT" | jq -r '.mcp_server')
+
+# Define write-pattern tools requiring confirmation
+WRITE_PATTERNS="create|update|delete|insert|write|push|deploy|send|publish"
+
+if echo "$TOOL" | grep -qiE "$WRITE_PATTERNS"; then
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  MCP WRITE OPERATION REQUIRES CONFIRMATION"
+  echo "  Server: $SERVER"
+  echo "  Tool:   $TOOL"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  read -r -p "Allow? [y/N] " confirm
+  if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+    echo "Cancelled by user." >&2
+    exit 2  # Block the tool call
+  fi
+fi
+
+exit 0
+```
+
+**Pattern C: Audit log all MCP tool calls to a file**
+
+```bash
+#!/bin/bash
+# ~/.claude/hooks/mcp-audit.sh
+# PostToolUse hook — logs every MCP tool call after it completes
+
+INPUT=$(cat)
+TOOL=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
+SERVER=$(echo "$INPUT" | jq -r '.mcp_server // "unknown"')
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+LOG_FILE="${HOME}/.claude/mcp-audit.log"
+echo "${TIMESTAMP} | session=${CLAUDE_SESSION_ID} | server=${SERVER} | tool=${TOOL}" >> "$LOG_FILE"
+
+exit 0  # PostToolUse exit code is informational — doesn't block
+```
+
+**Register the audit log hook for all MCP tools:**
+
+```json
+// .claude/settings.json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": { "type": "mcp_tool", "server": "production-db" },
+        "hooks": [{
+          "type": "command",
+          "command": "~/.claude/hooks/block-destructive-in-prod.sh"
+        }]
+      },
+      {
+        "matcher": { "type": "mcp_tool", "server": "github" },
+        "hooks": [{
+          "type": "command",
+          "command": "~/.claude/hooks/confirm-mcp-writes.sh"
+        }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": { "type": "mcp_tool" },
+        "hooks": [{
+          "type": "command",
+          "command": "~/.claude/hooks/mcp-audit.sh"
+        }]
+      }
+    ]
+  }
+}
+```
+
+### Hook exit codes for `PreToolUse`
+
+| Exit code | Effect |
+|-----------|--------|
+| `0` | Allow the tool call to proceed normally |
+| `1` | Log the failure but still allow the call (soft warning) |
+| `2` | **Block the tool call** — Claude Code reports the block to Claude, who can try an alternative |
+| `3+` | Implementation-defined; treated as a hard error |
+
+`PostToolUse` hooks: exit code is informational only and does not affect whether the result reaches Claude.
+
+### Interaction with `permissions.deny`
+
+`mcp_tool` hooks (specifically `PreToolUse` with exit code `2`) and `permissions.deny` are complementary:
+
+- `permissions.deny` — static, configuration-based blocking; Claude Code never even asks Claude to call the tool
+- `mcp_tool` `PreToolUse` hook — dynamic, runtime blocking; fires after Claude decides to call the tool but before execution; can examine tool arguments to make context-aware decisions
+
+For unconditional blocking (e.g. "never allow write_file on the filesystem server"), prefer `permissions.deny`. For conditional blocking based on arguments, environment, time-of-day, or user confirmation, use `mcp_tool` hooks.
 
 ---
 

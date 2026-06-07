@@ -191,7 +191,7 @@ function ArchitectureTab() {
       {/* Supported hosts */}
       <div style={{ marginTop: 8 }}>
         <div style={{ ...sans, fontSize: 12, color: C.textDim, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>
-          MCP is supported by these hosts (as of May 2026)
+          MCP is supported by these hosts (as of June 2026)
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {["Claude Code", "Claude Desktop", "VS Code (Copilot)", "Cursor", "Windsurf", "GitHub Copilot", "Gemini CLI", "ChatGPT (beta)", "Zed Editor", "Continue.dev"].map(h => (

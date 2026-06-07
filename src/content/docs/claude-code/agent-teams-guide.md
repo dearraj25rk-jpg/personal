@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 7
   label: Agent Teams
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Agent Teams & Subagents — Complete Guide
@@ -153,6 +153,99 @@ Or in `.claude/settings.json`:
 
 ### 2.2 Architecture — Filesystem Mailbox Flow
 
+#### Exact Directory Structure
+
+When `TeamCreate("my-team")` is called, Claude Code creates the following hierarchy under `~/.claude/teams/`:
+
+```
+~/.claude/teams/my-team/
+├── manifest.json              ← written atomically at TeamCreate time
+│                                 { "name": "my-team",
+│                                   "members": ["orchestrator","engineer","reviewer"],
+│                                   "created_at": "2026-06-07T10:00:00Z",
+│                                   "version": 1 }
+│
+├── tasks/
+│   ├── task-001.json          ← one file per task; updated in-place with flock
+│   └── task-002.json
+│
+└── inboxes/
+    ├── orchestrator/          ← one directory per registered member
+    │   └── msg-{ts}-{hash}.json   ← atomic: written to tmp, then os.replace()
+    ├── engineer/
+    │   └── msg-{ts}-{hash}.json
+    └── reviewer/
+        └── msg-{ts}-{hash}.json
+```
+
+**Message filename format:** `msg-{unix_timestamp_ns}-{8char_random_hex}.json`
+
+Example: `msg-1749290400123456789-a3f7b291.json`
+
+The nanosecond timestamp ensures lexicographic sort order equals arrival order within the same millisecond; the random hex suffix prevents collisions when two senders write simultaneously.
+
+**Task file format** (full schema):
+
+```json
+{
+  "id": "task-001",
+  "title": "Implement auth module",
+  "description": "Add JWT-based authentication to the API layer...",
+  "assignee": "engineer",
+  "created_by": "orchestrator",
+  "created_at": "2026-06-07T10:01:00Z",
+  "status": "pending",
+  "result": null,
+  "error": null,
+  "updated_at": "2026-06-07T10:01:00Z",
+  "seq": 1
+}
+```
+
+After a worker claims the task (`TaskUpdate(status: "in_progress")`):
+
+```json
+{
+  "id": "task-001",
+  ...
+  "status": "in_progress",
+  "claimed_by": "engineer",
+  "claimed_at": "2026-06-07T10:02:15Z",
+  "updated_at": "2026-06-07T10:02:15Z",
+  "seq": 2
+}
+```
+
+**Message file format** (full schema):
+
+```json
+{
+  "id": "msg-1749290400123456789-a3f7b291",
+  "from": "engineer",
+  "to": "orchestrator",
+  "type": "task_update",
+  "content": "Task complete: auth module implemented. All tests pass.",
+  "metadata": {
+    "task_id": "task-001",
+    "timestamp": "2026-06-07T10:15:00Z"
+  },
+  "seq": 3,
+  "read": false
+}
+```
+
+The `seq` counter is per-team and increments with each write. It provides a partial ordering guarantee: messages with lower `seq` were written before messages with higher `seq` **from the same agent**. Across multiple agents writing concurrently, `seq` ordering is not guaranteed — use `metadata.timestamp` for cross-agent ordering if needed.
+
+**Atomic write protocol** (how `SendMessage` avoids corruption):
+
+```
+1. Generate temp filename: ~/.claude/teams/my-team/inboxes/engineer/.tmp-{uuid}
+2. Write full JSON content to temp file
+3. fsync() the temp file
+4. os.replace(temp_path, final_path)   ← atomic on Linux/macOS (POSIX rename)
+5. Receiver sees either the old state or the new state — never a partial write
+```
+
 ```
   AGENT TEAMS — FILESYSTEM MAILBOX ARCHITECTURE
   ══════════════════════════════════════════════════════════════════
@@ -248,7 +341,7 @@ type MessageType =
 ### 2.5 Task State Machine
 
 ```
-  TASK LIFECYCLE
+  TASK LIFECYCLE — FULL STATE MACHINE
   ══════════════════════════════════════════════════════════════════
 
   TaskCreate({title, description, assignee?})
@@ -257,28 +350,61 @@ type MessageType =
        ┌────────┐
        │pending │  ← task created, waiting to be claimed
        └────┬───┘
-            │ agent calls TaskUpdate(status: "in_progress")
-            │ (uses file locking to prevent double-claiming)
+            │  Any eligible agent calls TaskUpdate(status: "in_progress")
+            │  Uses O_EXCL file lock to prevent double-claiming.
+            │  If two agents race, exactly one wins; loser retries with
+            │  next "pending" task.
             ▼
       ┌───────────┐
-      │in_progress│  ← agent actively working on this task
+      │in_progress│  ← agent actively working; "claimed_by" field set
       └─────┬─────┘
             │
-      ┌─────┴──────────────────────────┐
-      │                                │
-      ▼                                ▼
-  ┌─────────┐                     ┌────────┐
-  │completed│                     │ failed │
-  └─────────┘                     └────────┘
-  TaskUpdate(                     TaskUpdate(
-    status: "completed",            status: "failed",
-    result: "...")                  error: "...")
+      ┌─────┼────────────────────────────────────┐
+      │     │                                    │
+      ▼     ▼                                    ▼
+  ┌──────┐  ┌────────┐                     ┌──────────┐
+  │done  │  │ failed │                     │ blocked  │  ← NEW in v2.1.100+
+  └──────┘  └────┬───┘                     └────┬─────┘
+                 │                              │
+                 │ orchestrator may             │ agent waiting for
+                 │ reassign or escalate         │ another task/message
+                 ▼                              │
+            ┌──────────┐                       │ when dependency resolves:
+            │cancelled │  ←────────────────────┘ TaskUpdate(in_progress)
+            └──────────┘
 
-  CLAIM PROTOCOL (prevent double-claiming):
-  1. Agent reads TaskList — finds task in "pending" state
-  2. Agent writes TaskUpdate with file lock (flock / atomic rename)
-  3. If lock succeeds: agent owns task
-  4. If lock fails: another agent claimed it first; skip and look for next
+  VALID TRANSITIONS:
+  ──────────────────
+  pending     → in_progress   (worker claims task via TaskUpdate)
+  in_progress → done          (TaskUpdate status:"completed", result:"...")
+  in_progress → failed        (TaskUpdate status:"failed", error:"...")
+  in_progress → blocked       (TaskUpdate status:"blocked", waiting_for:"task-002")
+  blocked     → in_progress   (when dependency completes; auto-transition)
+  failed      → pending       (orchestrator resets to retry; seq increments)
+  any         → cancelled     (TeamDelete or orchestrator force-cancels)
+
+  CLAIM PROTOCOL — RACE-CONDITION-SAFE:
+  ──────────────────────────────────────
+  1. Worker calls TaskList → receives list of tasks with status:"pending"
+  2. Worker selects a task to claim
+  3. Worker opens task file with O_EXCL | O_WRONLY (fails if another
+     writer holds the lock — Linux flock, macOS advisory lock)
+  4. If lock acquired:
+       a. Read current status field
+       b. If status still "pending": write updated JSON with
+          status:"in_progress", claimed_by:"<worker_name>",
+          claimed_at:"<now>", seq:<prev+1>
+       c. fsync() and release lock
+       d. Worker owns this task
+  5. If lock NOT acquired (EWOULDBLOCK):
+       → Another worker claimed it first
+       → Skip; loop to next "pending" task in TaskList
+  6. If no "pending" tasks remain: worker polls TaskList every N seconds
+     (configurable; default 3s) until new tasks appear or TeamDelete fires
+
+  NOTE: The seq field is critical. Before writing, always read the current
+  seq and increment by 1. If you see seq=5 but your local copy shows seq=3,
+  a concurrent writer updated the task — re-read before claiming.
 ```
 
 ### 2.6 Filesystem Layout
@@ -404,6 +530,154 @@ claude --agent-team feature-team --agent-name reviewer
 ```
 
 The orchestrator sends tasks via `TaskCreate`, agents pick them up from their inboxes, and report completion via `TaskUpdate`. The orchestrator aggregates results.
+
+### Pattern 3b: Concrete 3-Agent Parallel Workflow (Step by Step)
+
+This is a fully worked example of three agents running truly in parallel — an `architect`, an `engineer`, and a `tester` — collaborating on implementing a new feature.
+
+**Setup (run in your shell before starting sessions):**
+
+```bash
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+mkdir -p ~/.claude/teams/feat-team/tasks
+mkdir -p ~/.claude/teams/feat-team/inboxes/{orchestrator,architect,engineer,tester}
+```
+
+**Terminal 1 — Orchestrator:**
+
+```
+> TeamCreate("feat-team", members=["architect","engineer","tester"])
+
+> TaskCreate({
+    id: "task-001",
+    title: "Design notification system",
+    description: "Design a pub/sub notification system for the app. Output: design.md with component diagram, API contracts, and data model.",
+    assignee: "architect"
+  })
+
+> TaskCreate({
+    id: "task-002",
+    title: "Implement notification service",
+    description: "Implement the notification service per the design in design.md. Use the existing MessageBus in src/bus/. Output: src/notifications/service.py and src/notifications/models.py",
+    assignee: "engineer",
+    depends_on: ["task-001"]   ← will start blocked; unblocks when task-001 completes
+  })
+
+> TaskCreate({
+    id: "task-003",
+    title: "Write tests for notification service",
+    description: "Write pytest unit tests for src/notifications/service.py. Cover: happy path, subscriber fanout, dead-letter queue handling.",
+    assignee: "tester",
+    depends_on: ["task-002"]
+  })
+
+> SendMessage(to="architect", content="Task queue ready. Start with task-001.")
+> SendMessage(to="engineer",  content="Wait for task-001 to complete before starting task-002.")
+> SendMessage(to="tester",    content="Wait for task-002 to complete before starting task-003.")
+```
+
+**Terminal 2 — Architect:**
+
+```bash
+claude --agent-team feat-team --agent-name architect
+```
+
+```
+> TaskList("feat-team")
+# sees task-001 in pending state
+
+> TaskUpdate("task-001", status="in_progress")
+# architect now owns it
+
+# [architect reads existing codebase, designs the system, writes design.md]
+
+> TaskUpdate("task-001", status="completed",
+    result="Design complete. design.md written with: EventBus interface, NotificationEvent model, SubscriberRegistry, DeadLetterQueue handling.")
+
+> SendMessage(to="orchestrator",
+    content="task-001 done. design.md ready at project root.")
+```
+
+**Terminal 3 — Engineer:**
+
+```bash
+claude --agent-team feat-team --agent-name engineer
+```
+
+```
+> TaskList("feat-team")
+# sees task-002 in "blocked" state (task-001 not yet complete)
+# engineer waits, polling every 3s...
+
+# [task-001 completes; task-002 auto-transitions to "pending"]
+
+> TaskUpdate("task-002", status="in_progress")
+# engineer reads design.md, implements the service
+
+> TaskUpdate("task-002", status="completed",
+    result="Implemented NotificationService, SubscriberRegistry, DeadLetterQueue. All classes in src/notifications/. Manually verified with a quick smoke test.")
+
+> SendMessage(to="orchestrator",
+    content="task-002 done. Implementation in src/notifications/.")
+```
+
+**Terminal 4 — Tester:**
+
+```bash
+claude --agent-team feat-team --agent-name tester
+```
+
+```
+> TaskList("feat-team")
+# sees task-003 blocked; waits for task-002...
+
+# [task-002 completes; task-003 transitions to "pending"]
+
+> TaskUpdate("task-003", status="in_progress")
+# tester reads implementation, writes tests
+
+# [runs: pytest tests/notifications/ → 12 passed, 0 failed]
+
+> TaskUpdate("task-003", status="completed",
+    result="12 tests written and passing. See tests/notifications/test_service.py.")
+
+> SendMessage(to="orchestrator",
+    content="task-003 done. All 12 tests pass.")
+```
+
+**Orchestrator receives completion messages:**
+
+```
+# [orchestrator polls its inbox, sees 3 task_update messages]
+
+> TaskList("feat-team")
+# all 3 tasks in "completed" state
+
+> TeamDelete("feat-team")
+
+# [synthesises final summary for user]
+```
+
+**Wall-clock timeline:**
+
+```
+t=0    Orchestrator creates team + all 3 tasks
+t=1    Architect starts task-001
+       Engineer waits (task-002 blocked on task-001)
+       Tester   waits (task-003 blocked on task-002)
+t=8    Architect completes task-001 → task-002 unblocks
+t=8    Engineer starts task-002 immediately (no polling delay)
+       Tester   still waiting (task-003 blocked on task-002)
+t=18   Engineer completes task-002 → task-003 unblocks
+t=18   Tester starts task-003
+t=23   Tester completes task-003
+t=23   Orchestrator synthesises results → TeamDelete
+
+Total elapsed: ~23 minutes
+If sequential (one agent): ~30+ minutes
+Speedup: ~25% — limited by the dependency chain in this example.
+For tasks with no dependencies, speedup is N× where N = number of parallel agents.
+```
 
 ### Pattern 4: CI/CD Agent Team
 
@@ -603,6 +877,61 @@ Is the research preview stability acceptable for production?
     └─ YES → Agent Team (more powerful but experimental)
 ```
 
+### Detailed Decision Matrix: Task Tool vs Agent Teams vs SDK Parallel Sessions
+
+Understanding the precise trade-offs between the three parallelism mechanisms prevents choosing the wrong tool for the job.
+
+```
+  MECHANISM COMPARISON — FULL DETAIL
+  ══════════════════════════════════════════════════════════════════
+
+  TASK TOOL (fire-and-forget subagents)
+  ─────────────────────────────────────
+  Invocation:   Orchestrator calls Task("prompt", agent_name?)
+  Lifetime:     Ephemeral — agent runs once, returns result, gone
+  Communication:One-way: prompt in, text result out
+  State:        None — subagent can't query the orchestrator
+  Context:      Forked from orchestrator's context at invocation time
+  Best for:     Independent subtasks — analysing N files, reviewing N modules,
+                running N independent searches in parallel
+  Cost:         1 session startup per Task call; no idle cost
+  Stability:    GA — safe for production
+
+  AGENT TEAMS (persistent peer-to-peer)
+  ──────────────────────────────────────
+  Invocation:   TeamCreate → TaskCreate → workers poll their inboxes
+  Lifetime:     Persistent across turns until TeamDelete is called
+  Communication:Bidirectional — any agent can message any other agent
+  State:        Shared task queue + per-agent inboxes on filesystem
+  Context:      Each worker agent has its own independent context window
+  Best for:     Workflows where workers need to negotiate, request
+                clarification, route results to peers, or proceed through
+                multi-step pipelines with inter-agent dependencies
+  Cost:         N idle session costs while workers wait for tasks
+  Stability:    Research Preview — breaking changes possible
+
+  SDK PARALLEL SESSIONS (asyncio.gather or Promise.all)
+  ──────────────────────────────────────────────────────
+  Invocation:   Python/TypeScript SDK; asyncio.gather() or Promise.all()
+  Lifetime:     Controlled entirely by calling code
+  Communication:Through your application code (not agent-to-agent)
+  State:        Managed by your application (files, DB, etc.)
+  Context:      Fully independent sessions per branch/directory
+  Best for:     CI/CD automation, batch processing, PR reviews at scale,
+                cases where you need structured output (JSON) per session
+  Cost:         Pay only for active API calls; no idle cost
+  Stability:    GA — StatefulClient is production-ready
+
+  DECISION RULES:
+  ───────────────
+  • Simple parallel fan-out (N independent tasks)      → Task tool
+  • Agents need to talk back to each other             → Agent Teams
+  • You control the orchestration from application code → SDK sessions
+  • Must work in CI/CD without human-in-the-loop       → Task tool or SDK
+  • Need to switch between branches per agent           → SDK + worktrees
+  • Agents need to negotiate output quality iteratively → Agent Teams
+```
+
 ### Capability Comparison: Orchestrator vs Subagent
 
 | Capability | Orchestrator | Subagent |
@@ -646,6 +975,121 @@ These are known limitations as of v2.1.126:
 | Team state not persisted across sessions | Known issue | Write state to team.json manually |
 | No native broadcasting | Known issue | Loop through agent mailboxes manually |
 | Debugging agent interactions | Hard | Enable `CLAUDE_CODE_AGENT_TEAMS_DEBUG=1` for verbose logs |
+
+#### Deep Dive: No Shared Memory Between Agents
+
+Each agent in a team has a completely isolated context window. There is no mechanism for one agent to read another agent's in-memory state, conversation history, or intermediate reasoning. This is a deliberate design constraint, not a missing feature.
+
+**What "no shared memory" means in practice:**
+
+```
+  AGENT A (context window)          AGENT B (context window)
+  ─────────────────────────         ─────────────────────────
+  [system prompt]                   [system prompt]
+  [CLAUDE.md]                       [CLAUDE.md]
+  [conversation: 8 turns]           [conversation: 4 turns]
+  [file reads: auth.py, models.py]  [file reads: tests.py]
+  [tool results: ...]               [tool results: ...]
+
+  AGENT A cannot see what           AGENT B cannot see what
+  Agent B has read or reasoned.     Agent A has done.
+
+  ❌ No shared scratchpad
+  ❌ No "hey B, what did you find in models.py?" direct memory access
+  ✓  Agent A CAN write findings to a file; Agent B CAN read that file
+  ✓  Agent A CAN SendMessage("my findings are: ..."); Agent B reads inbox
+```
+
+**Consequence for workflow design:** Every piece of information that one agent needs from another must be made explicit — written to a file, or included in a message payload. Agents cannot rely on implicit shared understanding.
+
+**Best practice — explicit handoff files:**
+
+```markdown
+# In agent instructions:
+When completing a task, write a handoff file:
+
+/tmp/agent-handoffs/{task-id}-handoff.md
+
+Include:
+- Summary of what you did
+- Key decisions made (and why)
+- Files created/modified (with purpose of each)
+- Open questions or blockers
+- Recommended next steps for the next agent
+
+The receiving agent reads this file as its first action.
+```
+
+**The MEMORY.md scoping rule for Agent Teams:**
+
+Agent-level MEMORY.md (`.claude/agent-memory/{agent-name}/MEMORY.md`) is per-agent and per-session. It is NOT shared between agents. If Agent A writes to its own MEMORY.md, Agent B cannot read it — Agent B only reads its own MEMORY.md.
+
+To share facts across agents: write to a well-known shared file path (e.g., `~/.claude/teams/{team-name}/shared-context.md`) and have each agent read it as part of their startup instructions.
+
+#### Deep Dive: Message Ordering Guarantees
+
+The filesystem mailbox provides the following ordering guarantees — and explicitly does NOT provide certain guarantees that developers might expect.
+
+**What IS guaranteed:**
+
+```
+Same-sender ordering:
+  If Agent A sends msg-1, then msg-2, then msg-3 to Agent B,
+  Agent B will always process them in order 1 → 2 → 3.
+  Reason: filenames include nanosecond timestamps; same agent's
+  clock is monotonic; Agent B reads inbox files in lexicographic
+  (= timestamp) order.
+
+Atomic delivery:
+  A message is either fully in the inbox (complete JSON) or not
+  present at all. There is no "partial message" state.
+  Reason: atomic os.replace() write protocol.
+
+No message loss (on same machine):
+  Once SendMessage() returns, the message file exists on disk.
+  It will not disappear unless TeamDelete or manual deletion occurs.
+```
+
+**What is NOT guaranteed:**
+
+```
+Cross-agent ordering:
+  If Agent A sends msg-X and Agent B sends msg-Y to Agent C at
+  the same clock tick, Agent C may process them in either order.
+  The inbox is not a total-order queue across multiple senders.
+
+  Example failure scenario:
+    t=100ms  Agent A: SendMessage(to=C, "I updated auth.py")
+    t=101ms  Agent B: SendMessage(to=C, "I updated auth.py")
+    Agent C reads Agent B's message first (nanosecond race).
+    If both modified auth.py, Agent C may apply B's context
+    before A's context, leading to incorrect reasoning.
+
+  Workaround: Use explicit sequence numbers in your message payload:
+    { "global_seq": 42, "content": "I updated auth.py" }
+    Agent C sorts by global_seq before acting on messages.
+
+Delivery latency:
+  There is no push notification. Agents poll their inboxes.
+  Default polling interval: 3 seconds.
+  A message sent at t=0 may not be processed until t=3s.
+  For latency-sensitive workflows, reduce polling or use Monitor tool.
+
+Ordering across task updates and messages:
+  TaskUpdate() writes to tasks/ directory.
+  SendMessage() writes to inboxes/ directory.
+  These are separate write paths with no shared lock.
+  An agent calling TaskUpdate followed immediately by SendMessage
+  has no guarantee which the orchestrator sees first.
+
+  Safe pattern:
+    1. Complete work
+    2. Write output files (fsync)
+    3. TaskUpdate(status:"completed")  ← update shared task state
+    4. SendMessage(to=orchestrator, "task done")  ← notify
+    The orchestrator should trust TaskUpdate as the authoritative
+    signal; SendMessage is a hint/notification only.
+```
 
 ---
 

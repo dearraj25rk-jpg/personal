@@ -8,7 +8,7 @@ description: >
 sidebar:
   order: 27
   label: Remote Control Guide
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Remote Control & Cloud Sessions — Mobile and Web Integration

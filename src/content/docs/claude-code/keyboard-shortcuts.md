@@ -10,7 +10,7 @@ description: >
 sidebar:
   order: 28
   label: Keyboard Shortcuts
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Keyboard Shortcuts & Terminal Integration — Complete Reference

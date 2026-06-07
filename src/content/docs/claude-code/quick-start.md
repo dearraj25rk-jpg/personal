@@ -7,7 +7,7 @@ description: >
 sidebar:
   order: 2
   label: Quick Start
-lastUpdated: 2026-06-06
+lastUpdated: 2026-06-07
 ---
 
 # Quick Start — Claude Code for New Users
@@ -221,6 +221,78 @@ The agentic loop is the core execution model of Claude Code. Understanding it he
 - The loop terminates when Claude returns `end_turn` and all Stop hooks pass (exit 0)
 - `--max-turns` sets a hard limit on iterations regardless of Claude's intent
 
+**Why `stop_reason` routing matters — and what it means for you:**
+
+The `stop_reason` field in the API response is a machine-readable signal, not a sentiment interpretation. Claude Code never tries to guess from the text of the response whether Claude "wants" to call a tool — it inspects the structured field. This has two important consequences:
+
+1. **Reliability at scale.** A response that says "I'll now read the file" paired with `stop_reason == "end_turn"` will *not* trigger a tool call. Claude Code trusts the protocol, not the prose. This means Claude cannot accidentally trigger a tool by talking about it.
+
+2. **Hook intercept points are precise.** Because the branch (`tool_use` vs `end_turn`) is known before any hook fires, hooks always operate on a known, stable event. A `PreToolUse` hook is guaranteed to run exactly before a real tool call — not speculatively. This makes hooks composable and safe to automate.
+
+In practice, you can think of the two branches this way:
+
+```
+stop_reason == "tool_use"   → Claude is mid-task; it needs more information
+                               or wants to make a change. The loop must continue.
+
+stop_reason == "end_turn"   → Claude believes the task is complete and has no
+                               further tool calls to make. This is the natural
+                               exit point — unless a Stop hook disagrees.
+```
+
+**What this looks like in a real multi-tool response:**
+
+One API response can contain *multiple* `tool_use` blocks. For example, if you ask Claude to "read three files and summarise them", the model may return a single response with three `Read` tool calls packed inside it. Claude Code processes them sequentially (or in parallel, for tools that support it), appends each result, then makes the *next* API call with all three results already in context. The diagram above simplifies this to one tool per loop iteration, but in practice Claude batches related reads to save round-trips and reduce cost.
+
+```
+Single API response with 3 tool_use blocks:
+  ┌──────────────────────────────────────────────┐
+  │  tool_use: Read("src/auth/login.py")         │
+  │  tool_use: Read("src/auth/session.py")       │
+  │  tool_use: Read("tests/test_auth.py")        │
+  └──────────────────────────────────────────────┘
+         ↓ (all 3 execute, results appended)
+  ┌──────────────────────────────────────────────┐
+  │  Next API call — Claude now has all 3 files  │
+  │  in context and can synthesise the answer    │
+  └──────────────────────────────────────────────┘
+```
+
+This batching behaviour is why asking Claude to "read and summarise" is cheaper than asking it to "read file A, then tell me, then read file B, then tell me" — the former lets Claude group reads into one round-trip; the latter forces a separate API call per instruction.
+
+**Stop hooks that force continuation** (by returning exit code 2) are the idiomatic way to implement "automated QA loops" — e.g. run your test suite after every `end_turn`; if tests fail, the hook injects the failure output and the loop continues. Claude never needs to know this mechanism exists; it just sees another tool result and continues naturally.
+
+**A concrete Stop hook example — automated test-and-fix loop:**
+
+```bash
+#!/bin/bash
+# .claude/hooks/stop-run-tests.sh
+# Exit 2 if tests fail — forces Claude to keep going and fix failures
+
+TEST_OUTPUT=$(npm test 2>&1)
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+  # Inject the failure into Claude's context via stdout
+  echo "Tests failed. Here is the output:"
+  echo "$TEST_OUTPUT"
+  exit 2   # force continuation
+fi
+
+exit 0     # all good — allow end_turn
+```
+
+Register it in `.claude/settings.json`:
+```json
+{
+  "hooks": {
+    "Stop": [{ "type": "command", "command": ".claude/hooks/stop-run-tests.sh" }]
+  }
+}
+```
+
+With this hook, Claude will never declare success while tests are failing — it will automatically read the failure output and attempt a fix, without any human intervention.
+
 **What one "turn" costs (approximate, Sonnet 4.6):**
 - Small task (read 2 files, 1 edit): ~$0.01–0.03
 - Medium task (explore codebase, write tests): ~$0.05–0.20
@@ -289,11 +361,105 @@ For full detail on every built-in command plus how to author custom slash comman
 ### Normal Mode (default)
 Claude asks permission before file writes and shell commands. Best for interactive development.
 
+**Why this is the right default:** Normal mode keeps you in the loop on every consequential action. When Claude is about to write to a file or run a shell command, it pauses and shows you the proposed action. You approve, reject, or redirect. This friction is valuable when you are still learning what Claude will do in your codebase — it turns every action into a learning moment. The cost is speed; large tasks require many approvals.
+
 ### Auto-Accept Mode (`Shift+Tab` once)
 Claude executes tools without asking. Use for trusted tasks in reviewed codebases. **Never in production without review.**
 
+**Why this matters:** Auto-Accept removes the approval checkpoint between every tool call. Claude runs uninterrupted through the entire task loop. This is 3–5× faster for large multi-step tasks (no round-trip to you per action), but it means any mistake Claude makes is immediately applied. Use it when:
+- You have already seen Claude's approach to this type of task and trust it
+- The task is reversible (git-tracked files, no DB mutations)
+- You have deny rules in `.claude/settings.json` that block truly dangerous commands
+
+Do not use it when exploring unfamiliar code, doing migrations, or working in directories that contain production configuration.
+
 ### Plan Mode (`Shift+Tab` twice, or `--permission-mode plan` CLI flag)
 Claude writes a plan but never executes tools. You review before approving. Ideal for uncertain tasks.
+
+**Why Plan Mode saves money:** When you give Claude a large ambiguous task in Normal or Auto-Accept mode, the first thing Claude does is start reading files — often many files — to understand the problem space before taking action. If its interpretation was wrong, you have already spent tokens exploring the wrong area. Plan Mode externalises this exploration phase as text (which is cheap) rather than tool calls (which consume context and cost money). You review the plan, correct the framing, and only then allow execution.
+
+**The decision framework:**
+
+```
+Is the task bounded and familiar?
+├── YES, < 5 files, pattern you've seen before
+│   └──► Auto-Accept (fastest, safe for reversible changes)
+│
+├── YES, < 5 files, but you want to verify each step
+│   └──► Normal Mode (default; you approve each action)
+│
+├── NO, touches many files or changes architecture
+│   └──► Plan Mode first, then switch to Normal or Auto-Accept after approval
+│
+└── Automated / CI / headless environment
+    └──► Non-Interactive (see below) + explicit --max-turns and deny rules
+```
+
+### How permission checking works internally
+
+Understanding the mechanics of permission checking explains *why* mode switching is instant and *why* deny rules are enforced even in Auto-Accept mode.
+
+Every tool call passes through a three-stage permission gate before execution:
+
+```
+Tool call requested by Claude
+        │
+        ▼
+┌────────────────────────────────────────────────────────┐
+│ STAGE 1: Explicit deny rules                           │
+│  Check .claude/settings.json → permissions.deny[]      │
+│  If matched: BLOCKED immediately, user is notified     │
+│  Deny rules override EVERYTHING — mode, allow rules,   │
+│  and user decisions. They are non-negotiable.          │
+└────────────────────────────┬───────────────────────────┘
+                             │ (not denied)
+                             ▼
+┌────────────────────────────────────────────────────────┐
+│ STAGE 2: Explicit allow rules                          │
+│  Check .claude/settings.json → permissions.allow[]     │
+│  If matched: APPROVED — skip to execution              │
+│  (No prompt shown in any mode)                         │
+└────────────────────────────┬───────────────────────────┘
+                             │ (not explicitly allowed)
+                             ▼
+┌────────────────────────────────────────────────────────┐
+│ STAGE 3: Mode-dependent behaviour                      │
+│  Normal mode    → show prompt, wait for user approval  │
+│  Auto-Accept    → approve silently, proceed            │
+│  Plan mode      → tool call never reaches this point   │
+│                   (Claude is told not to issue tool     │
+│                    calls in the system prompt)          │
+└────────────────────────────────────────────────────────┘
+```
+
+**Key insight: deny rules are mode-independent.** If you add `"Bash(rm -rf*)"` to your deny list, it is blocked in Auto-Accept mode just as firmly as in Normal mode. This is why you can safely use Auto-Accept in a project with good deny rules — the dangerous operations are still prevented at the system level, not by the approval prompt.
+
+**Key insight: allow rules skip the prompt entirely.** If you add `"Bash(npm test)"` to your allow list, Claude runs `npm test` without asking, even in Normal mode. Allow rules are a precision tool: they let you say "this specific command is always safe; don't interrupt me for it."
+
+### Switching modes mid-session
+
+You are not locked into a mode for the entire session. `Shift+Tab` cycles modes at any point, and the change takes effect immediately — the next tool call uses the new mode.
+
+A common pattern for large tasks:
+
+```
+1. Start in Plan Mode
+   → Claude writes a detailed plan without touching any files
+   → You review and refine the plan
+
+2. Switch to Normal Mode (Shift+Tab × 2 or Shift+Tab back from Plan)
+   → Claude begins execution
+   → You approve the first few tool calls to validate the approach
+
+3. Switch to Auto-Accept once you're confident
+   → Claude runs uninterrupted through the rest of the task
+   → Check /context and /todos periodically
+
+4. Switch back to Normal for the final step (e.g., git push)
+   → Explicit approval for the irreversible action
+```
+
+This pattern — Plan → Normal → Auto-Accept → Normal for commit/push — captures most of the speed benefit of Auto-Accept while keeping human checkpoints at the two highest-risk moments: the plan and the publish.
 
 ### Non-Interactive (CI/CD)
 ```bash
@@ -302,6 +468,10 @@ claude --print "Run all tests and fix any failures" \
        --max-turns 30 \
        --max-budget-usd 2.00
 ```
+
+**Why `--max-turns` is non-negotiable in CI:** Without a turn limit, a confused model or a malfunctioning Stop hook can create an infinite loop that exhausts your API budget. `--max-turns 30` is a conservative ceiling for most tasks. Set `--max-budget-usd` as a secondary safety net — the loop halts as soon as either limit is hit, whichever comes first.
+
+**Why `--permission-mode autoAccept` in CI and not `bypassPermissions`:** `autoAccept` respects your deny rules — it skips the interactive prompt but still enforces the block list. `bypassPermissions` ignores deny rules entirely. In CI, you almost always want `autoAccept` (speed without unsafe operations) not `bypassPermissions` (truly unconstrained). Reserve `bypassPermissions` for explicitly sandboxed environments where you control the whole system.
 
 ---
 
@@ -350,6 +520,17 @@ Not all CLAUDE.md content is equally valuable. This diagram shows what delivers 
   200 lines × 100 sessions = 20,000+ tokens just for CLAUDE.md.
 ```
 
+**Why the high-value / low-value split exists — the underlying principle:**
+
+Claude already carries enormous general knowledge about every mainstream language, framework, testing tool, and convention. Writing "use clear variable names" or "follow PEP 8" in your CLAUDE.md does not change Claude's behaviour — it already follows these. What Claude does *not* know is your specific project's divergence from defaults:
+
+- **Your exact command names.** Claude knows `pytest` exists, but it does not know your project uses `make test` and that `pytest` will fail because of a missing environment variable. Write the command. Skip the explanation of what pytest does.
+- **Your historical decisions and their rationale.** If you chose repository pattern over Active Record six months ago after a heated team debate, Claude will not rediscover that reasoning from the code alone. One line in CLAUDE.md — "We use repository pattern; never use Active Record or direct ORM queries in domain layer" — encodes what would take Claude 20 tool calls to infer.
+- **Your gotchas.** Every project has things that are wrong in a way that isn't obvious — a migration system that must be run in a specific order, a test database that requires a seed before any test, a third-party API that returns 200 on error. These are invisible to Claude unless you document them.
+- **Your "never do" rules.** Generic advice ("avoid N+1 queries") is already in Claude's training. Specific prohibitions ("never use `SELECT *` because our audit log trigger fails on star-selects") are project facts. Write the specific, skip the generic.
+
+**The compounding cost argument:** CLAUDE.md is loaded at the start of every session. If your CLAUDE.md is 300 lines (roughly 4,500 tokens), and you run 200 sessions in a quarter, that's 900,000 tokens spent purely on context loading — before Claude reads a single project file. A well-curated 100-line CLAUDE.md costs half that and provides the same value, because the 200 lines you removed were generic.
+
 ### Recommended template (keep under 200 lines)
 
 ```markdown
@@ -384,6 +565,55 @@ make migrate      # alembic upgrade head
 - Do not change `docker-compose.prod.yml` — use `docker-compose.override.yml`
 ```
 
+### How Claude Code loads CLAUDE.md — the mechanics
+
+Understanding the load order matters because it determines which instructions take priority when files conflict, and because every loaded byte costs tokens on every session.
+
+When Claude Code starts a session, it performs the following sequence:
+
+```
+Session start
+    │
+    ├─ 1. Load ~/.claude/CLAUDE.md           (global personal defaults)
+    │
+    ├─ 2. Load project-root CLAUDE.md        (committed project context)
+    │      (also checks .claude/CLAUDE.md as an alternative location)
+    │
+    ├─ 3. Load CLAUDE.local.md if present    (local overrides, gitignored)
+    │
+    ├─ 4. Load .claude/rules/*.md            (conditional rules, filtered by
+    │      path globs against current working directory)
+    │
+    └─ 5. Load active skills from            (reusable instruction packages)
+           .claude/skills/
+```
+
+Files loaded earlier are "outer context" — files loaded later can override or extend them. This means your project CLAUDE.md overrides your global `~/.claude/CLAUDE.md` if they conflict, and `CLAUDE.local.md` overrides both.
+
+**Subdirectory CLAUDE.md files are NOT automatically loaded.** A `src/api/CLAUDE.md` only loads when Claude is explicitly working in that directory — either because you navigated there, or because a tool call references a file under it. This is the intended design: you can place fine-grained instructions close to the code they govern without paying their token cost on every session.
+
+**The token cost of loading is per-turn, not per-session.** Every time Claude makes an API call (every turn of the loop), the system prompt — which includes all loaded CLAUDE.md content, rules, and skill packages — is sent again. A 300-line CLAUDE.md does not cost tokens once; it costs tokens on every single API call in every session.
+
+**Concrete token accounting example:**
+
+```
+Scenario: 200-line CLAUDE.md (≈ 3,000 tokens)
+          Running 3 sessions/day, 10 API calls per session
+          30 working days/month
+
+Token cost from CLAUDE.md alone:
+  3,000 tokens × 10 calls × 3 sessions × 30 days
+  = 2,700,000 input tokens/month
+
+At Sonnet 4.6 pricing ($3/M input tokens):
+  = ~$8.10/month from CLAUDE.md overhead alone
+
+If you halve CLAUDE.md to 100 lines (≈ 1,500 tokens):
+  = ~$4.05/month — saving $4/month for free
+```
+
+The numbers are small in absolute terms, but the principle scales: every generic line in your CLAUDE.md is money spent per API call, not per session.
+
 ### CLAUDE.md locations and scope
 
 | File | Scope | Notes |
@@ -392,7 +622,7 @@ make migrate      # alembic upgrade head
 | `CLAUDE.md` (project root) | Project-wide | Commit to git |
 | `CLAUDE.local.md` (project root) | Local only | Auto-gitignored |
 | `.claude/CLAUDE.md` | Project-wide (alternate) | Same as root CLAUDE.md |
-| `src/CLAUDE.md` | That subdirectory | Loaded on demand |
+| `src/CLAUDE.md` | That subdirectory | Loaded on demand when Claude works in that directory |
 
 ---
 
@@ -761,17 +991,26 @@ See the [Context, Cost & Token Efficiency guide](./claude-code-efficiency-refere
 
 ## 14. Next Steps
 
-| If you want to… | Go to |
-|----------------|-------|
-| Master every feature | [CLI Technical Reference](./claude-code-reference) |
-| Deep-dive every slash command + build custom commands | [Slash Commands — Complete Reference](./slash-commands-reference) |
-| Understand CLAUDE.md vs Rules vs Skills | [Config Guide](./claude-code-config-guide) |
-| Automate with hooks | [Hooks Deep Dive](./hooks-deep-dive) |
-| Add MCP tools | [MCP Servers Guide](./mcp-servers-guide) |
-| Build multi-agent systems | [Agent Teams Guide](./agent-teams-guide) |
-| Set up CI/CD pipelines | [CI/CD Integration](./cicd-integration) |
-| Optimise token costs | [Efficiency Reference](./claude-code-efficiency-reference) |
-| Prepare for CCA-F exam | [Compass Research Notes](./compass-research-notes) |
+The guides below go substantially deeper than this quick start. Here is what each one covers, when to read it, and — critically — **what you will miss if you skip it**.
+
+| If you want to… | Go to | What you will learn | What you miss without it |
+|----------------|-------|---------------------|--------------------------|
+| Master every feature | [CLI Technical Reference](./claude-code-reference) | Every CLI flag, environment variable, permission mode, tool schema, and model alias — the exhaustive reference | You will repeatedly discover flags by accident rather than knowing the full option space; common missed flags include `--effort`, `--bare`, and `--resume` |
+| Deep-dive every slash command + build custom commands | [Slash Commands — Complete Reference](./slash-commands-reference) | Full docs for all built-in commands, plus how to author team-shared commands with frontmatter, `$ARGUMENTS`, `@file` imports, and shell injection | Custom slash commands are one of the highest-leverage productivity gains — without them, every team member re-explains the same context in prompts every time |
+| Understand CLAUDE.md vs Rules vs Skills | [Config Guide](./claude-code-config-guide) | The decision framework for choosing between project-wide CLAUDE.md, path-scoped rules files, and reusable skill packages — and how they interact at load time | Without this, most teams stuff everything into CLAUDE.md and pay the token cost on every session; path-scoped rules let you load instructions only when working in specific directories |
+| Automate with hooks | [Hooks Deep Dive](./hooks-deep-dive) | How to write PreToolUse, PostToolUse, UserPromptSubmit, and Stop hooks; exit-code semantics; injecting context; building automated test-and-fix loops | Without hooks, Claude can declare "Done!" with failing tests; a single Stop hook that runs your test suite converts Claude from an editor into a loop-until-green automated fixer |
+| Add MCP tools | [MCP Servers Guide](./mcp-servers-guide) | How Claude Code discovers and connects to MCP servers, how to add project vs user-level servers, and how to build custom MCP tools | Without MCP, Claude cannot access your internal databases, Jira/Linear tickets, Slack threads, or proprietary APIs — MCP is what makes Claude aware of your real-time operational context |
+| Build multi-agent systems | [Agent Teams Guide](./agent-teams-guide) | Orchestrator/subagent patterns, how the `Task` tool spawns isolated agents, how to pass context between agents, and parallel workstream design | Single-agent sessions bottleneck on context window size; subagents let you analyse 10 microservices in parallel in seconds rather than sequentially in minutes |
+| Set up CI/CD pipelines | [CI/CD Integration](./cicd-integration) | Non-interactive mode flags, GitHub Actions integration, secrets management, Stop hooks for automated QA, and cost governance for automated runs | Without this, CI usage is unsafe — no budget limits, no deny rules, no deterministic model pinning; one runaway loop can exhaust a team's monthly API budget |
+| Optimise token costs | [Efficiency Reference](./claude-code-efficiency-reference) | Prompt caching, effort levels, context window management, model selection for different task types, and cost-per-task benchmarks | Without prompt caching enabled, you pay full price for the same system prompt every turn; caching alone reduces costs by 60–80% for long sessions |
+| Prepare for CCA-F exam | [Compass Research Notes](./compass-research-notes) | Structured study notes covering all Claude Code certification exam domains | — |
+
+**Reading order recommendation for new users:**
+1. Finish this quick start (you are here)
+2. Read the [Config Guide](./claude-code-config-guide) — understanding CLAUDE.md vs Rules vs Skills changes how you set up every project; this is the single most common configuration mistake new users make
+3. Read [Hooks Deep Dive](./hooks-deep-dive) — even one well-placed PostToolUse hook can eliminate an entire class of manual verification steps; the Stop hook test-and-fix pattern alone is worth the 20-minute read
+4. Skim [CLI Technical Reference](./claude-code-reference) — you do not need to read it cover-to-cover, but scan the flags table once so you know what options exist
+5. Everything else on demand when you hit the specific need
 
 ---
 
