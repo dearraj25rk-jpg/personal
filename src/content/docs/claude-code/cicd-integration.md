@@ -1754,6 +1754,217 @@ workflows:
               ignore: main
 ```
 
+### Complete CircleCI Pipeline with Multi-Stage Reviews and Cost Tracking
+
+```yaml
+# .circleci/config.yml — Full Claude Code integration with parallel stages,
+# stream-json parsing, and cost attribution
+
+version: 2.1
+
+# ── Reusable commands ────────────────────────────────────────────────────────
+commands:
+  install-claude:
+    description: Install Claude Code CLI (with optional cache restore)
+    steps:
+      - restore_cache:
+          keys:
+            - claude-binary-v1-{{ arch }}
+      - run:
+          name: Install Claude Code
+          command: |
+            if [ ! -f "$HOME/.local/bin/claude" ]; then
+              curl -fsSL https://claude.ai/install.sh | bash
+            fi
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
+            source "$BASH_ENV"
+            claude --version
+      - save_cache:
+          key: claude-binary-v1-{{ arch }}
+          paths:
+            - ~/.local/bin/claude
+
+  get-pr-diff:
+    description: Compute the diff between this branch and main
+    steps:
+      - run:
+          name: Compute PR diff
+          command: |
+            git fetch origin main:main
+            git diff main...HEAD > /tmp/pr-diff.txt
+            echo "Diff size: $(wc -l < /tmp/pr-diff.txt) lines"
+
+# ── Executors ────────────────────────────────────────────────────────────────
+executors:
+  claude-base:
+    docker:
+      - image: cimg/base:stable
+    resource_class: medium
+    environment:
+      DISABLE_UPDATES: "1"
+
+# ── Jobs ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # Fast security scan (Haiku — cheap and quick)
+  security-scan:
+    executor: claude-base
+    steps:
+      - checkout
+      - install-claude
+      - get-pr-diff
+      - run:
+          name: Run security scan
+          command: |
+            source "$BASH_ENV"
+            
+            STREAM=$(claude --print \
+              --output-format stream-json \
+              --model claude-haiku-4-5 \
+              --permission-mode bypassPermissions \
+              --max-turns 10 \
+              --max-budget-usd 0.20 \
+              --bare \
+              "Scan this diff for OWASP Top 10 vulnerabilities. Output CLEAN if safe, or CRITICAL/HIGH/MEDIUM/LOW: <description> for each issue." \
+              < /tmp/pr-diff.txt)
+            
+            # Parse and display results
+            echo "$STREAM" | jq -r 'select(.type=="assistant") | .message.content[].text // empty' | tee /tmp/security-result.txt
+            
+            # Extract cost for attribution
+            COST=$(echo "$STREAM" | jq -r 'select(.type=="result") | .cost_usd // 0')
+            TURNS=$(echo "$STREAM" | jq -r 'select(.type=="result") | .num_turns // 0')
+            echo ""
+            echo "[CircleCI] Security scan: $TURNS turns, \$$COST"
+            
+            # Gate: fail if critical issues found
+            if grep -q "^CRITICAL" /tmp/security-result.txt; then
+              echo "SECURITY GATE FAILED"
+              exit 1
+            fi
+      - store_artifacts:
+          path: /tmp/security-result.txt
+          destination: security-scan
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - security-result.txt
+
+  # Full code review (Sonnet — balanced)
+  code-review:
+    executor: claude-base
+    steps:
+      - checkout
+      - install-claude
+      - get-pr-diff
+      - attach_workspace:
+          at: /tmp
+      - run:
+          name: Run code review
+          command: |
+            source "$BASH_ENV"
+            
+            # Include security scan result as context
+            SECURITY_CONTEXT=$(cat /tmp/security-result.txt 2>/dev/null || echo "Security scan not available")
+            
+            STREAM=$(claude --print \
+              --output-format stream-json \
+              --model claude-sonnet-4-6 \
+              --permission-mode bypassPermissions \
+              --max-turns 25 \
+              --max-budget-usd 1.50 \
+              --bare \
+              "Security scan already found: $SECURITY_CONTEXT
+              
+              Now do a full code review of this PR. Focus on:
+              1. Correctness and edge cases
+              2. Performance implications
+              3. Test coverage gaps
+              4. API contract changes
+              
+              Format as markdown with ## headings." \
+              < /tmp/pr-diff.txt)
+            
+            echo "$STREAM" | jq -r 'select(.type=="assistant") | .message.content[].text // empty' | tee /tmp/code-review.md
+            
+            COST=$(echo "$STREAM"  | jq -r 'select(.type=="result") | .cost_usd // 0')
+            TURNS=$(echo "$STREAM" | jq -r 'select(.type=="result") | .num_turns // 0')
+            STOP=$(echo "$STREAM"  | jq -r 'select(.type=="result") | .stop_reason // "unknown"')
+            
+            echo ""
+            echo "[CircleCI] Code review: $TURNS turns, \$$COST, stop=$STOP"
+            
+            # Persist cost for reporting
+            echo "{\"job\":\"code-review\",\"cost\":$COST,\"turns\":$TURNS,\"stop\":\"$STOP\",\"build\":\"$CIRCLE_BUILD_NUM\",\"branch\":\"$CIRCLE_BRANCH\"}" \
+              > /tmp/cost-report.json
+      - store_artifacts:
+          path: /tmp/code-review.md
+          destination: code-review
+      - store_artifacts:
+          path: /tmp/cost-report.json
+          destination: cost-report
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - code-review.md
+            - cost-report.json
+
+  # Post results as PR comment (via GitHub API if using GitHub + CircleCI)
+  post-comment:
+    executor: claude-base
+    steps:
+      - attach_workspace:
+          at: /tmp
+      - run:
+          name: Post review as PR comment
+          command: |
+            # Requires GITHUB_TOKEN and CIRCLE_PR_NUMBER env vars
+            if [ -z "$CIRCLE_PR_NUMBER" ] || [ -z "$GITHUB_TOKEN" ]; then
+              echo "Not a PR build or GITHUB_TOKEN not set — skipping comment"
+              exit 0
+            fi
+            
+            REVIEW=$(cat /tmp/code-review.md)
+            COST=$(jq -r '.cost' /tmp/cost-report.json 2>/dev/null || echo "N/A")
+            TURNS=$(jq -r '.turns' /tmp/cost-report.json 2>/dev/null || echo "N/A")
+            
+            BODY="## Claude Code Review\n\n${REVIEW}\n\n---\n*${TURNS} turns | Cost: \$${COST} | [CircleCI build ${CIRCLE_BUILD_NUM}](${CIRCLE_BUILD_URL})*"
+            
+            curl -s -X POST \
+              "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${CIRCLE_PR_NUMBER}/comments" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"body\": \"$BODY\"}"
+
+# ── Workflows ─────────────────────────────────────────────────────────────────
+workflows:
+  pr-quality-gate:
+    jobs:
+      - security-scan:
+          context: anthropic-api   # CircleCI context with ANTHROPIC_API_KEY
+          filters:
+            branches:
+              ignore: main
+
+      - code-review:
+          requires:
+            - security-scan        # Only runs if security scan passes
+          context: anthropic-api
+          filters:
+            branches:
+              ignore: main
+
+      - post-comment:
+          requires:
+            - code-review
+          context:
+            - anthropic-api
+            - github-token         # Context with GITHUB_TOKEN
+          filters:
+            branches:
+              ignore: main
+```
+
 ### CircleCI with OIDC-based AWS Auth (no stored secrets)
 
 ```yaml
@@ -1773,28 +1984,45 @@ jobs:
           name: Configure AWS credentials via OIDC
           command: |
             # CircleCI OIDC token is in $CIRCLE_OIDC_TOKEN
+            # This requires enabling "Enable OIDC token in job" in project settings
             ROLE_ARN="arn:aws:iam::123456789:role/CircleCI-Claude-Role"
             
             CREDENTIALS=$(aws sts assume-role-with-web-identity \
               --role-arn "$ROLE_ARN" \
               --role-session-name "circleci-claude-$CIRCLE_BUILD_NUM" \
               --web-identity-token "$CIRCLE_OIDC_TOKEN" \
-              --query 'Credentials')
+              --query 'Credentials' \
+              --output json)
             
-            export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | jq -r .AccessKeyId)
-            export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | jq -r .SecretAccessKey)
-            export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | jq -r .SessionToken)
+            # Write credentials to a profile file so subsequent steps inherit them
+            echo "export AWS_ACCESS_KEY_ID=$(echo $CREDENTIALS | jq -r .AccessKeyId)"     >> "$BASH_ENV"
+            echo "export AWS_SECRET_ACCESS_KEY=$(echo $CREDENTIALS | jq -r .SecretAccessKey)" >> "$BASH_ENV"
+            echo "export AWS_SESSION_TOKEN=$(echo $CREDENTIALS | jq -r .SessionToken)"    >> "$BASH_ENV"
+            echo "export CLAUDE_CODE_USE_BEDROCK=1"                                        >> "$BASH_ENV"
+            echo "export ANTHROPIC_BEDROCK_BASE_URL=https://bedrock-runtime.${AWS_REGION}.amazonaws.com" >> "$BASH_ENV"
+            # Use flex tier for CI — lower cost, variable latency acceptable
+            echo "export CLAUDE_CODE_BEDROCK_SERVICE_TIER=flex"                            >> "$BASH_ENV"
 
       - run:
           name: Install and run Claude Code via Bedrock
           command: |
-            export PATH="$HOME/.local/bin:$PATH"
+            source "$BASH_ENV"
             curl -fsSL https://claude.ai/install.sh | bash
+            export PATH="$HOME/.local/bin:$PATH"
             
-            export ANTHROPIC_AUTH_TYPE="bedrock"
-            export ANTHROPIC_BEDROCK_BASE_URL="https://bedrock-runtime.$AWS_REGION.amazonaws.com"
+            git fetch origin main:main
+            git diff main...HEAD > /tmp/diff.txt
             
-            claude --print --no-interactive "Analyze this PR" < diff.txt
+            claude --print \
+              --output-format stream-json \
+              --model claude-sonnet-4-6 \
+              --permission-mode bypassPermissions \
+              --max-turns 20 \
+              --max-budget-usd 1.00 \
+              --bare \
+              "Analyze this PR for quality and security" \
+              < /tmp/diff.txt \
+              | jq -r 'select(.type=="assistant") | .message.content[].text // empty'
 ```
 
 ---
